@@ -169,9 +169,9 @@ object Engine {
       while (out.exists()) { out = File(dir, "${f.nameWithoutExtension} (${index++}).${f.extension}") }
       try { f.copyTo(out, false); return out.absolutePath } catch (e: Exception) { out.delete(); throw e }
     }
-    val dir = DocumentFile.fromTreeUri(ctx, tree)!!
-    val doc = dir.createFile(mime(f.extension), f.nameWithoutExtension)!!
-    try { ctx.contentResolver.openOutputStream(doc.uri)!!.use { o -> f.inputStream().use { it.copyTo(o) } } }
+    val dir = DocumentFile.fromTreeUri(ctx, tree)?.takeIf { it.canWrite() } ?: error("Sem acesso à pasta escolhida. Escolha a pasta de novo em Downloads.")
+    val doc = dir.createFile(mime(f.extension), f.nameWithoutExtension) ?: error("Não foi possível criar o arquivo na pasta escolhida")
+    try { (ctx.contentResolver.openOutputStream(doc.uri) ?: error("Pasta indisponível")).use { o -> f.inputStream().use { it.copyTo(o) } } }
     catch (e: Exception) { doc.delete(); throw e }
     return doc.uri.toString()
   }

@@ -1,70 +1,97 @@
-# Rise Musique — notas do projeto
+# Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual (0.9.1, publicada em 10/10/2026) — linha principal: `main`
+## Estado atual: 0.19.0 (10/10/2026) — linha principal `main`
+- Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
+- Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
+- A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
+- Teste real é no celular do Marce (Samsung SM-S948B, Android 17). Emulador não roda aqui. Paparazzi = única verificação visual.
+- Marce lê português. Rodadas: Marce aprova uma lista → implementar tudo → testes, snapshots (olhar!), build, bump, notas em PT, commit, push, publicar.
 
-- `main` é a linha de desenvolvimento. A branch `gpt` (trabalho de 0.7–0.9.1) foi incorporada em `main`
-  por fast-forward em 10/10/2026 e fica só como histórico (não apagar, não usar mais).
-- Nome visível: "Rise Musique". Application ID interno `com.rise.musique.gpt` — NÃO mudar (mudar = outro app,
-  sem atualização por cima da 0.9.0 instalada no celular do Marce).
-- Atualização no app: consulta `https://api.github.com/repos/Marcelov07br/rise-musique-releases/releases/latest`
-  (repo público), exige tag `v<versionName>`, release estável, asset `update.json` {versionCode, versionName, asset, sha256}
-  e o APK nomeado em `asset` (agora `RiseMusique-<versão>.apk`; antigos eram `RiseMusique-GPT-<versão>.apk`).
-  Valida tamanho, SHA-256, pacote, versionCode maior e **mesmo certificado** do app instalado.
-- Assinatura: releases 0.7–0.9.0 assinadas com `signing/rise-musique-gpt.jks` (alias `rise-musique-gpt`,
-  DN `CN=Rise Musique GPT`, SHA-256 do certificado `788c94b2…41ffa6609`), criada por `setup-signing.py`
-  no PC Windows do Marce. A chave NÃO está neste computador nem no Git. APK debug daqui usa a debug.keystore
-  e não instala por cima da versão de release.
+## Ambiente (computador do bot / box)
+- `export JAVA_HOME=~/jdk ANDROID_HOME=~/android` (JDK 17, SDK em ~/android). Projeto em `/workspace/rise-musique`.
+- `./gradlew :app:compileDebugKotlin` (rápido), `./gradlew :app:recordPaparazziDebug` (todos os testes + grava snapshots em `app/src/test/snapshots/images/`).
+- Commit sem identidade configurada: `git -c user.name="$(git log -1 --format=%an)" -c user.email="$(git log -1 --format=%ae)" commit …`.
+- `gh` autenticado para publicar no repo de releases.
 
-### Chaves locais (secrets.properties)
-`secrets.properties` na raiz (ignorado pelo Git; modelo em `secrets.properties.example`) vira campos do BuildConfig:
-`LASTFM_API_KEY`, `LASTFM_API_SECRET` (criar em https://www.last.fm/api/account/create). Também aceita variáveis de ambiente
-com os mesmos nomes. Sem elas o app compila e mostra "Last.fm não configurado".
+## Receita de release (aprovada)
+1. `app/build.gradle.kts`: versionCode +1, versionName novo.
+2. `RELEASE_NOTES.md` em português, sem "GPT" (vira o texto da release e a seção "Novidades" de Ajustes → Sobre; é copiado para os assets pela task `notesAsset`).
+3. `./build-local.sh` → assembleRelease + lintRelease + testes + `scripts/prepare-release.py` → `delivery/v<versão>/` (APK, update.json, notas). Lint com erro aborta (ex.: APIs `@UnstableApi` do Media3 precisam de `@OptIn`).
+4. (opcional) `apksigner verify --print-certs delivery/v<v>/RiseMusique-<v>.apk` → SHA-256 `788c94b2df3707ba4f4ebdc3d8912e5dba1cc20ce6cca51be1fa89741ffa6609`.
+5. Commit + `git push origin main`.
+6. `gh release create v<v> --repo Marcelov07br/rise-musique-releases --title "Rise Musique <v>" -F delivery/v<v>/RELEASE_NOTES.md --latest delivery/v<v>/RiseMusique-<v>.apk delivery/v<v>/update.json`
+- Atualização no app (`Updates.kt`/`UpdateRelease.kt`): lê `releases/latest`, exige tag `v<versionName>`, asset `update.json` {versionCode, versionName, asset, sha256}; confere tamanho, SHA-256, pacote, versionCode maior e mesmo certificado.
 
-### Como lançar uma versão (Linux, neste computador)
-A chave fica em `signing/` (ignorado pelo Git, chmod 600; nunca commitar nem imprimir senhas).
-1. Aumentar versionCode/versionName em `app/build.gradle.kts`; atualizar `RELEASE_NOTES.md` (português, sem "GPT").
-2. `./build-local.sh` — lê `signing/credentials.json`, usa a cópia local do .jks, roda assembleRelease + lintRelease + testes e `scripts/prepare-release.py`.
-3. Conferir: `apksigner verify --print-certs delivery/v<versão>/RiseMusique-<versão>.apk` → SHA-256 `788c94b2df3707ba4f4ebdc3d8912e5dba1cc20ce6cca51be1fa89741ffa6609`.
-4. `gh release create v<versão> --repo Marcelov07br/rise-musique-releases --title "Rise Musique <versão>" -F delivery/v<versão>/RELEASE_NOTES.md --latest delivery/v<versão>/RiseMusique-<versão>.apk delivery/v<versão>/update.json`
-5. Commit + push em `main`.
+## Segredos e assinatura (nunca commitar nem imprimir)
+- `signing/rise-musique-gpt.jks` (alias `rise-musique-gpt`) + `signing/credentials.json` (senhas) — só neste box e no PC do Marce; ignorados pelo Git, chmod 600.
+- `secrets.properties` (raiz, ignorado; modelo `secrets.properties.example`): `LASTFM_API_KEY`, `LASTFM_API_SECRET` → BuildConfig. Sem eles, "Last.fm não configurado".
+- Windows: `build-local.ps1` lê o mesmo `credentials.json`; ou exportar `RISE_KEYSTORE`, `RISE_STORE_PASSWORD`, `RISE_KEY_ALIAS`, `RISE_KEY_PASSWORD`.
 
-### Como lançar uma versão (genérico / Windows)
-1. Aumentar versionCode/versionName em `app/build.gradle.kts`; atualizar `RELEASE_NOTES.md`.
-2. Ter `signing/` (jks + credentials.json) disponível localmente e exportar `RISE_KEYSTORE`, `RISE_STORE_PASSWORD`,
-   `RISE_KEY_ALIAS`, `RISE_KEY_PASSWORD` (ou `build-local.ps1` no Windows, que lê `signing/credentials.json`).
-3. `./gradlew :app:assembleRelease :app:lintRelease :app:testDebugUnitTest`
-4. `python3 scripts/prepare-release.py` → `delivery/v<versão>/` (APK + update.json + notas).
-5. `gh release create v<versão> --repo Marcelov07br/rise-musique-releases --title "Rise Musique <versão>" -F delivery/v<versão>/RELEASE_NOTES.md delivery/v<versão>/RiseMusique-<versão>.apk delivery/v<versão>/update.json`
-6. Commit + push em `main`.
+## Mapa da arquitetura (`app/src/main/java/com/rise/musique`)
+### Núcleo
+- `RiseApplication.kt` — init yt-dlp/FFmpeg; handler de crash grava `filesDir/crash.txt` (formato em `ui/About.kt` → `CrashReport`).
+- `MainActivity.kt` — Compose host, permissões (mic), tela cheia/PiP, intents (SEND → página Downloads; atalhos `Shortcuts.*`), diálogo de crash (`CrashDialog`), liga `Actions` ao ViewModel.
+- `MainViewModel.kt` — `UiState` único; busca, streaming (`togglePreview`), vídeo, rádio, estações (`playStation`), downloads (`dlItems`, `dlLink`, `enqueue`), trecho (`shareSnippet`), aleatório (`shuffleAll`), EQ, stats, biblioteca, backup.
+- `PlaybackService.kt` — MediaLibraryService + ExoPlayer embrulhado em `LyricPlayer` (letra na tela de bloqueio); `RiseAudioProcessor` (normalização + EQ + limitador); crossfade/automix com player auxiliar; atualiza widget e `TileState`.
+- `Engine.kt` — yt-dlp: busca, info de vídeo, rádio (`RDAMVM`), download (formatos, corte, tags, capa, `--continue`), cópia para pasta SAF; `HistoryStore`.
+- `MusicSearch.kt` — busca do YouTube Music (innertube WEB_REMIX), tipos, filtros, paginação, ranking, cache.
+- `Streaming.kt` — URIs `rise-stream://<id>`, resolução/re-resolução em 403/410, prefetch, `SimpleCache` (guardar enquanto toca).
+- `Video.kt` — `VideoController` (ExoPlayer separado; MergingMediaSource vídeo+áudio+legenda; qualidade).
+- `DownloadWorker.kt` — WorkManager, um por vez, retry com backoff, Só no Wi-Fi.
+- `Follow.kt` — seguir artista (worker periódico + notificação "Baixar").
+- `Dsp.kt` / `AudioFx.kt` — EQ 10 bandas biquad, presets, perfis por saída (`EqStore`).
+- `TrackInfo.kt` — loudness EBU R128, gênero/ano/BPM, `LibraryScanWorker`, `Moods`.
+- `Beats.kt`, `Crossfade.kt` — grade de batidas e regras de transição.
+- `Lyrics.kt` (LRCLIB), `LyricPlayer.kt`, `LastFm.kt`, `Stats.kt` (PlayStats, retrospectiva), `RecapImage.kt`.
+- `Library.kt`, `BackupMerge.kt`, `PlaylistEdits.kt`, `AutoLibrary.kt` (Android Auto), `LocalMedia.kt` (importar arquivos/pasta).
+- `Stations.kt` — estações automáticas (artistas mais ouvidos, climas, Descobertas), capa gerada em Canvas (cache em `cacheDir/stations`), `StationQueue` (intercala rádios + faixas locais).
+- `Snippet.kt` — cartão 9:16 e MP4 de 15 s (Media3 Transformer, overlay por linha de letra). Streams: só imagem (decisão: não recortar áudio do YouTube).
+- `Shortcuts.kt` — atalhos dinâmicos do ícone + `PlayTile` (bloco de Configurações rápidas) + `TileState`.
+- `RiseWidget.kt` — widget Glance responsivo (2x2, 4x2, 4x4). Paparazzi não renderiza Glance.
+- `QuickDownloadActivity.kt` — "Baixar com Rise" no menu Compartilhar (baixa direto com as últimas escolhas).
+- `Voice.kt` — busca por voz (SpeechRecognizer pt-BR).
+### UI (`ui/`)
+- `RiseApp.kt` — raiz: `NavState` (pilha por aba), `SeekableTransitionState` (transição interrompível + volta preditiva), barra flutuante (`NavigationDock`), topo com título colapsável, `MainPane` (Buscar), `ResultCard`.
+- `Nav.kt` — rotas (Album, Playlist, Artist, Smart, Downloads), `sharedCover` (elemento compartilhado, dono único), `morphCorner`, `enterRise`.
+- `Motion.kt` — tokens: `OpenMs 720`/`CloseMs 560` (relógio linear da transição), `coverOpen` (mola ζ0.8, k210) / `coverClose` (ζ0.8, k300), `pageEnter` com atraso de 80 ms. Overshoot só em escala/translação.
+- `Titles.kt` — `LargeTitle` 34sp, `rememberTitleCollapse`, `collapsingHeight`, `bottomSpace` (espaço do dock + mini), `accentColor` (rosa discreto), `bleed`.
+- `LibraryHome.kt` (Início/Biblioteca), `Home.kt` (hero cards, estações), `Tint.kt` (tons suaves por capa), `CollectionScreen.kt`, `ArtistScreen.kt`, `Smart.kt`.
+- `PlayerSheet.kt` — mini → cheio, capa centrada (`PlayerLayout.art`), Ken Burns (`Motion2.kt`), letras, fila, compartilhar trecho (`ShareSheet.kt`).
+- `DownloadHub.kt` — página Downloads (`DownloadPage`, `queueItems`); `DownloadOptions.kt`, `CutSheet.kt`.
+- `SearchParts.kt` — filtros (chip "Filtros" → folha), voz, esqueleto, resultados de coleção.
+- `SettingsSheet.kt` (+ Sobre em `About.kt`), `EqSheet.kt`, `StatsSheet.kt`, `RecapSheet.kt`, `VideoPlayer.kt`, `TrackActions.kt`, `UpdateDialog.kt`, `Visuals.kt` (GlassBox, paleta, arte viva).
+### Recursos
+- Ícone: `res/drawable/ic_launcher_foreground.xml` (wordmark "rise" em Roboto Bold, tracking −1sp, 50dp de largura na zona segura), `ic_launcher_monochrome.xml` (ícone temático), fundo `#111113`. Splash (`Theme.Rise.Splash`) usa o mesmo foreground.
+- Regerar o wordmark: fontTools com `/usr/share/fonts/truetype/sand-box/google/Roboto/Roboto-VariableFont_wdth,wght.ttf` instanciada em wght 700 (script na conversa de 0.19; ~20 linhas com SVGPathPen).
 
-## Histórico (versão original do Grok)
-
-## Como compilar (no computador do bot)
-- JDK 17 em `~/jdk`, Android SDK em `~/android`, Gradle via `./gradlew`.
-- `export JAVA_HOME=~/jdk ANDROID_HOME=~/android`
-- APK: `./gradlew :app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk` (só arm64-v8a, ~75 MB)
-- Prints: `./gradlew :app:recordPaparazziDebug` → `app/src/test/snapshots/images/` (dados de exemplo; imagens da internet não carregam)
-- APKs entregues no Google Drive do Marce (RiseMusique-debug-vN.apk). Chat não aceita >25 MB.
-- Emulador não roda bem aqui (falta memória); teste real é no celular do Marce (Samsung SM-S948B, Android 17).
-
-## Arquitetura (app/src/main/java/com/rise/musique)
-- `Engine.kt` — busca (`-J --flat-playlist`, ytsearch5 / playlist), stream de prévia (`-f ba -g`), download (formatos MP3/M4A/Opus/FLAC, vídeo MP4 por altura, corte `--download-sections`, tags e capa quadrada), cópia pra pasta SAF; `HistoryStore` (history.json).
-- `DownloadWorker.kt` — WorkManager, um trabalho por item, Mutex = um por vez, notificação de progresso, cancelar/tentar de novo; `Jobs` guarda os dados de cada item.
-- `PlaybackService.kt` — MediaSessionService com ExoPlayer (notificação, tela de bloqueio); TeeAudioProcessor → `AudioLevels.kt` (8 faixas pras ondas); atualiza o widget.
-- `MainViewModel.kt` — estado da UI (`UiState`), MediaController, fila de reprodução, letras, temporizador, biblioteca, backup.
-- `Lyrics.kt` — LRCLIB (letras sincronizadas), limpa título do YouTube.
-- `Library.kt` — favoritos, playlists, export/import de backup (JSON).
-- `QuickDownloadActivity.kt` — "Baixar com Rise" no Compartilhar.
-- `RiseWidget.kt` — widget Glance.
-- `RiseApplication.kt` — init do yt-dlp/ffmpeg + relatório de crash (filesDir/crash.txt, mostrado na próxima abertura).
-- `ui/` — `Theme.kt` (preto puro / claro neutro), `Components.kt` (PillButton, PillSelector que estica, RoundIconButton, springPress, cascade), `RiseApp.kt` (tela principal, painel de histórico/biblioteca, voo do download), `PlayerSheet.kt` (mini player → player cheio, fundo desfocado, capa que respira/arremessável, anel de ondas, letras, toque duplo, temporizador).
+## Testes
+- Unidade + Robolectric em `app/src/test/java/com/rise/musique/` (`Round15..19Test`, `TransitionCrashTest` — navegação, troca de aba, volta, Downloads, vídeo; sempre manter).
+- Snapshots em `Snapshots.kt` (`RoundNN` por rodada). Dois elementos com a mesma chave de `sharedCover` visíveis ao mesmo tempo travam a UI (laço infinito) — chaves únicas!
+- Animação infinita + `onSizeChanged` que muda layout = laço; medir com `wrapContentHeight(unbounded = true)`.
 
 ## Decisões e preferências do Marce
-- Visual sóbrio, pílulas, ícones arredondados, molas. Bounce LIBERADO (ele pediu), mas todo valor animado que mexe em tamanho/margem deve ser travado em 0..1 (crash da v6 foi margem negativa por overshoot).
-- Mandar resumo + caminhos, não código inteiro no chat.
-- Rodadas: Marce dá uma ideia, o bot sugere outras, Marce aprova, aí implementa.
+- Visual sóbrio, pílulas, vidro, molas com quique leve. Nada de cor dinâmica do sistema (cores só da capa). Acento rosa discreto.
+- Todo valor animado que mexe em tamanho/margem é travado; overshoot só via graphicsLayer.
+- Mandar resumo + caminhos, não código inteiro.
 
-## Próximos passos combinados
-1. Subir o código pro GitHub privado `Marcelov07br/rise-musique`.
-2. Atualização automática: repositório público `rise-musique-releases` com os APKs; GitHub Actions compila/assina/publica ao marcar tag `vX.Y`; app confere a release ao abrir. Precisa: chave de assinatura definitiva (guardar cópia fora do GitHub) + token do Marce com acesso aos dois repos (fazer no chat particular). Trocar a chave exige reinstalar uma vez — usar Exportar/Importar backup.
+## Lacunas conhecidas / não testado no aparelho
+- MP4 do trecho (Transformer image+áudio+overlay), compartilhamento.
+- Atalhos e bloco de Configurações rápidas; ícone temático e splash no aparelho real.
+- Estações (rádio real, mistura local, Descobertas), cores das capas com imagens reais.
+- Ken Burns: fluidez/bateria; desliga com economia de bateria e "remover animações".
+- Nova transição de álbum (0.19): sensação real, volta preditiva com o novo relógio.
+- Busca: tocar ao toque, link de playlist na página Downloads, "Colar" da área de transferência.
+- Widget Glance (sem snapshot), PiP, EQ por dispositivo Bluetooth.
+- "Guardar" no player ainda salva direto (não passa pela página Downloads). "Baixar com Rise" no Compartilhar continua baixando direto.
+- Botão Baixar fica desabilitado até escolher tipo/formato/qualidade (regra antiga de `DownloadChoices`).
 
+## Backlog de ideias
+- DSD/lossless de verdade via decoder FFmpeg do Media3 (extensão ffmpeg) — ALAC, APE, DSF/DFF.
+- Cantarolar para buscar (humming) — precisa de serviço externo; fora até achar fonte legítima.
+- Discord: "ouvindo agora" (Rich Presence via app/OAuth) — opções a estudar.
+- Teste de EQ por dispositivo (perfis por fone Bluetooth) com o Marce.
+- Imagem do canal do artista (YouTube Music) no topo do artista.
+- Capas animadas reais se aparecer fonte pública legítima.
+- Letras: tradução, karaokê por palavra; editar sincronização.
+- Fila: arrastar para reordenar com prévia; "tocar a seguir".
+- Downloads: playlists inteiras com seleção na página Downloads; pasta por artista/álbum.

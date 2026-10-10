@@ -1,4 +1,10 @@
 package com.rise.musique
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.runtime.Composable
+import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.asImageBitmap
 import app.cash.paparazzi.*
 import com.android.resources.*
@@ -175,3 +181,30 @@ class Round18 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
 class Round18Light { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6)
   @Test fun downloadPage() = p.snapshot { RiseTheme(false) { RiseApp(UiState(page = "Buscar", dlItems = listOf(songs[1]), queue = dlQueue), Actions(), initialRoute = Route.Downloads) } } }
 private fun bmpToImage(b: android.graphics.Bitmap): androidx.compose.ui.graphics.ImageBitmap = b.asImageBitmap()
+
+private val sampleCrash = com.rise.musique.ui.CrashReport.build("0.19.0", 22, "Samsung", "SM-S918B", "14", 34, "main", 1_760_000_000_000,
+  RuntimeException("Falha ao abrir", IllegalStateException("An instance of SeekableTransitionState has been used in different Transitions")))
+@Composable private fun IconTile(shape: androidx.compose.ui.graphics.Shape, mono: Boolean = false) {
+  Box(Modifier.size(110.dp).clip(shape).background(if (mono) androidx.compose.ui.graphics.Color(0xFFDDE3F0) else androidx.compose.ui.graphics.Color(0xFF111113)), contentAlignment = androidx.compose.ui.Alignment.Center) {
+    // adaptive icon: 108dp layer, outer 18dp cropped by the mask → scale 110/72
+    androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(if (mono) com.rise.musique.R.drawable.ic_launcher_monochrome else com.rise.musique.R.drawable.ic_launcher_foreground), null,
+      Modifier.requiredSize(165.dp), colorFilter = if (mono) androidx.compose.ui.graphics.ColorFilter.tint(androidx.compose.ui.graphics.Color(0xFF2B3A55)) else null)
+  }
+}
+class Round19 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  @Test fun launcherIcons() = p.snapshot { RiseTheme(true) { Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF3A4A5E)).padding(32.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
+    Text("Ícone (círculo / squircle / quadrado arredondado)", color = androidx.compose.ui.graphics.Color.White)
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { IconTile(androidx.compose.foundation.shape.CircleShape); IconTile(androidx.compose.foundation.shape.RoundedCornerShape(40.dp)); IconTile(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)) }
+    Text("Ícone temático (monocromático)", color = androidx.compose.ui.graphics.Color.White)
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { IconTile(androidx.compose.foundation.shape.CircleShape, true); IconTile(androidx.compose.foundation.shape.RoundedCornerShape(40.dp), true) }
+    Text("Logo da barra superior (referência)", color = androidx.compose.ui.graphics.Color.White)
+    Text("rise", style = androidx.compose.material3.MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp, color = androidx.compose.ui.graphics.Color.White)
+  } } }
+  @Test fun splash() = p.snapshot { Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black), contentAlignment = androidx.compose.ui.Alignment.Center) {
+    // Android 12+ splash: 240dp icon area, 160dp visible circle
+    Box(Modifier.size(160.dp).clip(androidx.compose.foundation.shape.CircleShape), contentAlignment = androidx.compose.ui.Alignment.Center) {
+      androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.rise.musique.R.drawable.ic_launcher_foreground), null, Modifier.requiredSize(240.dp)) } } }
+  @Test fun about() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { AboutContent("0.19.0", java.io.File("../RELEASE_NOTES.md").takeIf { it.exists() }?.readText() ?: java.io.File("RELEASE_NOTES.md").readText(), {}) {} } } }
+  @Test fun crashDialog() = p.snapshot { RiseTheme(true) { Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF0B0B0D)).padding(24.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+    CrashCard(sampleCrash, {}, {}, {}) } } }
+}

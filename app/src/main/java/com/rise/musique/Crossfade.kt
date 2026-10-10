@@ -71,7 +71,7 @@ class Crossfader(private val ctx: Context, private val main: ExoPlayer, private 
     if (auto) {
       val pair = cur.mediaId + ">" + nxt.mediaId
       if (planFor != pair) { planFor = pair; plan = null; planJob?.cancel()
-        val curUri = cur.localConfiguration?.uri; val nxtUri = nxt.localConfiguration!!.uri
+        val curUri = cur.localConfiguration?.uri; val nxtUri = nxt.localConfiguration?.uri ?: return
         if (curUri != null && curUri.scheme != Streams.SCHEME && nxtUri.scheme != Streams.SCHEME) planJob = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
           val outG = BeatStore.grid(ctx, cur.mediaId, curUri, tailOfMs = dur); val inG = BeatStore.grid(ctx, nxt.mediaId, nxtUri)
           if (outG != null && inG != null) plan = plan(outG, inG, secs * 1000L, dur)

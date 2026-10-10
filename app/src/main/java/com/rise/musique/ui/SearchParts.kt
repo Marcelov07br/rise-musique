@@ -32,7 +32,7 @@ import com.rise.musique.SearchKind
   val haptics = rememberHaptics()
   var sheet by remember { mutableStateOf(false) }
   val active = (if (s.durationFilter != DurationFilter.Any) 1 else 0) + (if (s.dateFilter != DateFilter.Any) 1 else 0)
-  Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+  Row(Modifier.fillMaxWidth().bleed(20.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
     Chip(if (active > 0) "Filtros · $active" else "Filtros", active > 0, small = true, icon = Icons.Rounded.Tune) { haptics.tick(); sheet = true }
     SearchKind.entries.forEach { k -> Chip(k.label, s.searchKind == k, small = true) { haptics.tick(); a.searchKind(k) } }
   }

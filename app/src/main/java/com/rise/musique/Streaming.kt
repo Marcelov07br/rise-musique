@@ -99,7 +99,7 @@ private class RoutingDataSource(private val stream: DataSource, private val othe
   private var cur: DataSource? = null
   override fun addTransferListener(l: TransferListener) { stream.addTransferListener(l); other.addTransferListener(l) }
   override fun open(spec: DataSpec): Long { val d = if (spec.uri.scheme == Streams.SCHEME) stream else other; cur = d; return d.open(spec) }
-  override fun read(b: ByteArray, o: Int, l: Int) = cur!!.read(b, o, l)
+  override fun read(b: ByteArray, o: Int, l: Int) = (cur ?: throw java.io.IOException("Fonte fechada")).read(b, o, l)
   override fun getUri() = cur?.uri
   override fun getResponseHeaders() = cur?.responseHeaders ?: emptyMap()
   override fun close() { cur?.close(); cur = null }

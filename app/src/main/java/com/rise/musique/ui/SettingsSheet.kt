@@ -4,6 +4,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -15,6 +16,11 @@ import com.rise.musique.BuildConfig
 }
 
 @Composable fun SettingsContent(s: UiState, a: Actions) {
+    var about by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    if (about) { androidx.activity.compose.BackHandler { about = false }
+      AboutContent(BuildConfig.VERSION_NAME, remember { releaseNotes(ctx) }, { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ReleasesUrl))) }) { about = false }
+      return }
     Column(Modifier.fillMaxWidth().padding(24.dp).verticalScroll(rememberScrollState()).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
       Text("Seu Rise", style = MaterialTheme.typography.headlineLarge)
       Text("Aparência", style = MaterialTheme.typography.titleMedium)
@@ -51,6 +57,7 @@ import com.rise.musique.BuildConfig
         PillButton("Importar", a.importBackup, Modifier.weight(1f), filled = false)
       }
       PillButton("Verificar atualizações", a.updates, Modifier.fillMaxWidth())
+      PillButton("Sobre o Rise", { about = true }, Modifier.fillMaxWidth(), androidx.compose.material.icons.Icons.Rounded.Info, filled = false)
       Text("Rise Musique ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

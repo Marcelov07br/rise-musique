@@ -7,7 +7,7 @@ plugins {
 val secrets = Properties().also { p -> rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { p.load(it) } }
 android {
   namespace = "com.rise.musique"; compileSdk = 35
-  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 21; versionName = "0.18.0"
+  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 22; versionName = "0.19.0"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     // Local secrets (gitignored secrets.properties or env vars); empty = feature shows "não configurado".
     fun secret(k: String) = (secrets.getProperty(k) ?: System.getenv(k) ?: "").replace("\\", "").replace("\"", "")
@@ -62,3 +62,11 @@ dependencies {
   androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
+
+// "Sobre" mostra as notas da versão atual: copia RELEASE_NOTES.md para os assets antes de cada build.
+val notesAsset by tasks.registering(Copy::class) {
+  from(rootProject.file("RELEASE_NOTES.md")) { rename { "release_notes.md" } }
+  into(layout.buildDirectory.dir("generated/notesAssets"))
+}
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/notesAssets"))
+tasks.named("preBuild") { dependsOn(notesAsset) }

@@ -53,7 +53,7 @@ object Updates {
       .singleOrNull { it.optString("name") == "update.json" } ?: return@withContext null
     val url = manifest.getString("browser_download_url")
     require(UpdateReleaseParser.assetUrl(url)) { "Origem da publicação inválida" }
-    UpdateReleaseParser.parse(release, json(url)!!).takeIf { it.versionCode > BuildConfig.VERSION_CODE }
+    UpdateReleaseParser.parse(release, json(url) ?: return@withContext null).takeIf { it.versionCode > BuildConfig.VERSION_CODE }
   }
 
   suspend fun download(ctx: Context, release: UpdateRelease, progress: (Float) -> Unit): File = withContext(Dispatchers.IO) {

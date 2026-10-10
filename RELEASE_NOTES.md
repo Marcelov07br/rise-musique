@@ -1,9 +1,9 @@
-# Rise Musique 0.18.0
+# Rise Musique 0.19.0
 
-Buscar e Downloads agora são coisas separadas.
+Cara nova, mais calma e mais estável.
 
-- **Buscar só para descobrir**: topo compacto (um campo com microfone e uma fileira de filtros; duração e data ficam em "Filtros"). Tocar num resultado já toca a música em streaming ou abre o vídeo. Segure para mais opções (rádio, assistir vídeo). Cada item tem um botão de download.
-- **Nova página Downloads**: abre pelo botão de download de cada resultado, pelo ícone no topo das abas, por links compartilhados de outros apps e pelo atalho do ícone. Mostra o item escolhido, tipo (Música/Vídeo) e Cortar, formato e qualidade, pasta, o botão Baixar, a fila (progresso, cancelar, tentar de novo), "Só no Wi-Fi" e os baixados recentemente. Também dá para colar um link direto ali.
-- **Capas em movimento**: no player e no topo dos álbuns, a capa ganha um movimento lento e suave. Desliga sozinho com economia de bateria ou com animações do sistema desativadas.
-- **Compartilhar trecho**: no player, escolha 15 segundos e compartilhe um cartão vertical com capa e letra. Para músicas da sua biblioteca, também sai um vídeo com o áudio do trecho e a letra acompanhando. Em streaming, só o cartão.
-- **Atalhos e bloco nas Configurações rápidas**: segure o ícone do app para Tocar aleatório, Estações, Buscar e Downloads; adicione o bloco "Rise Musique" nas Configurações rápidas para tocar/pausar e ver a música atual.
+- **Novo ícone e abertura**: só a palavra "rise", na mesma fonte do logo do app. Funciona com ícones temáticos do Android (monocromático).
+- **Abrir álbum mais elegante**: a capa cresce mais devagar, com um quique leve, e o conteúdo chega logo depois. Fechar é um pouco mais rápido, com o mesmo jeito. Vale para álbuns, artistas, playlists, coleções inteligentes e a página Downloads; continua dando para interromper e usar o gesto de voltar.
+- **Sobre**: em Ajustes → Sobre o Rise, a versão, as novidades, os créditos do código aberto (yt-dlp, FFmpeg, Media3, Coil…) e o link para todas as versões.
+- **Relatório de erro melhor**: se o app fechar sozinho, na próxima abertura aparece um resumo do erro com "Enviar relatório" (aparelho, Android, versão e rastro completo) e "Copiar".
+- **Correções**: filtros da busca agora vão até a borda da tela; pasta de downloads sem permissão não derruba mais o download (mostra o motivo); proteções contra falhas raras na reprodução em streaming e na checagem de atualização.

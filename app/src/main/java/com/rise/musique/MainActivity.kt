@@ -43,12 +43,12 @@ class MainActivity : ComponentActivity() {
       SideEffect { updatePip() }
       RiseTheme(dark) {
         UpdateDialog(updates, ::installUpdate)
-        crash?.let { log -> androidx.compose.material3.AlertDialog(onDismissRequest = { java.io.File(filesDir, "crash.txt").delete(); crash = null },
-          title = { androidx.compose.material3.Text("O app fechou sozinho da última vez") },
-          text = { androidx.compose.material3.Text("Compartilhe o relatório com o Dev Compose pra ele achar a causa.\n\n" + log.lines().take(6).joinToString("\n"), fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp)) },
-          confirmButton = { androidx.compose.material3.TextButton({ startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, log), null))
-            java.io.File(filesDir, "crash.txt").delete(); crash = null }) { androidx.compose.material3.Text("Compartilhar") } },
-          dismissButton = { androidx.compose.material3.TextButton({ java.io.File(filesDir, "crash.txt").delete(); crash = null }) { androidx.compose.material3.Text("Ignorar") } }) }
+        crash?.let { log -> val clear = { java.io.File(filesDir, "crash.txt").delete(); crash = null }
+          com.rise.musique.ui.CrashDialog(log, send = {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "Relatório de erro · Rise Musique ${BuildConfig.VERSION_NAME}")
+              .putExtra(Intent.EXTRA_TEXT, log), "Enviar relatório")); clear() },
+            copy = { getSystemService(ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Relatório Rise Musique", log)) },
+            close = { clear() }) }
         RiseApp(vm.state, Actions(vm::onQuery, vm::onMode, vm::onQuality, { picker.launch(null) },
         vm::enqueue, { vm.theme(if (dark) "Claro" else "Escuro") }, { vm.search() }, vm::select, vm::togglePreview,
         selectAll = vm::selectAll, format = vm::onFormat, cut = vm::onCut, cancel = vm::cancel, retry = vm::retry, dismiss = vm::dismiss,

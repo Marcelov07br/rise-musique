@@ -151,14 +151,16 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val scope = rememberCoroutineScope()
   var seeking by remember { mutableStateOf(false) }
   // Mesma aba: transição animada e interrompível. Troca de aba: instantânea.
-  LaunchedEffect(screen) { if (!seeking) { if (seek.currentState.tab != screen.tab) seek.snapTo(screen) else seek.animateTo(screen, Motion.enter(Motion.Long)) } }
+  var lastDepth by remember { mutableIntStateOf(nav.stack(tab).size) }
+  LaunchedEffect(screen) { val depth = nav.stack(tab).size; val closing = depth < lastDepth; lastDepth = depth
+    if (!seeking) { if (seek.currentState.tab != screen.tab) seek.snapTo(screen) else seek.animateTo(screen, Motion.clock(closing)) } }
   val pop: () -> Unit = { nav.pop(tab) }
   androidx.activity.compose.PredictiveBackHandler(enabled = nav.stack(tab).isNotEmpty()) { progress ->
     val prev = nav.previous(tab)
     try {
       seeking = true
       progress.collect { e -> seek.seekTo((e.progress * .9f).coerceIn(0f, 1f), targetState = prev) }
-      seek.animateTo(prev, Motion.enter(Motion.Medium)); nav.pop(tab)
+      seek.animateTo(prev, Motion.clock(close = true)); nav.pop(tab)
     } catch (e: kotlin.coroutines.cancellation.CancellationException) {
       scope.launch { seek.animateTo(screen, Motion.settle()) }; throw e
     } finally { seeking = false }

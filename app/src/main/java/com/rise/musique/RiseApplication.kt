@@ -6,7 +6,8 @@ class RiseApplication : Application() {
   override fun onCreate() { super.onCreate()
     val prev = Thread.getDefaultUncaughtExceptionHandler()
     Thread.setDefaultUncaughtExceptionHandler { t, e ->
-      runCatching { java.io.File(filesDir, "crash.txt").writeText("Rise Musique ${BuildConfig.VERSION_NAME} · Android ${android.os.Build.VERSION.RELEASE} · ${android.os.Build.MODEL}\n\n" + e.stackTraceToString()) }
+      runCatching { java.io.File(filesDir, "crash.txt").writeText(com.rise.musique.ui.CrashReport.build(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE,
+        android.os.Build.MANUFACTURER, android.os.Build.MODEL, android.os.Build.VERSION.RELEASE, android.os.Build.VERSION.SDK_INT, t.name, System.currentTimeMillis(), e)) }
       prev?.uncaughtException(t, e) }
     runCatching { YoutubeDL.getInstance().init(this); FFmpeg.getInstance().init(this) }
       .onFailure { java.io.File(filesDir, "crash.txt").writeText("Não foi possível inicializar o motor de downloads.\n" + it.stackTraceToString()) } }

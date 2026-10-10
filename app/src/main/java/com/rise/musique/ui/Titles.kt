@@ -37,3 +37,9 @@ fun Modifier.collapsingHeight(collapse: State<Float>) = layout { m, c ->
 
 /** Space under lists so the floating dock (and the mini player above it) never cover content. */
 @Composable fun bottomSpace(s: UiState) = if (s.now != null) 176.dp else 104.dp
+
+/** Lets a horizontally scrolling row run to the screen edges past its parent's [by] padding (content still starts aligned). */
+fun Modifier.bleed(by: androidx.compose.ui.unit.Dp) = layout { m, c ->
+  val extra = (by * 2).roundToPx()
+  val p = m.measure(c.copy(minWidth = (c.minWidth + extra).coerceAtLeast(0), maxWidth = if (c.hasBoundedWidth) c.maxWidth + extra else c.maxWidth))
+  layout(c.maxWidth.takeIf { c.hasBoundedWidth } ?: p.width, p.height) { p.placeRelative(-by.roundToPx(), 0) } }

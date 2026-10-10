@@ -32,8 +32,17 @@ object Motion {
   fun <T> press() = spring<T>(dampingRatio = 0.8f, stiffness = Spring.StiffnessHigh)
   /** Fling threshold for drag-to-dismiss, px/s. */
   const val FlingVelocity = 1200f
-  val pageEnter: EnterTransition = fadeIn(enter(Medium))
-  val pageExit: ExitTransition = fadeOut(exit(Short))
+  // 0.19: abrir/fechar coleções mais lento e elegante, com um quique leve.
+  /** Total time the seekable screen transition plays (linear clock, so the children's springs keep their own shape). */
+  const val OpenMs = 720; const val CloseMs = 560; const val Stagger = 80
+  /** Shared cover bounds: soft spring with a slight overshoot (ζ 0.8). Opening is softer than closing. */
+  fun <T> coverOpen() = spring<T>(dampingRatio = 0.8f, stiffness = 210f)
+  fun <T> coverClose() = spring<T>(dampingRatio = 0.8f, stiffness = 300f)
+  fun <T> clock(close: Boolean) = tween<T>(if (close) CloseMs else OpenMs, easing = LinearEasing)
+  /** Content follows the cover ~80 ms later: fade + small rise on a gentle spring (translation only, never layout). */
+  val pageEnter: EnterTransition = fadeIn(tween(420, delayMillis = Stagger, easing = Standard)) +
+    slideInVertically(spring(dampingRatio = 0.8f, stiffness = 230f)) { it / 28 }
+  val pageExit: ExitTransition = fadeOut(tween(240, easing = EmphasizedAccelerate))
 }
 
 /** Toque com peso: afunda para 95% e escurece de leve; volta com mola firme. Lido só na fase de desenho. */
@@ -56,18 +65,18 @@ val LocalAnimScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable fun Modifier.sharedCover(key: String): Modifier {
   val s = LocalShared.current ?: return this; val v = LocalAnimScope.current ?: return this
-  return with(s) { this@sharedCover.sharedElement(rememberSharedContentState(key), v, boundsTransform = { _, _ -> Motion.enter(Motion.Long) }) }
+  return with(s) { this@sharedCover.sharedElement(rememberSharedContentState(key), v, boundsTransform = { a, b -> if (b.width * b.height >= a.width * a.height) Motion.coverOpen() else Motion.coverClose() }) }
 }
 
 /** Corner radius that morphs while this screen enters/leaves (radius [from] outside → [to] when settled). */
 @Composable fun morphCorner(from: Dp, to: Dp): State<Dp>? {
   val v = LocalAnimScope.current ?: return null
-  return v.transition.animateDp(transitionSpec = { Motion.enter(Motion.Long) }, label = "corner") { if (it == EnterExitState.Visible) to else from }
+  return v.transition.animateDp(transitionSpec = { Motion.coverOpen() }, label = "corner") { if (it == EnterExitState.Visible) to else from }
 }
 
 /** Title/controls: fade + slight rise on enter, quick fade on exit. */
 @Composable fun Modifier.enterRise(): Modifier {
   val v = LocalAnimScope.current ?: return this
-  return with(v) { this@enterRise.animateEnterExit(enter = fadeIn(Motion.enter(Motion.Long)) + slideInVertically(Motion.enter(Motion.Long)) { it / 8 },
+  return with(v) { this@enterRise.animateEnterExit(enter = fadeIn(tween(420, delayMillis = Motion.Stagger * 2, easing = Motion.Standard)) + slideInVertically(spring(0.8f, 230f)) { it / 8 },
     exit = fadeOut(Motion.exit())) }
 }
