@@ -9,6 +9,7 @@ import androidx.work.*
 import com.rise.musique.ui.Mode
 import com.yausername.youtubedl_android.YoutubeDL
 import kotlinx.coroutines.sync.*
+import kotlinx.coroutines.CancellationException
 
 /** Cada item é um trabalho independente (cancelar um não derruba os outros); o Mutex garante um por vez. */
 class DownloadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
@@ -22,18 +23,21 @@ class DownloadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
   override suspend fun doWork(): Result = lock.withLock {
     if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel(CH, "Downloads", NotificationManager.IMPORTANCE_LOW))
     val d = inputData; val title = d.getString("title") ?: "Download"
-    runCatching { setForeground(info(title, 0f)) }
-    setProgress(workDataOf("p" to 0f, "running" to true))
     var last = 0L
     runCatching {
-      Engine.download(applicationContext, d.getString("url")!!, Mode.valueOf(d.getString("mode")!!), d.getString("quality")!!,
+      setForeground(info(title, 0f))
+      setProgress(workDataOf("p" to 0f, "running" to true))
+      val item = Engine.download(applicationContext, d.getString("url")!!, Mode.valueOf(d.getString("mode")!!), d.getString("quality")!!,
         d.getString("format") ?: "MP3", d.getString("cut"), d.getString("tree")?.let(Uri::parse), id.toString()) { p, line ->
         val now = System.currentTimeMillis()
         if (now - last > 500) { last = now
           setProgressAsync(workDataOf("p" to p, "line" to line, "running" to true)); nm.notify(id.hashCode(), notif(title, p)) }
       }
-    }.fold({ HistoryStore.add(applicationContext, it.copy(art = d.getString("art").orEmpty(), artist = d.getString("artist").orEmpty())); Jobs.forget(applicationContext, id.toString()); Result.success() },
-      { if (isStopped) Result.failure() else Result.failure(workDataOf("err" to (it.message?.lineSequence()?.lastOrNull { l -> l.isNotBlank() }?.take(140) ?: "erro"))) })
+      HistoryStore.add(applicationContext, item.copy(art = d.getString("art").orEmpty(), artist = d.getString("artist").orEmpty()))
+      Jobs.forget(applicationContext, id.toString())
+    }.fold({ Result.success() },
+      { if (it is CancellationException) { YoutubeDL.getInstance().destroyProcessById(id.toString()); throw it }
+        Result.failure(workDataOf("err" to (it.message?.lineSequence()?.lastOrNull { l -> l.isNotBlank() }?.take(140) ?: "erro"))) })
   }
   companion object {
     const val CH = "downloads"; const val TAG = "rise"
@@ -58,3 +62,4 @@ object Jobs {
   fun get(c: Context, id: String): Data? = prefs(c).getString(id, null)?.let { s ->
     val o = org.json.JSONObject(s); Data.Builder().apply { o.keys().forEach { k -> putString(k, o.getString(k)) } }.build() }
 }
+

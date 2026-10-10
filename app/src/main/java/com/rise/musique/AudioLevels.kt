@@ -10,6 +10,7 @@ import kotlin.math.*
  * Lê o áudio que o player está tocando (cópia do PCM, sem microfone) e resume em 8 faixas de energia.
  * As faixas vêm de filtros passa-baixa encadeados: grave, médio-grave, médio... até agudo.
  */
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 object AudioLevels : TeeAudioProcessor.AudioBufferSink {
   val bands = MutableStateFlow(FloatArray(8))
   private var enc = C.ENCODING_INVALID; private var ch = 2; private var sr = 44100
@@ -44,3 +45,4 @@ object AudioLevels : TeeAudioProcessor.AudioBufferSink {
   }
   fun silence() { smooth.fill(0f); bands.value = FloatArray(8) }
 }
+

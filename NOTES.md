@@ -1,5 +1,11 @@
 # Rise Musique — notas do projeto
 
+## Versão GPT (0.7.0)
+
+A branch `gpt` agora usa `com.rise.musique.gpt`, assinatura local própria e releases
+em `Marcelov07br/rise-musique-releases`. Consultar `UPDATES.md` e `RELEASE_NOTES.md`
+para o fluxo atual. As informações abaixo documentam a versão original do Grok.
+
 App Android (Kotlin + Jetpack Compose + Material 3) que busca e baixa música/vídeo do YouTube com yt-dlp + ffmpeg embutidos (youtubedl-android 0.18.1). Dono: Marce. Versão atual: 0.6 código / build "v8" (debug).
 
 ## Como compilar (no computador do bot)
@@ -30,3 +36,4 @@ App Android (Kotlin + Jetpack Compose + Material 3) que busca e baixa música/v�
 ## Próximos passos combinados
 1. Subir o código pro GitHub privado `Marcelov07br/rise-musique`.
 2. Atualização automática: repositório público `rise-musique-releases` com os APKs; GitHub Actions compila/assina/publica ao marcar tag `vX.Y`; app confere a release ao abrir. Precisa: chave de assinatura definitiva (guardar cópia fora do GitHub) + token do Marce com acesso aos dois repos (fazer no chat particular). Trocar a chave exige reinstalar uma vez — usar Exportar/Importar backup.
+

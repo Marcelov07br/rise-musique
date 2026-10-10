@@ -8,5 +8,7 @@ class RiseApplication : Application() {
     Thread.setDefaultUncaughtExceptionHandler { t, e ->
       runCatching { java.io.File(filesDir, "crash.txt").writeText("Rise Musique ${BuildConfig.VERSION_NAME} · Android ${android.os.Build.VERSION.RELEASE} · ${android.os.Build.MODEL}\n\n" + e.stackTraceToString()) }
       prev?.uncaughtException(t, e) }
-    runCatching { YoutubeDL.getInstance().init(this); FFmpeg.getInstance().init(this) } }
+    runCatching { YoutubeDL.getInstance().init(this); FFmpeg.getInstance().init(this) }
+      .onFailure { java.io.File(filesDir, "crash.txt").writeText("Não foi possível inicializar o motor de downloads.\n" + it.stackTraceToString()) } }
 }
+

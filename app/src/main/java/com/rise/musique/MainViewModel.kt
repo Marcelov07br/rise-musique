@@ -17,9 +17,12 @@ import com.rise.musique.ui.*
 import kotlinx.coroutines.*
 import java.io.File
 
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class MainViewModel(app: Application) : AndroidViewModel(app) {
   private val prefs = app.getSharedPreferences("rise", 0)
   private var controller: MediaController? = null
+  private var controllerFuture: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
+  private var cleared = false
   private val pending = mutableListOf<(MediaController) -> Unit>()
   private fun withPlayer(block: (MediaController) -> Unit) { controller?.let(block) ?: pending.add(block) }
   private var lyricsFor: String? = null
@@ -35,7 +38,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   init {
     viewModelScope.launch { Engine.update(app) }
     val fut = MediaController.Builder(app, SessionToken(app, ComponentName(app, PlaybackService::class.java))).buildAsync()
-    fut.addListener({ runCatching { fut.get() }.onSuccess { c -> controller = c; pending.forEach { it(c) }; pending.clear() }
+    controllerFuture = fut
+    fut.addListener({ if (cleared) return@addListener
+      runCatching { fut.get() }.onSuccess { c -> controller = c
+        c.addListener(object : Player.Listener { override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+          state = state.copy(status = "Não foi possível tocar este arquivo: ${error.errorCodeName}", now = state.now?.copy(loading = false, playing = false))
+        } })
+        pending.forEach { it(c) }; pending.clear() }
       .onFailure { state = state.copy(status = "Player indisponível: ${it.message}") } }, ContextCompat.getMainExecutor(app))
     viewModelScope.launch { while (true) { delay(250); poll() } }
     viewModelScope.launch {
@@ -65,8 +74,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun onFormat(f: String) { prefs.edit().putString("format", f).apply(); state = state.copy(format = f) }
   fun onCut(on: Boolean, start: String, end: String) { state = state.copy(cutOn = on, cutStart = start, cutEnd = end) }
   fun onFolder(uri: Uri?) { uri ?: return
-    ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-    prefs.edit().putString("tree", uri.toString()).apply(); state = state.copy(folder = uri) }
+    runCatching {
+      ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+      prefs.edit().putString("tree", uri.toString()).apply(); state = state.copy(folder = uri)
+    }.onFailure { state = state.copy(status = "Não foi possível autorizar essa pasta. Escolha outra pasta.") } }
 
   fun onIncomingLink(text: String?) {
     val link = text?.let { Regex("https?://\\S+").find(it)?.value } ?: return
@@ -77,10 +88,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun search() {
     if (state.query.isBlank() || state.searching) return
     stopPreview(); state = state.copy(searching = true, results = emptyList(), selected = emptySet(), status = "")
+    val query = state.query
     viewModelScope.launch {
-      runCatching { Engine.search(state.query) }
+      runCatching { Engine.search(query).also { ensureActive() } }
         .onSuccess { r -> state = state.copy(searching = false, results = r,
-          selected = if (r.size == 1) setOf(r[0].url) else emptySet(), isPlaylist = Engine.isPlaylist(state.query),
+          selected = if (r.size == 1) setOf(r[0].url) else emptySet(), isPlaylist = Engine.isPlaylist(query),
           status = if (r.isEmpty()) "Nada encontrado" else "") }
         .onFailure { state = state.copy(searching = false, status = "Erro na busca: ${it.message?.lineSequence()?.lastOrNull()?.take(100)}") }
     }
@@ -101,13 +113,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     stopPreview(); state = state.copy(previewing = r.url, previewLoading = true,
       now = NowPlaying(r.url, r.title, r.channel, r.thumb, loading = true, isPreview = true))
     previewJob = viewModelScope.launch {
-      runCatching { Engine.audioStream(r.url) }.onSuccess { stream ->
+      runCatching { Engine.audioStream(r.url).also { ensureActive() } }.onSuccess { stream ->
         val start = if (r.duration > 90) 30_000L else 0L
         withPlayer { p -> p.setMediaItem(MediaItem.Builder().setMediaId("preview:" + r.url).setUri(stream).setMediaMetadata(meta(r.title, r.channel, r.thumb))
           .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(start + 30_000).build()).build())
           p.prepare(); p.play() }
         state = state.copy(previewLoading = false)
-      }.onFailure { state = state.copy(previewing = null, previewLoading = false, now = null, status = "Prévia indisponível") }
+      }.onFailure { if (it is CancellationException) throw it
+        state = state.copy(previewing = null, previewLoading = false, now = null, status = "Prévia indisponível") }
     }
   }
   private fun stopPreview() { previewJob?.cancel()
@@ -117,7 +130,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   /** Toca o histórico como fila, começando pelo item tocado. */
   fun play(h: HistoryItem) {
     val list = visibleHistory(state).ifEmpty { state.history }.mapNotNull { item -> uriOf(item)?.let { u -> item to u } }
-    val start = list.indexOfFirst { it.first == h }.takeIf { it >= 0 } ?: return
+    val start = list.indexOfFirst { it.first == h }.takeIf { it >= 0 } ?: return.also {
+      state = state.copy(status = "Arquivo indisponível. Um backup de outra instalação não transfere os arquivos de música.") }
     stopPreview()
     val items = list.map { (item, u) -> MediaItem.Builder().setMediaId(item.uri).setUri(u)
       .setMediaMetadata(meta(item.title, item.artist.ifBlank { item.meta }, item.art)).build() }
@@ -125,7 +139,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     state = state.copy(now = NowPlaying(h.uri, h.title, h.artist.ifBlank { h.meta }, h.art, loading = true))
   }
 
-  private fun poll() { val p = controller ?: return; val n = state.now ?: return
+  private fun poll() { val p = controller ?: return
+    val deadline = p.sessionExtras.getLong(PlaybackService.SLEEP_AT, 0)
+    if (deadline != state.sleepAt) state = state.copy(sleepAt = deadline)
+    val n = state.now ?: p.currentMediaItem?.let { item ->
+      NowPlaying(item.mediaId, item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(),
+        item.mediaMetadata.artworkUri?.toString().orEmpty(), isPreview = item.mediaId.startsWith("preview:"))
+    } ?: return
     val item = p.currentMediaItem
     if (item == null) { if (!n.loading && !n.isPreview) state = state.copy(now = null); return }
     val m = item.mediaMetadata; val preview = item.mediaId.startsWith("preview:")
@@ -152,7 +172,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun next() = withPlayer { it.seekToNextMediaItem() }
   fun prev() = withPlayer { p -> if (p.currentPosition > 3000 || !p.hasPreviousMediaItem()) p.seekTo(0) else p.seekToPreviousMediaItem() }
   fun shuffle() = withPlayer { it.shuffleModeEnabled = !it.shuffleModeEnabled }
-  fun closePlayer() { previewJob?.cancel(); controller?.stop(); controller?.clearMediaItems(); lyricsFor = null
+  fun closePlayer() { sleep(0); previewJob?.cancel(); controller?.stop(); controller?.clearMediaItems(); lyricsFor = null
     state = state.copy(now = null, previewing = null, previewLoading = false) }
 
   private fun secs(t: String): Int? = t.trim().split(":").map { it.toIntOrNull() ?: return null }
@@ -173,34 +193,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   fun favorite(h: HistoryItem) { Library.toggleFavorite(ctx, h.uri); state = state.copy(favorites = Library.favorites(ctx)) }
-  fun addToPlaylist(h: HistoryItem, name: String) { Library.addToPlaylist(ctx, name, h.uri); state = state.copy(playlists = Library.playlists(ctx), status = "Adicionada a $name") }
+  fun addToPlaylist(h: HistoryItem, name: String) { runCatching { Library.addToPlaylist(ctx, name.trim(), h.uri) }
+    .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Adicionada a ${name.trim()}") }
+    .onFailure { state = state.copy(status = it.message.orEmpty()) } }
   fun removeFromPlaylist(h: HistoryItem) { Library.removeFromPlaylist(ctx, state.historyView, h.uri); state = state.copy(playlists = Library.playlists(ctx)) }
   fun deletePlaylist(n: String) { Library.deletePlaylist(ctx, n); state = state.copy(playlists = Library.playlists(ctx), historyView = "Tudo") }
   fun historyFilter(q: String) { state = state.copy(historyFilter = q) }
   fun historyView(v: String) { state = state.copy(historyView = v) }
-  fun exportBackup(to: Uri?) { to ?: return; runCatching { Library.export(ctx, to) }
-    .onSuccess { state = state.copy(status = "Backup salvo") }.onFailure { state = state.copy(status = "Falha no backup: ${it.message}") } }
-  fun importBackup(from: Uri?) { from ?: return; runCatching { Library.import(ctx, from) }
+  fun exportBackup(to: Uri?) { to ?: return; viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { Library.export(ctx, to) } }
+    .onSuccess { state = state.copy(status = "Backup de biblioteca salvo. Os arquivos de música devem ser guardados separadamente.") }.onFailure { state = state.copy(status = "Falha no backup: ${it.message}") } } }
+  fun importBackup(from: Uri?) { from ?: return; viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { Library.import(ctx, from) } }
     .onSuccess { n -> state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx),
-      status = "Backup importado: $n músicas novas no histórico") }.onFailure { state = state.copy(status = "Não deu pra importar: ${it.message}") } }
+      status = "Backup importado: $n registros. O backup não inclui músicas nem permissões de outras instalações.") }.onFailure { state = state.copy(status = "Não deu pra importar: ${it.message}") } } }
 
-  private var sleepJob: Job? = null
   /** Temporizador: em `min` minutos baixa o volume aos poucos por 8 s e pausa. 0 cancela. */
-  fun sleep(min: Int) { sleepJob?.cancel(); controller?.volume = 1f
-    if (min <= 0) { state = state.copy(sleepAt = 0); return }
-    val at = System.currentTimeMillis() + min * 60_000L; state = state.copy(sleepAt = at)
-    sleepJob = viewModelScope.launch { delay(min * 60_000L - 8_000)
-      for (i in 40 downTo 0) { controller?.volume = i / 40f; delay(200) }
-      controller?.pause(); controller?.volume = 1f; state = state.copy(sleepAt = 0) } }
+  fun sleep(min: Int) = withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.SLEEP, android.os.Bundle.EMPTY),
+    android.os.Bundle().apply { putInt("minutes", min) }) }
 
   fun cancel(q: QueueItem) = DownloadWorker.cancel(ctx, q.id)
   fun retry(q: QueueItem) { val d = Jobs.get(ctx, q.id) ?: return; Jobs.forget(ctx, q.id); DownloadWorker.enqueue(ctx, d) }
   fun dismiss(q: QueueItem) { Jobs.forget(ctx, q.id); state = state.copy(queue = state.queue - q) }
 
-  private fun uriOf(h: HistoryItem): Uri? = when {
+  private fun uriOf(h: HistoryItem): Uri? = runCatching { when {
     h.uri.startsWith("content://") -> Uri.parse(h.uri)
-    h.uri.isNotBlank() && File(h.uri).exists() -> FileProvider.getUriForFile(ctx, "com.rise.musique.files", File(h.uri))
-    else -> null }
+    h.uri.isNotBlank() && File(h.uri).exists() -> FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", File(h.uri))
+    else -> null } }.getOrNull()
   private fun ext(h: HistoryItem) = h.meta.substringBefore(" ·").lowercase()
 
   /** Devolve a Intent pra Activity abrir (abrir no player ou compartilhar). */
@@ -210,9 +227,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     return Intent.createChooser(i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null) }
 
   fun delete(h: HistoryItem) {
-    runCatching { if (h.uri.startsWith("content://")) DocumentsContract.deleteDocument(ctx.contentResolver, Uri.parse(h.uri)) else File(h.uri).delete() }
-    HistoryStore.remove(ctx, h); state = state.copy(history = HistoryStore.load(ctx))
+    viewModelScope.launch {
+      runCatching { withContext(Dispatchers.IO) {
+        val deleted = if (h.uri.startsWith("content://")) DocumentsContract.deleteDocument(ctx.contentResolver, Uri.parse(h.uri)) else File(h.uri).let { !it.exists() || it.delete() }
+        require(deleted) { "O arquivo não pôde ser apagado" }
+        HistoryStore.remove(ctx, h); Library.removeTrack(ctx, h.uri)
+      } }.onSuccess { state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx)) }
+        .onFailure { state = state.copy(status = "Falha ao apagar: ${it.message}") }
+    }
   }
 
-  override fun onCleared() { controller?.release() }
+  override fun onCleared() { cleared = true; pending.clear(); controllerFuture?.let(MediaController::releaseFuture); super.onCleared() }
 }
+

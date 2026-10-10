@@ -53,7 +53,7 @@ class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, v
   val favorite: (HistoryItem) -> Unit = {}, val addToPlaylist: (HistoryItem, String) -> Unit = { _, _ -> }, val removeFromPlaylist: (HistoryItem) -> Unit = {},
   val deletePlaylist: (String) -> Unit = {}, val historyFilter: (String) -> Unit = {}, val historyView: (String) -> Unit = {},
   val exportBackup: () -> Unit = {}, val importBackup: () -> Unit = {}, val sleep: (Int) -> Unit = {},
-  val open: (HistoryItem) -> Unit = {}, val share: (HistoryItem) -> Unit = {}, val delete: (HistoryItem) -> Unit = {})
+  val open: (HistoryItem) -> Unit = {}, val share: (HistoryItem) -> Unit = {}, val delete: (HistoryItem) -> Unit = {}, val updates: () -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -96,8 +96,9 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
           Modifier.graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
             .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 2f, it.size.height / 2f) }) {
         RoundIconButton(Icons.Rounded.History, "Histórico", onHistory) }; Spacer(Modifier.width(14.dp)) }
-      Text("RISE MUSIQUE", Modifier.weight(1f), color = c.onSurface, fontWeight = FontWeight.Light, letterSpacing = 4.sp, fontSize = 18.sp)
+      Text("RISE MUSIQUE", Modifier.weight(1f), color = c.onSurface, fontWeight = FontWeight.Light, letterSpacing = 4.sp, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
       RoundIconButton(Icons.Rounded.Contrast, "Tema", a.toggleTheme)
+      RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", a.updates)
     }
     Row(Modifier.fillMaxWidth().clip(CircleShape).background(c.surfaceVariant).padding(start = 18.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
       verticalAlignment = Alignment.CenterVertically) {
@@ -117,7 +118,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
     }
     if (state.mode == Mode.Musica) PillSelector(audioFormats, state.format, { it }, a.format, Modifier.fillMaxWidth())
     if (state.mode == Mode.Musica && state.format == "FLAC")
-      Text("FLAC é sem perda: a taxa de bits não se aplica.", color = c.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+      Text("FLAC preserva o áudio obtido; não recupera qualidade perdida na fonte.", color = c.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
     else PillSelector(state.mode.qualities, state.quality, { it }, a.quality, Modifier.fillMaxWidth())
     if (state.results.size > 1 && state.isPlaylist) Row(verticalAlignment = Alignment.CenterVertically) {
       Text("${state.results.size} faixas · ${state.selected.size} marcadas", Modifier.weight(1f), color = c.onSurfaceVariant, fontSize = 13.sp)
@@ -330,3 +331,4 @@ fun visibleHistory(state: UiState): List<HistoryItem> {
     } }, confirmButton = { TextButton({ if (new.isNotBlank()) pick(new.trim()) }, enabled = new.isNotBlank()) { Text("Criar e adicionar") } },
     dismissButton = { TextButton(dismiss) { Text("Cancelar") } })
 }
+

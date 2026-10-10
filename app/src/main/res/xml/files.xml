@@ -1,1 +1,2 @@
-<paths><external-files-path name="dl" path="."/></paths>
+<paths><external-files-path name="dl" path="."/><cache-path name="updates" path="updates/"/></paths>
+

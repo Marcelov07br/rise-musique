@@ -10,3 +10,7 @@ app/build/
 keystore.properties
 .env
 crash.txt
+signing/
+.build-tmp/
+delivery/
+

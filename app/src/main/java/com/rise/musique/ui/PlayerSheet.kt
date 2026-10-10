@@ -217,14 +217,17 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 /** Cor de destaque da capa, extraída com Palette. */
 @Composable fun rememberArtColor(url: String): Color {
   val ctx = androidx.compose.ui.platform.LocalContext.current
-  val color by produceState(Color.White, url) {
-    if (url.isBlank()) return@produceState
+  var color by remember(url) { mutableStateOf(Color.White) }
+  LaunchedEffect(url) {
+    if (url.isBlank()) return@LaunchedEffect
+    try {
     val res = coil.ImageLoader(ctx).execute(ImageRequest.Builder(ctx).data(url).size(128).allowHardware(false).build())
-    val bmp = (res.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return@produceState
+    val bmp = (res.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return@LaunchedEffect
     val pal = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { androidx.palette.graphics.Palette.from(bmp).generate() }
-    val sw = pal.vibrantSwatch ?: pal.lightVibrantSwatch ?: pal.dominantSwatch ?: return@produceState
+    val sw = pal.vibrantSwatch ?: pal.lightVibrantSwatch ?: pal.dominantSwatch ?: return@LaunchedEffect
     // clareia um pouco pra ficar legível sobre o fundo escuro, sem saturar demais
-    value = androidx.compose.ui.graphics.lerp(Color(sw.rgb), Color.White, .25f)
+    color = androidx.compose.ui.graphics.lerp(Color(sw.rgb), Color.White, .25f)
+    } catch (e: CancellationException) { throw e } catch (_: Exception) { color = Color.White }
   }
   return color
 }
@@ -284,3 +287,4 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   }
 }
 val LocalSleep = androidx.compose.runtime.compositionLocalOf { 0L }
+

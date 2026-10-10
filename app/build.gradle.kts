@@ -4,7 +4,16 @@ plugins {
 }
 android {
   namespace = "com.rise.musique"; compileSdk = 35
-  defaultConfig { applicationId = "com.rise.musique"; minSdk = 26; targetSdk = 35; versionCode = 6; versionName = "0.6" }
+  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 7; versionName = "0.7.0" }
+  signingConfigs {
+    create("stable") {
+      System.getenv("RISE_KEYSTORE")?.let { storeFile = file(it) }
+      storePassword = System.getenv("RISE_STORE_PASSWORD")
+      keyAlias = System.getenv("RISE_KEY_ALIAS")
+      keyPassword = System.getenv("RISE_KEY_PASSWORD")
+    }
+  }
+  buildTypes { getByName("release") { signingConfig = signingConfigs.getByName("stable") } }
   buildFeatures { compose = true; buildConfig = true }
   compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
   kotlinOptions { jvmTarget = "17" }
@@ -30,4 +39,6 @@ dependencies {
   implementation("androidx.work:work-runtime-ktx:2.10.0")
   implementation("androidx.core:core-splashscreen:1.0.1")
   testImplementation("junit:junit:4.13.2")
+  testImplementation("org.json:json:20240303")
 }
+
