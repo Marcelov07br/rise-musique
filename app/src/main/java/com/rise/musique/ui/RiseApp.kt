@@ -66,7 +66,7 @@ class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, v
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
-  HistoryItem("Vídeo de exemplo", "MP4 · 1080p · 142 MB"), HistoryItem("Outra faixa", "M4A · 256k · 6,1 MB"))
+  HistoryItem("Vídeo de exemplo", "MP4 · 1080p · 142 MB"), HistoryItem("Outra faixa", "M4A · 256k · 6,1 MB")).mapIndexed { i, h -> h.copy(uri = "sample:$i") }
 val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)", "Artista Exemplo", 214, ""),
   SearchResult("b", "Música de exemplo (Ao Vivo)", "Canal Exemplo", 251, ""),
   SearchResult("c", "Música de exemplo · versão acústica", "Outro Canal", 189, ""))

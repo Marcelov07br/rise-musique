@@ -45,6 +45,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fut.addListener({ if (cleared) return@addListener
       runCatching { fut.get() }.onSuccess { c -> controller = c
         c.addListener(object : Player.Listener { override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+          val id = c.currentMediaItem?.mediaId
+          if (id != null && id.startsWith("preview:") && previewRetried != id) { previewRetried = id; retryPreview(id.removePrefix("preview:")); return }
           state = state.copy(status = "Não foi possível tocar este arquivo: ${error.errorCodeName}", now = state.now?.copy(loading = false, playing = false))
         } })
         pending.forEach { it(c) }; pending.clear() }
@@ -130,12 +132,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private fun meta(title: String, artist: String, art: String) = MediaMetadata.Builder().setTitle(title).setArtist(artist)
     .apply { if (art.isNotBlank()) setArtworkUri(Uri.parse(art)) }.build()
 
+  private var previewRetried: String? = null
+  private var lastPreview: SearchResult? = null
+  private fun retryPreview(url: String) {
+    val r = lastPreview?.takeIf { it.url == url } ?: return
+    previewJob?.cancel()
+    previewJob = viewModelScope.launch { Engine.update(getApplication(), force = true); startPreview(r) }
+  }
+
   fun togglePreview(r: SearchResult) {
     if (state.previewing == r.url) { stopPreview(); return }
     stopPreview(); state = state.copy(previewing = r.url, previewLoading = true,
       now = NowPlaying(r.url, r.title, r.channel, r.thumb, loading = true, isPreview = true))
-    previewJob = viewModelScope.launch {
-      runCatching { Engine.audioStream(r.url).also { ensureActive() } }.onSuccess { stream ->
+    lastPreview = r; previewRetried = null
+    previewJob = viewModelScope.launch { startPreview(r) }
+  }
+  private suspend fun startPreview(r: SearchResult) = coroutineScope {
+      runCatching { Engine.audioStream(r.url).url.also { ensureActive() } }.onSuccess { stream ->
         val start = if (r.duration > 90) 30_000L else 0L
         withPlayer { p -> p.setMediaItem(MediaItem.Builder().setMediaId("preview:" + r.url).setUri(stream).setMediaMetadata(meta(r.title, r.channel, r.thumb))
           .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(start + 30_000).build()).build())
@@ -143,7 +156,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         state = state.copy(previewLoading = false)
       }.onFailure { if (it is CancellationException) throw it
         state = state.copy(previewing = null, previewLoading = false, now = null, status = "Prévia indisponível") }
-    }
   }
   private fun stopPreview() { previewJob?.cancel()
     if (state.now?.isPreview == true) { controller?.stop(); controller?.clearMediaItems(); state = state.copy(now = null, playbackQueue = emptyList(), queueOpen = false) }

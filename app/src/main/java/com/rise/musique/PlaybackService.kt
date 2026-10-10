@@ -78,7 +78,8 @@ class PlaybackService : MediaSessionService() {
     }
     val player = ExoPlayer.Builder(this, renderers)
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
-      .setHandleAudioBecomingNoisy(true).build()
+      .setHandleAudioBecomingNoisy(true)
+      .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(streamDataSource(this))).build()
     val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
     session = MediaSession.Builder(this, player).setSessionActivity(open).setCallback(object : MediaSession.Callback {
       override fun onConnect(s: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
@@ -117,3 +118,15 @@ class PlaybackService : MediaSessionService() {
     session?.run { player.release(); release() }; session = null; super.onDestroy() }
 }
 
+/** HTTP stack that sends the same User-Agent/headers yt-dlp used to resolve the googlevideo URL. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+internal fun streamDataSource(ctx: Context): androidx.media3.datasource.DataSource.Factory {
+  val http = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+    .setUserAgent(Engine.DEFAULT_UA).setAllowCrossProtocolRedirects(true)
+    .setConnectTimeoutMs(15_000).setReadTimeoutMs(20_000)
+  val resolving = androidx.media3.datasource.ResolvingDataSource.Factory(http) { spec ->
+    val h = Engine.streamHeaders[spec.uri.toString()]
+    if (h.isNullOrEmpty()) spec else spec.withAdditionalHeaders(h.filterKeys { !it.equals("Accept-Encoding", true) })
+  }
+  return androidx.media3.datasource.DefaultDataSource.Factory(ctx, resolving)
+}

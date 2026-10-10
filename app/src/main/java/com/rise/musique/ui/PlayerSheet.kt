@@ -54,11 +54,14 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
     val margin = with(density) { 12.dp.toPx() }
     val p = f.value.coerceIn(0f, 1f) // nunca sai de 0..1, nem em rebote
     val dragState = rememberDraggableState { d -> scope.launch { f.snapTo((f.value - d / (fullH - miniH)).coerceIn(0f, 1f)) } }
-    val sheetTop = lerp(fullH - miniH - margin - with(density) { WindowInsets.navigationBars.getBottom(this).toFloat() + 82.dp.toPx() }, 0f, p)
+    // Mini: cartão compacto (miniH) logo acima da barra de navegação, com a mesma margem dos lados e embaixo.
+    val navBottom = WindowInsets.navigationBars.getBottom(density).toFloat()
+    val sheetTop = lerp(fullH - miniH - margin - navBottom, 0f, p)
+    val sheetH = lerp(miniH, fullH, p).coerceIn(miniH, fullH)
     val corner = lerp(34f, 0f, p) + back * 36f
     val scale = 1f - back * 0.12f
 
-    Box(Modifier.fillMaxWidth().height(with(density) { (fullH - sheetTop).toDp() })
+    Box(Modifier.fillMaxWidth().height(with(density) { sheetH.toDp() })
         .offset { IntOffset(0, sheetTop.toInt()) }
         .padding(horizontal = with(density) { lerp(margin, 0f, p).toDp() })
         .graphicsLayer { scaleX = scale; scaleY = scale; shape = RoundedCornerShape(corner.dp); clip = true }

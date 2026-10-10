@@ -31,10 +31,36 @@ object Engine {
   }
 
   /** URL direta do áudio, pra prévia. */
-  suspend fun audioStream(url: String): String = withContext(Dispatchers.IO) {
-    runInterruptible { YoutubeDL.getInstance().execute(YoutubeDLRequest(url).apply { addOption("-f", "ba"); addOption("-g"); addOption("--no-playlist") }) }
-      .out.lineSequence().first { it.startsWith("http") }
+  /** UA yt-dlp uses for the web client; ExoPlayer must send the same headers or googlevideo may answer 403. */
+  const val DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+  /** Stream URL -> HTTP headers yt-dlp reported for it (read by PlaybackService's data source, same process). */
+  val streamHeaders = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
+  private val updateMutex = kotlinx.coroutines.sync.Mutex()
+  @Volatile private var updated = false
+
+  data class Stream(val url: String, val headers: Map<String, String>)
+
+  /** Parses the `-j` output of yt-dlp into the direct URL and headers. Visible for tests. */
+  fun parseStream(json: String): Stream {
+    val o = JSONObject(json.lineSequence().first { it.trimStart().startsWith("{") })
+    val url = o.optString("url").ifBlank {
+      o.optJSONArray("requested_formats")?.optJSONObject(0)?.optString("url").orEmpty() }
+    require(url.startsWith("http")) { "sem URL de áudio" }
+    val h = o.optJSONObject("http_headers")
+    val headers = buildMap { h?.keys()?.forEach { k -> put(k, h.getString(k)) } }
+    return Stream(url, headers)
   }
+
+  suspend fun audioStream(url: String): Stream = withContext(Dispatchers.IO) {
+    if (!updated) updateMutex.withLockSafe { }  // wait for an in-flight startup update
+    val out = runInterruptible { YoutubeDL.getInstance().execute(YoutubeDLRequest(url).apply {
+      addOption("-f", "ba[ext=m4a]/ba[acodec^=mp4a]/ba/b"); addOption("-j"); addOption("--no-playlist")
+      addOption("--no-warnings")
+    }) }.out
+    parseStream(out).also { streamHeaders[it.url] = it.headers }
+  }
+
+  private suspend inline fun kotlinx.coroutines.sync.Mutex.withLockSafe(block: () -> Unit) { lock(); try { block() } finally { unlock() } }
 
   suspend fun download(ctx: Context, url: String, mode: Mode, quality: String, format: String, cut: String?, tree: Uri?, procId: String,
                        onProgress: (Float, String) -> Unit): HistoryItem = withContext(Dispatchers.IO) {
@@ -87,8 +113,11 @@ object Engine {
   fun mime(ext: String) = when (ext.lowercase()) { "mp4" -> "video/mp4"; "m4a" -> "audio/mp4"; "opus" -> "audio/ogg"
     "flac" -> "audio/flac"; "webm" -> "video/webm"; "mkv" -> "video/x-matroska"; "wav" -> "audio/wav"; "ogg" -> "audio/ogg"; "aac" -> "audio/aac"; else -> "audio/mpeg" }
 
-  suspend fun update(ctx: Context) = withContext(Dispatchers.IO) {
-    runCatching { YoutubeDL.getInstance().updateYoutubeDL(ctx, YoutubeDL.UpdateChannel.STABLE) } }
+  suspend fun update(ctx: Context, force: Boolean = false) = withContext(Dispatchers.IO) {
+    updateMutex.withLockSafe {
+      if (!updated || force) runCatching { YoutubeDL.getInstance().updateYoutubeDL(ctx, YoutubeDL.UpdateChannel.STABLE) }
+      updated = true
+    } }
 }
 
 object HistoryStore {
