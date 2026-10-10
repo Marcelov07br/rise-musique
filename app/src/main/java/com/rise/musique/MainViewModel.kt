@@ -42,6 +42,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private set
 
   init {
+    viewModelScope.launch { state = state.copy(stats = withContext(Dispatchers.IO) { runCatching { PlayStats.summarize(PlayStats.load(app)) }.getOrNull() }) }
     refreshTrackInfo(); LibraryScanWorker.schedule(app); if (FollowStore.all(app).isNotEmpty()) FollowWorker.schedule(app)
     viewModelScope.launch { Engine.update(app) }
     val fut = MediaController.Builder(app, SessionToken(app, ComponentName(app, PlaybackService::class.java))).buildAsync()
@@ -267,6 +268,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun pip(on: Boolean) { state = state.copy(pip = on) }
 
   val voice by lazy { VoiceSearch(ctx, { v -> state = state.copy(voice = v) }) { text -> state = state.copy(query = text, page = "Buscar"); search(true) } }
+
+  /** Station: YouTube Music radio of up to three seeds (interleaved), with the station's own local tracks mixed in. */
+  fun playStation(st: Station) {
+    if (state.stationLoading != null) return
+    state = state.copy(stationLoading = st.id)
+    viewModelScope.launch {
+      runCatching {
+        val radios = coroutineScope { st.seeds.take(3).map { h -> async { runCatching {
+          val seed = MusicSearch.search(SearchQuery(listOf(h.artist, h.title).filter(String::isNotBlank).joinToString(" "), SearchKind.Songs)).items.firstOrNull()
+            ?: return@runCatching emptyList<SearchResult>()
+          Engine.radio(seed.url, 25) }.getOrDefault(emptyList()) } }.awaitAll() }
+        val known = state.history.map { it.title.lowercase() }.toSet()
+        val streams = StationQueue.interleave(radios).filter { st.kind != "discover" || it.title.lowercase() !in known }.take(40)
+        val queue = StationQueue.mix(streams, if (st.mixLocal) st.seeds else emptyList()).mapNotNull { e -> when (e) {
+          is SearchResult -> streamItem(e)
+          is HistoryItem -> uriOf(e)?.let { u -> MediaItem.Builder().setMediaId(e.uri).setUri(u).setMediaMetadata(meta(e.title, e.artist.ifBlank { e.meta }, e.art, e.album)).build() }
+          else -> null } }
+        if (queue.isEmpty()) error("sem faixas")
+        stopPreview()
+        withPlayer { p -> p.setMediaItems(queue, 0, 0); p.shuffleModeEnabled = false; p.prepare(); p.play() }
+        state = state.copy(stationLoading = null, now = NowPlaying(queue[0].mediaId, queue[0].mediaMetadata.title?.toString().orEmpty(),
+          queue[0].mediaMetadata.artist?.toString().orEmpty(), queue[0].mediaMetadata.artworkUri?.toString().orEmpty(), loading = true))
+      }.onFailure { if (it is CancellationException) throw it
+        state = state.copy(stationLoading = null, status = "Não deu pra montar a estação agora. Confira a conexão.") }
+    }
+  }
 
   fun saveStream() {
     val n = state.now ?: return; if (!n.streaming) return

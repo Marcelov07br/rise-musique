@@ -1,80 +1,10 @@
-# Rise Musique 0.16.0
+# Rise Musique 0.17.0
 
-## Novidades (0.16.0)
-- Busca nova, no estilo YouTube Music: separa Músicas, Vídeos, Álbuns, Artistas e Playlists, com capas em alta resolução, carregamento com esqueleto, rolagem infinita e resultados guardados por alguns minutos. As gravações oficiais aparecem primeiro; ao vivo, cover, remix e "slowed" descem, a não ser que você peça.
-- Filtros de duração (curta, média, longa) e de data de envio (hoje, semana, mês, ano).
-- Streaming completo: tocar um resultado toca a música inteira, com fila (os outros resultados vêm em seguida), letra, estatísticas e scrobble no Last.fm. Equalizador, limitador e crossfade valem também para o streaming. Se o link do YouTube expira, o app pega outro sozinho, e a próxima faixa é preparada antes.
-- Guardar: no player, salva na biblioteca o que já tocou (com tags e capa), sem baixar de novo. Se a música ainda não tocou inteira, faz o download normal.
-- Player de vídeo dentro do app, para vídeos da biblioteca e do YouTube: qualidade até 1080p/4K quando existe, tela cheia na horizontal, toque duplo para pular 10 s, deslizar para brilho (esquerda) e volume (direita), pinça para zoom e legendas quando há.
-- Picture-in-picture: o vídeo continua numa janelinha quando você sai do app, com play/pausa e próximo.
-- Busca por voz (pt-BR) com o microfone na barra de busca. A busca cantarolando não entrou: não existe um reconhecedor de melodia público e legítimo para usar no Android.
+Visual novo, inspirado nas telas de música mais bonitas que existem.
 
-# Rise Musique 0.15.0
-
-## Novidades (0.15.0)
-- Equalizador profissional de 10 bandas (31 Hz a 16 kHz), feito pelo próprio app: funciona igual em qualquer celular. Tem reforço de graves, pré-amplificador, predefinições (Flat, Bass, Vocal, Rock, Eletrônica, Acústico, Podcast) e curva de resposta ao vivo. Cada saída de áudio guarda o seu perfil (alto-falante, fone com fio, cada fone Bluetooth) e troca sozinha. "Evitar distorção" baixa o pré-amplificador automaticamente e um limitador segura os picos.
-- Normalização de volume: cada faixa local é medida uma vez em segundo plano (EBU R128) e toca a −14 LUFS, com limitador. Usa as tags ReplayGain quando o arquivo já tem. Modo álbum opcional. Prévias não são alteradas. Ordem: normalização → equalizador → limitador, junto com crossfade e Automix.
-- Letra na tela de bloqueio: a linha atual da letra sincronizada aparece na notificação e na tela de bloqueio (liga em Ajustes). Só atualiza quando a linha muda.
-- Coleções inteligentes na Biblioteca: por clima (Calmo, Foco, Animado, Festa, a partir do andamento e da energia), por gênero e por década. Abrem como álbum, com a mesma transição.
-- Downloads mais espertos: opção "Só no Wi-Fi", downloads continuam de onde pararam depois de queda de rede ou de fechar o app, e novas tentativas automáticas com espera crescente.
-- Seguir artista: na tela do artista, toque em "Seguir artista". A cada ~12 h o app procura lançamentos e avisa com um botão "Baixar".
-- Novo widget de vidro, redimensionável: 2x2 (capa e play), 4x2 (capa, título e controles) e 4x4 (capa, linha da letra, progresso e controles), com a capa desfocada de fundo.
-
-## Correções
-- Cabeçalho das playlists sem o espaço vazio embaixo dos botões.
-
-# Rise Musique 0.14.0
-
-## Novidades (0.14.0)
-- Três abas: Início (recentes, álbuns, playlists, artistas e retrospectiva), Buscar (busca unificada e downloads) e Biblioteca (tudo o que você tem). Cada aba guarda o próprio caminho e a posição da lista; tocar de novo na aba volta ao começo.
-- Tela de artista: foto, suas faixas, álbuns e as mais tocadas do YouTube com prévia e download. Abre com a mesma transição dos álbuns, fecha arrastando para baixo ou com o gesto de voltar.
-- Busca unificada: um só campo procura na sua biblioteca na hora (faixas, álbuns, artistas e playlists) e no YouTube logo depois que você para de digitar. Histórico em chips com botão de remover, links colados são reconhecidos e o teclado some ao rolar.
-- Menu da faixa (toque e segure em qualquer lista): Tocar a seguir, Adicionar à fila, Adicionar à playlist, Favoritar, Rádio, Ir para artista, Ir para álbum, Compartilhar e Apagar.
-- Desfazer: apagar, tirar da playlist e limpar a fila mostram “Desfazer” por alguns segundos; o arquivo só é apagado depois.
-- Telas vazias explicam o que fazer (biblioteca, favoritos, playlists, fila, busca, estatísticas e artista).
-- Animações um pouco mais calmas, sem quique.
-
-## Correção (0.13.1)
-- Corrigido o fechamento do app ao abrir na versão 0.13.0 (erro "SeekableTransitionState has been used in different Transitions"). A transição de abrir e fechar álbuns continua igual.
-
-## Movimento (0.13.0)
-- Abrir um álbum ou playlist agora é uma transição contínua: a capa sai do cartão e cresce até o topo da tela, os cantos se ajustam, o fundo vivo aparece e o título sobe suavemente. Fechar faz o caminho inverso até o lugar de origem.
-- Tudo pode ser interrompido: voltar no meio da animação inverte a partir de onde estava. O gesto de voltar do Android mostra a prévia seguindo o dedo.
-- Arraste para baixo para fechar o player e as telas de álbum: a tela acompanha o dedo e, ao soltar, termina ou volta de acordo com a velocidade.
-- Toques com peso: cartões e faixas afundam de leve e escurecem ao pressionar.
-- Fileiras horizontais de álbuns e da nova seção "Suas playlists" param alinhadas à margem.
-- Movimento unificado, sem quiques exagerados, e desempenho melhor em telas de 120 Hz (menos trabalho por quadro e perfil de inicialização pré-compilado).
-
-## Acabamento (0.12.1)
-- Telas de álbum e playlist: o fundo vivo agora ocupa a tela inteira, por trás das barras do sistema, e se dissolve suavemente na cor de fundo, sem cortes nem blocos desalinhados.
-- Cabeçalho do álbum que recolhe ao rolar: o título aparece na barra de cima, com botões de voltar e tocar sempre à mão.
-- Corte de trecho redesenhado: o botão Cortar fica na mesma linha de Música/Vídeo e abre uma folha com forma de onda (música) ou quadros do vídeo, duas alças para escolher o trecho, campos de início/fim, botão para ouvir o trecho e confirmar ou limpar. O trecho escolhido aparece no próprio botão.
-- Botões com área de toque maior (48 dp), espaçamentos e margens padronizados, e a lista nunca fica escondida atrás do mini player.
-- Estados vazios mais claros e informações repetidas removidas das faixas.
-
-## Novidades (0.12.0)
-- Automix: transições no ritmo entre músicas locais. O app analisa o andamento (BPM) e os tempos fortes de cada faixa (fica guardado), entra com a próxima no tempo forte, dura compassos inteiros e ajusta o andamento por alguns segundos. Se a análise não for confiável, usa o crossfade normal. Ative em Ajustes › Transições.
-- Last.fm: scrobbles e "ouvindo agora" (faixas com mais de 30 s, após metade da duração ou 4 minutos). Entre com sua conta em Ajustes; a senha não fica salva. Scrobbles feitos sem internet são enviados depois.
-- Rádio da música: a partir de uma busca ou de uma faixa da biblioteca, encontra músicas parecidas, com prévia e download de todas ou das escolhidas.
-- Retrospectiva: cartão animado do mês ou do ano (minutos, artista e faixas mais tocadas), com imagem 9:16 para compartilhar nos stories.
-- Player em paisagem e tablet: capa de um lado, letra ou fila do outro.
-- Discord: não há integração direta (o Discord não oferece presença oficial para apps de celular). Para mostrar o que você ouve no perfil do Discord, conecte o Last.fm em Discord › Configurações › Conexões.
-
-## Novo visual (0.11.0)
-- Fundo vivo: degradê em malha com as cores da capa, se movendo devagar atrás do player e das telas de álbum/playlist.
-- Vidro líquido: mini player, barra inferior e botões redondos translúcidos, com borda de luz; desfoque real no Android 12+ e versão mais leve nos anteriores.
-- Player em tela cheia no estilo Apple Music: capa grande, título e artista em destaque, barra de progresso fina com tempo decorrido e restante, e a qualidade do áudio (codec, kbps, kHz).
-- Letras animadas: a linha atual cresce e fica nítida; as outras ficam menores e desfocadas, com rolagem suave.
-- Tela de álbum e playlist: capa em destaque, título, resumo (faixas e duração), botões Tocar, Aleatório e Adicionar à fila, lista numerada.
-- Vibração leve ao tocar/pausar, pular faixa, arrastar e alternar opções.
-- O mini player volta a ficar acima da barra de navegação do app.
-
-## Estatísticas, Android Auto e transições (0.10.0)
-- Estatísticas: faixas e artistas mais ouvidos, tempo total e resumo mensal. Uma reprodução conta após 30 s ou metade da faixa. Entram no backup.
-- Android Auto e Bluetooth: navegue por Favoritos, Playlists, Biblioteca e Recentes no carro (só arquivos locais), com capas e busca por voz.
-- Crossfade configurável (desligado ou 2 a 12 s) entre faixas locais; faixas seguidas do mesmo álbum tocam sem pausa. Prévias não entram.
-
-## Correções (0.9.1)
-- Prévias de busca voltam a tocar e o mini player ficou compacto.
-
-APK ARM64, Android 8 ou superior. Atualiza por cima da versão instalada, preservando a biblioteca.
+- **Destaques no topo do Início**: cartões grandes com a capa inteira, um degradê na cor da própria capa e o motivo da sugestão ("Volte a ouvir", "Feito pra você", "Adicionado recentemente"). O botão ⋯ abre as ações da faixa.
+- **Estações feitas pra você**: rádios automáticas a partir do que você mais ouve — "Estação de <artista>", mixes por clima (Foco, Calmo, Animado, Festa) e "Descobertas" com músicas novas. Cada uma tem capa própria gerada no app e toca uma fila do YouTube Music misturada com faixas suas.
+- **Cartões com cor suave**: cada cartão ganha um tom leve tirado da capa (nunca berrante, funciona no claro e no escuro), alternando com cartões neutros.
+- **Player centralizado**: a capa fica sempre quadrada e no meio do espaço entre o topo e os controles, em qualquer tamanho de tela.
+- **Barra inferior flutuante**: pílula de vidro solta das bordas, aba ativa em rosa; o mini player flutua logo acima no mesmo estilo e nada fica escondido atrás.
+- **Títulos grandes**: cada aba abre com um título grande que se recolhe suavemente em um título pequeno no topo ao rolar.

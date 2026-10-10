@@ -71,7 +71,7 @@ internal val TopBarHeight = 64.dp
   val back = { haptics.tick(); onBack() }
   val collapseState = rememberUpdatedState(collapseOf(list)); val collapse = collapseState.value
   Box(modifier.dragToDismiss(dismiss, onBack)) {
-    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = TopBarHeight, bottom = if (s.now != null) 104.dp else 24.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = TopBarHeight, bottom = bottomSpace(s))) {
       item(key = "header") {
         Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
           .graphicsLayer { alpha = (1f - collapse * 1.2f).coerceIn(0f, 1f) }, horizontalAlignment = Alignment.CenterHorizontally) {

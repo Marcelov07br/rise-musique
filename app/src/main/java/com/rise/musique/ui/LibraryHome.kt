@@ -37,10 +37,15 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   val albumRow = rows?.first ?: androidx.compose.foundation.lazy.rememberLazyListState()
   val smartRow = androidx.compose.foundation.lazy.rememberLazyListState()
   val playlistRow = rows?.second ?: androidx.compose.foundation.lazy.rememberLazyListState()
-  LazyColumn(modifier.padding(horizontal = 24.dp), state = list, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = if (s.now != null) 104.dp else 24.dp)) {
+  val titleCollapse = rememberTitleCollapse(list)
+  val heroRow = androidx.compose.foundation.lazy.rememberLazyListState()
+  val recentRow = androidx.compose.foundation.lazy.rememberLazyListState()
+  val stationRow = androidx.compose.foundation.lazy.rememberLazyListState()
+  val stations = remember(s.history, s.stats, s.trackInfo, s.hidden) { com.rise.musique.Stations.build(s.history.filter { it.uri !in s.hidden }, s.stats, s.trackInfo) }
+  LazyColumn(modifier.padding(horizontal = 24.dp), state = list, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = bottomSpace(s))) {
     item { Row(verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f)) {
-        Text(if (homeTab) "Ouvir agora" else if (s.historyView == "Favoritos") "Favoritos" else "Biblioteca", style = MaterialTheme.typography.headlineLarge)
+        LargeTitle(if (homeTab) "Ouvir agora" else if (s.historyView == "Favoritos") "Favoritos" else "Biblioteca", titleCollapse)
         Text("${s.history.size} arquivos · sua coleção", color = c.onSurfaceVariant, fontSize = 13.sp)
       }
       Box {
@@ -99,8 +104,18 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     }
     val home = homeTab
     val browse = home || (s.historyView == "Tudo" && s.historyFilter.isBlank() && s.mediaFilter == "Tudo")
-    val recent = if (home) shown.take(6) else shown
-    if (shown.isNotEmpty() && (home || !browse)) item { Text(if (home) "Recentes" else "${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
+    val recent = if (home) emptyList() else shown
+    if (home && shown.isNotEmpty()) {
+      item(key = "hero") { HeroRow(heroItems(s, shown, stations, a), heroRow, s, a) }
+      item(key = "recent-title") { SectionTitle("Reproduções recentes") }
+      item(key = "recent") { Carousel(recentRow) { items(shown.take(12), key = { "r:" + it.uri }) { h ->
+        CoverCard(h, h.title, h.artist.ifBlank { h.meta }, "cover-tr-${h.uri}") { if (h.video) a.playLocalVideo(h) else a.play(h) } } } }
+      if (stations.isNotEmpty()) {
+        item(key = "stations-title") { SectionTitle("Estações feitas pra você") }
+        item(key = "stations") { Carousel(stationRow) { items(stations, key = { it.id }) { st -> StationCard(st, s.stationLoading == st.id) { a.playStation(st) } } } }
+      }
+    }
+    if (shown.isNotEmpty() && !home && !browse) item { Text("${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
     if (!home) { // Biblioteca: álbuns e artistas no topo, depois todas as faixas
       AlbumAndArtistRows(shown.takeIf { browse }.orEmpty(), a, albumRow, artistRow, if (browse) smartFolders(s) else emptyList(), smartRow)
     }
@@ -111,7 +126,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     } }
     val albums = if (home) shown.filter { !it.video && it.album.isNotBlank() }.groupBy { it.album to it.artist }.entries.take(20) else emptyList()
     if (albums.isNotEmpty()) {
-      item(key = "albums-title") { Text("Álbuns e singles", style = MaterialTheme.typography.titleLarge) }
+      item(key = "albums-title") { SectionTitle("Álbuns e singles") }
       item(key = "albums") { Carousel(albumRow) {
         items(albums, key = { it.key.first + "|" + it.key.second }) { entry -> val h = entry.value.first()
           CoverCard(h, h.album, h.artist.ifBlank { "${entry.value.size} faixas" }, "cover-al-${h.album}") { a.openAlbum(h.album) } }
@@ -119,7 +134,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     }
     val lists = if (home) s.playlists.entries.sortedBy { it.key }.map { (name, uris) -> Triple(name, uris.size, uris.firstNotNullOfOrNull { u -> s.history.firstOrNull { it.uri == u && it.art.isNotBlank() } }) } else emptyList()
     if (lists.isNotEmpty()) {
-      item(key = "lists-title") { Text("Suas playlists", style = MaterialTheme.typography.titleLarge) }
+      item(key = "lists-title") { SectionTitle("Suas playlists") }
       item(key = "lists") { Carousel(playlistRow) {
         items(lists, key = { it.first }) { (name, n, cover) ->
           CoverCard(cover ?: HistoryItem(name, "", "pl:$name"), name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-pl-$name") { a.openPlaylist(name) } }
@@ -128,7 +143,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     if (home) {
       val artists = artistsOf(shown)
       if (artists.isNotEmpty()) {
-        item(key = "artists-title") { Text("Artistas", style = MaterialTheme.typography.titleLarge) }
+        item(key = "artists-title") { SectionTitle("Artistas") }
         item(key = "artists") { Carousel(artistRow) { items(artists, key = { it.first }) { (name, h, n) ->
           CoverCard(h, name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-ar-$name", circle = true) { a.openArtist(name) } } } }
       }
@@ -193,10 +208,16 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   val haptics = rememberHaptics()
   val r = morphCorner(8.dp, 14.dp)
-  Column(Modifier.width(156.dp).weightedPress(src, 14.dp).clickable(src, null) { haptics.tick(); onClick() }) {
+  // Soft per-cover tint (or neutral) as the tile behind the text; artists stay plain circles.
+  val tile = if (circle) androidx.compose.ui.graphics.Color.Transparent else tileColor(h.art, sharedKey)
+  val ink = if (circle) c.onSurface else contentFor(tile)
+  Column(Modifier.width(156.dp).weightedPress(src, 16.dp).clip(RoundedCornerShape(16.dp)).background(tile).clickable(src, null) { haptics.tick(); onClick() }
+      .padding(bottom = if (circle) 0.dp else 10.dp)) {
     Cover(h, Modifier.size(156.dp).sharedCover(sharedKey), if (circle) 78.dp else r?.value ?: 14.dp); Spacer(Modifier.height(8.dp))
-    Text(title, Modifier.fillMaxWidth(), textAlign = if (circle) androidx.compose.ui.text.style.TextAlign.Center else null, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-    Text(subtitle, Modifier.fillMaxWidth(), textAlign = if (circle) androidx.compose.ui.text.style.TextAlign.Center else null, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+    Column(Modifier.padding(horizontal = if (circle) 0.dp else 10.dp)) {
+      Text(title, Modifier.fillMaxWidth(), textAlign = if (circle) androidx.compose.ui.text.style.TextAlign.Center else null, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium, color = ink)
+      Text(subtitle, Modifier.fillMaxWidth(), textAlign = if (circle) androidx.compose.ui.text.style.TextAlign.Center else null, color = ink.copy(alpha = .68f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+    }
   }
 }
 

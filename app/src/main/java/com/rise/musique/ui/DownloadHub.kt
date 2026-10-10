@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.*
 
 @Composable fun DownloadHub(s: UiState, a: Actions, modifier: Modifier) {
   val c = MaterialTheme.colorScheme
-  LazyColumn(modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 16.dp, bottom = if (s.now != null) 104.dp else 24.dp)) {
+  LazyColumn(modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 16.dp, bottom = bottomSpace(s))) {
     item { Text("Downloads", style = MaterialTheme.typography.headlineLarge) }
     if (s.queue.isEmpty()) item {
       Text("Tudo pronto por aqui", style = MaterialTheme.typography.titleLarge)

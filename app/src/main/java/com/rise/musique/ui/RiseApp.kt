@@ -16,6 +16,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.*
 import androidx.compose.ui.layout.ContentScale
@@ -60,6 +62,7 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val searchKind: com.rise.musique.SearchKind = com.rise.musique.SearchKind.Songs, val durationFilter: com.rise.musique.DurationFilter = com.rise.musique.DurationFilter.Any,
   val dateFilter: com.rise.musique.DateFilter = com.rise.musique.DateFilter.Any, val video: VideoUi? = null, val pip: Boolean = false,
   val voice: VoiceUi? = null,
+  val stationLoading: String? = null,
   val undo: UndoInfo? = null, val popular: Map<String, List<SearchResult>> = emptyMap(), val popularLoading: Set<String> = emptySet(), val hidden: Set<String> = emptySet())
 
 /** Snackbar with Desfazer; the real action runs only after the timeout. */
@@ -96,7 +99,7 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val follow: (String) -> Unit = {}, val openSmart: (String, String) -> Unit = { _, _ -> },
   val searchKind: (com.rise.musique.SearchKind) -> Unit = {}, val durationFilter: (com.rise.musique.DurationFilter) -> Unit = {}, val dateFilter: (com.rise.musique.DateFilter) -> Unit = {},
   val openResult: (SearchResult) -> Unit = {}, val saveStream: () -> Unit = {}, val playVideo: (SearchResult) -> Unit = {}, val playLocalVideo: (HistoryItem) -> Unit = {},
-  val video: VideoActions = VideoActions(), val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {})
+  val video: VideoActions = VideoActions(), val playStation: (com.rise.musique.Station) -> Unit = {}, val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -106,10 +109,10 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   SearchResult("c", "Música de exemplo · versão acústica", "Outro Canal", 189, ""))
 
 @Composable fun RiseApp(state: UiState, actions: Actions, initialHistoryOpen: Boolean = false, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
-                       initialCollectionItem: Int = 0, initialRoute: Route? = null) {
+                       initialCollectionItem: Int = 0, initialRoute: Route? = null, initialRootItem: Int = 0) {
   val targets = remember { FlyTargets() }
   Box(Modifier.fillMaxSize()) {
-    RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute)
+    RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute, initialRootItem)
     UndoBar(state, actions, Modifier.align(Alignment.BottomCenter))
     state.fly?.let { FlyOverlay(it, targets) }
     state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue) } }
@@ -137,7 +140,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
 
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0,
-                                    initialRoute: Route? = null) {
+                                    initialRoute: Route? = null, initialRootItem: Int = 0) {
   val c = MaterialTheme.colorScheme
   val tab = when (state.page) { "Downloads" -> "Buscar"; in Tabs -> state.page; else -> "Início" }
   val nav = remember { NavState().apply { if (initialRoute != null) push(tab, initialRoute) } }
@@ -185,8 +188,8 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       CollectionBackdrop(art, collapseOf(nav.list(d.key, initialCollectionItem)),
         Modifier.fillMaxSize().graphicsLayer { alpha = (backdropAlpha.value * (1f - dismiss.value)).coerceIn(0f, 1f) })
     } }
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-      androidx.compose.animation.SharedTransitionLayout(Modifier.weight(1f).fillMaxWidth()) {
+    Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+      androidx.compose.animation.SharedTransitionLayout(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalShared provides this) {
           transition.AnimatedContent(Modifier.fillMaxSize(), transitionSpec = {
             if (initialState.tab != targetState.tab) EnterTransition.None togetherWith ExitTransition.None
@@ -206,15 +209,24 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
                   DownloadHub(state, navActions, Modifier.weight(1f).fillMaxWidth())
                 }
                 null -> Column(Modifier.fillMaxSize()) {
-                  Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("rise", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
-                    RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
-                    Spacer(Modifier.width(8.dp))
-                    RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
+                  val rootList = nav.list("root:${sc.tab}", initialRootItem)
+                  val collapse = rememberTitleCollapse(rootList)
+                  Box(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                      Text("rise", Modifier.weight(1f).graphicsLayer { alpha = (1f - collapse.value * 1.4f).coerceIn(0f, 1f) },
+                        style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
+                      RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
+                      Spacer(Modifier.width(8.dp))
+                      RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
+                    }
+                    // Título pequeno e centralizado: aparece quando o título grande sai da tela.
+                    Text(TabTitles[sc.tab] ?: sc.tab, Modifier.align(Alignment.Center).clearAndSetSemantics { }.graphicsLayer {
+                      val v = ((collapse.value - .55f) / .45f).coerceIn(0f, 1f); alpha = v; translationY = (1f - v) * 12.dp.toPx() },
+                      style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                   }
                   if (state.status.isNotBlank() && state.status != "Nada encontrado") Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
                   when (sc.tab) {
-                    "Buscar" -> MainPane(state, navActions, targets, null, Modifier.weight(1f).fillMaxWidth())
+                    "Buscar" -> MainPane(state, navActions, targets, null, Modifier.weight(1f).fillMaxWidth(), rootList, collapse)
                     "Biblioteca" -> LibraryHome(state.copy(albumFilter = "", historyView = state.historyView.takeIf { it !in state.playlists } ?: "Tudo"), navActions,
                       Modifier.weight(1f).fillMaxWidth(), nav.list("root:Biblioteca"), nav.list("row:lib-al") to nav.list("row:lib-pl"), false, nav.list("row:lib-ar"))
                     else -> LibraryHome(clean.copy(sort = "Recentes"), navActions, Modifier.weight(1f).fillMaxWidth(), nav.list("root:Início"),
@@ -226,7 +238,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
           }
         }
       }
-      NavigationDock(tab, navActions, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+      NavigationDock(tab, navActions, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
         .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) })
     }
@@ -238,22 +250,26 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val haptics = rememberHaptics()
   // Barra de vidro: translúcida, com borda de luz em cima.
   val edge = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.onSurface.copy(alpha = .22f), c.onSurface.copy(alpha = .04f)))
-  Row(modifier.clip(RoundedCornerShape(32.dp)).background(c.surface.copy(alpha = .78f)).border(1.dp, edge, RoundedCornerShape(32.dp)).padding(5.dp)) {
+  val accent = accentColor()
+  Row(modifier.shadow(18.dp, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(.25f), spotColor = androidx.compose.ui.graphics.Color.Black.copy(.25f))
+      .clip(CircleShape).background(c.surface.copy(alpha = .9f)).border(1.dp, edge, CircleShape).padding(5.dp)) {
     Tabs.forEach { page ->
       val on = tab == page
       val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-      Column(Modifier.weight(1f).springPress(src).clip(RoundedCornerShape(28.dp)).background(if (on) c.surfaceVariant else androidx.compose.ui.graphics.Color.Transparent)
+      Column(Modifier.weight(1f).springPress(src).clip(CircleShape)
         .clickable(src, null) { haptics.tick(); a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(when (page) { "Biblioteca" -> Icons.Rounded.LibraryMusic; "Buscar" -> Icons.Rounded.Search; else -> Icons.Rounded.Home }, null,
-          tint = if (on) c.onSurface else c.onSurfaceVariant, modifier = Modifier.size(23.dp))
-        Text(page, color = if (on) c.onSurface else c.onSurfaceVariant, fontSize = 11.sp, maxLines = 1)
+          tint = if (on) accent else c.onSurfaceVariant, modifier = Modifier.size(23.dp))
+        Text(page, color = if (on) accent else c.onSurfaceVariant, fontSize = 11.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
       }
     }
   }
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable private fun MainPane(state: UiState, a: Actions, targets: FlyTargets, onHistory: (() -> Unit)?, modifier: Modifier) {
+@Composable private fun MainPane(state: UiState, a: Actions, targets: FlyTargets, onHistory: (() -> Unit)?, modifier: Modifier,
+                                 resultsList: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
+                                 collapse: State<Float> = remember { mutableFloatStateOf(0f) }) {
   val c = MaterialTheme.colorScheme
   val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
   val focus = androidx.compose.ui.platform.LocalFocusManager.current
@@ -272,8 +288,8 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && kotlin.math.abs(available.y) > 2f) { keyboard?.hide(); focus.clearFocus() }
       return androidx.compose.ui.geometry.Offset.Zero } } }
   Column(modifier.background(c.background).padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Text("Buscar", Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge)
+    Row(Modifier.collapsingHeight(collapse), verticalAlignment = Alignment.CenterVertically) {
+      LargeTitle("Buscar", collapse, Modifier.weight(1f))
       val active = state.queue.count { it.error == null && !it.completed }
       BadgedBox({ if (active > 0) Badge(containerColor = c.onSurface, contentColor = c.surface) { Text("$active") } }) {
         RoundIconButton(Icons.Rounded.Download, "Downloads", a.openDownloads) }
@@ -293,7 +309,6 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       else RoundIconButton(Icons.Rounded.ArrowForward, "Buscar", a.search, filled = state.query.isNotBlank())
     }
     if (!isLink) SearchFilters(state, a)
-    val resultsList = androidx.compose.foundation.lazy.rememberLazyListState()
     val nearEnd by remember { derivedStateOf { val li = resultsList.layoutInfo; li.totalItemsCount > 0 && (li.visibleItemsInfo.lastOrNull()?.index ?: 0) >= li.totalItemsCount - 4 } }
     LaunchedEffect(nearEnd, state.moreResults, state.loadingMore, state.results.size) { if (nearEnd && state.moreResults && !state.loadingMore && !state.searching) a.moreResults() }
     LazyColumn(Modifier.weight(1f).nestedScroll(hideKeyboard), state = resultsList, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -359,7 +374,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
     if (state.selected.isNotEmpty()) PillButton(modifier = Modifier.fillMaxWidth().onGloballyPositioned { targets.source = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 2f, it.size.height / 2f) },
       text = when { state.selected.size > 1 -> "Baixar ${state.selected.size} faixas"; activeJobs == 0 -> "Baixar"
         else -> "Adicionar à fila ($activeJobs)" }, onClick = a.download, icon = Icons.Rounded.Download, enabled = state.selected.isNotEmpty() && state.choices.ready(state.mode, state.format))
-    if (state.now != null) Spacer(Modifier.height(88.dp))
+    Spacer(Modifier.height(bottomSpace(state) - 16.dp))
   }
 }
 

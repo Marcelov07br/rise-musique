@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,7 +54,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   BoxWithConstraints(Modifier.fillMaxSize()) {
     val fullH = constraints.maxHeight.toFloat()
     val miniH = with(density) { 68.dp.toPx() }
-    val margin = with(density) { 12.dp.toPx() }
+    val margin = with(density) { 16.dp.toPx() }
     val p = f.value.coerceIn(0f, 1f) // nunca sai de 0..1, nem em rebote
     val dragState = rememberDraggableState { d -> scope.launch { f.snapTo((f.value - d / (fullH - miniH)).coerceIn(0f, 1f)) } }
     // Mini: cartão compacto (miniH) com margens iguais dos lados.
@@ -89,10 +90,15 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       val maxH = this@BoxWithConstraints.maxHeight
       // Paisagem / tablet deitado: capa à esquerda, letra ou fila à direita.
       val wide = maxW > maxH && maxW >= 560.dp
-      val artFull = if (wide) minOf(maxH - 120.dp, maxW / 2 - 64.dp).coerceIn(120.dp, 420.dp) else (maxW - 56.dp).coerceAtMost(420.dp)
+      // Retrato: a capa é quadrada e centrada no espaço entre a barra de cima e os controles (medidos), com margens iguais.
+      val insetTop = with(density) { WindowInsets.safeDrawing.getTop(density).toDp() }
+      val insetBottom = with(density) { WindowInsets.safeDrawing.getBottom(density).toDp() }
+      var controlsH by remember { mutableStateOf(340.dp) }
+      val artSpace = (maxH - insetTop - 56.dp - controlsH - insetBottom - 12.dp).coerceAtLeast(120.dp)
+      val artFull = if (wide) minOf(maxH - 120.dp, maxW / 2 - 64.dp).coerceIn(120.dp, 420.dp) else PlayerLayout.art(maxW, artSpace)
       val artSize = lerp(48.dp, artFull, p)
       val artX = lerp(10.dp, if (wide) (maxW / 2 - artFull) / 2 else (maxW - artFull) / 2, p)
-      val artY = lerp(10.dp, if (wide) (maxH - artFull) / 2 else 96.dp, p)
+      val artY = lerp(10.dp, if (wide) (maxH - artFull) / 2 else insetTop + 56.dp + (artSpace - artFull) / 2, p)
       val onBg = if (p > .5f) Color.White else c.onSurface
 
       // Capa: o mesmo elemento cresce do mini até o tamanho cheio.
@@ -153,9 +159,10 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         if (wide) Box(Modifier.fillMaxWidth().weight(1f)) {
           if (showLyrics || now.isPreview) LyricsView(now, a, Modifier.fillMaxSize().padding(vertical = 8.dp))
           else UpNext(now, queue, a, Modifier.fillMaxSize())
-        } else Box(Modifier.fillMaxWidth().height(artFull + 64.dp)) {
-          if (showLyrics) LyricsView(now, a, Modifier.fillMaxSize().padding(top = 40.dp, bottom = 16.dp))
+        } else Box(Modifier.fillMaxWidth().height(artSpace)) {
+          if (showLyrics) LyricsView(now, a, Modifier.fillMaxSize().padding(top = 8.dp, bottom = 8.dp))
         }
+        Column(Modifier.wrapContentHeight(Alignment.Top, unbounded = true).onSizeChanged { val h = with(density) { it.height.toDp() }; if (!wide && kotlin.math.abs((h - controlsH).value) > 1f) controlsH = h }) {
         Text(now.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 32.sp, letterSpacing = (-.5f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(if (now.isPreview) "Trecho · ${now.artist}" else now.artist, color = Color.White.copy(.62f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (now.streaming) { Spacer(Modifier.height(10.dp)); StreamBar(now, a) }
@@ -186,6 +193,8 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           if (now.count > 1) Text("${now.index + 1} de ${now.count}", color = Color.White.copy(.5f), fontSize = 12.sp)
           Spacer(Modifier.weight(1f))
           ToggleIcon(Icons.Rounded.Lyrics, "Letra", showLyrics, enabled = !now.isPreview) { showLyrics = !showLyrics }
+        }
+        Spacer(Modifier.height(12.dp))
         }
       }
     }
@@ -358,4 +367,10 @@ val LocalSleep = androidx.compose.runtime.compositionLocalOf { 0L }
         Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
     }
   }
+}
+
+object PlayerLayout {
+  /** Square cover: full width minus 28dp margins (max 420dp), shrunk to fit the space between top bar and controls with 8dp air. */
+  fun art(maxW: androidx.compose.ui.unit.Dp, space: androidx.compose.ui.unit.Dp) =
+    minOf(maxW - 56.dp, space - 16.dp, 420.dp).coerceAtLeast(120.dp)
 }

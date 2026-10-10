@@ -137,3 +137,23 @@ class Round16 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
 class Round16Land { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(screenWidth = 2400, screenHeight = 1080, orientation = ScreenOrientation.LANDSCAPE, nightMode = NightMode.NIGHT))
   @Test fun videoLandscape() = p.snapshot { RiseTheme(true) { RiseApp(UiState(video = vid.copy(fullscreen = true)), Actions()) } }
 }
+
+private val homeLib = (1..10).map { i -> HistoryItem(listOf("Noite clara", "Céu de abril", "Pé na estrada", "Mar aberto", "Luz do dia", "Vento sul", "Rio largo", "Fogo baixo", "Canto novo", "Sal")[i - 1],
+  "M4A", "h:$i", artist = listOf("Marina Lima", "Tim Bernardes", "Céu", "Marina Lima", "Liniker")[i % 5], album = listOf("Fullgás", "Mil Coisas Invisíveis", "APKÁ!", "Fullgás", "Caju")[i % 5], duration = 210_000) }
+private val homeInfo = homeLib.associate { it.uri to TrackInfo(if (it.uri.last().digitToInt() % 2 == 0) -9.0 else -16.0, bpm = if (it.uri.last().digitToInt() % 2 == 0) 128.0 else 82.0) }
+private val homeState = UiState(history = homeLib, trackInfo = homeInfo, playlists = mapOf("Treino" to listOf("h:1", "h:2")),
+  stats = StatsSummary(topTracks = listOf(Ranked("Céu de abril", "Tim Bernardes", 12, 1)), topArtists = listOf(Ranked("Marina Lima", "", 20, 1), Ranked("Céu", "", 9, 1))))
+class Round17 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  @Test fun home() = p.snapshot { RiseTheme(true) { RiseApp(homeState, Actions()) } }
+  @Test fun homeScrolled() = p.snapshot { RiseTheme(true) { RiseApp(homeState, Actions(), initialRootItem = 3) } }
+  @Test fun libraryFloatingBar() = p.snapshot { RiseTheme(true) { RiseApp(homeState.copy(page = "Biblioteca", now = streamNp), Actions()) } }
+  @Test fun playerPixel6() = p.snapshot { RiseTheme(true) { RiseApp(homeState.copy(now = streamNp), Actions(), initialExpanded = true) } }
+}
+class Round17Light { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6)
+  @Test fun home() = p.snapshot { RiseTheme(false) { RiseApp(homeState, Actions()) } } }
+class Round17Tall { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT, screenHeight = 4300))
+  @Test fun homeFull() = p.snapshot { RiseTheme(true) { RiseApp(homeState, Actions()) } } }
+class Round17Small { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(screenWidth = 720, screenHeight = 1280, density = Density.XHIGH, xdpi = 320, ydpi = 320, nightMode = NightMode.NIGHT))
+  @Test fun player360x640() = p.snapshot { RiseTheme(true) { RiseApp(homeState.copy(now = streamNp), Actions(), initialExpanded = true) } } }
+class Round17Long { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2640, nightMode = NightMode.NIGHT))
+  @Test fun playerTall() = p.snapshot { RiseTheme(true) { RiseApp(homeState.copy(now = streamNp), Actions(), initialExpanded = true) } } }
