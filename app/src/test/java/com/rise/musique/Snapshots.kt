@@ -44,9 +44,9 @@ class StatsLight { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL
 private val albumHistory = init.let { listOf("Abertura", "Segunda faixa", "Interlúdio", "Final").mapIndexed { i, t ->
   HistoryItem(t, "M4A · 256k", "album:$i", artist = "Artista Exemplo", album = "Disco de Exemplo", duration = 180_000L + i * 20_000) } }
 class Collection { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
-  @Test fun album() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = albumHistory, albumFilter = "Disco de Exemplo"), Actions()) } }
+  @Test fun album() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = albumHistory), Actions(), initialRoute = com.rise.musique.ui.Route.Album("Disco de Exemplo")) } }
   @Test fun playlistWithMini() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = albumHistory, playlists = mapOf("Treino" to listOf("album:2", "album:0")),
-    historyView = "Treino", now = np), Actions()) } } }
+    now = np), Actions(), initialRoute = com.rise.musique.ui.Route.Playlist("Treino")) } } }
 
 private val queueSample = albumHistory
 class Wide { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(screenWidth = 2400, screenHeight = 1080, orientation = ScreenOrientation.LANDSCAPE, nightMode = NightMode.NIGHT))
@@ -62,8 +62,8 @@ class Round12 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
 
 private val longAlbum = init.let { (1..20).map { i -> HistoryItem("Faixa número $i do disco", "M4A · 256k", "long:$i", artist = "Artista Exemplo", album = "Disco Longo", duration = 200_000L) } }
 class Polish { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
-  @Test fun albumTop() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo", now = np), Actions()) } }
-  @Test fun albumScrolled() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo", now = np), Actions(), initialCollectionItem = 6) } }
+  @Test fun albumTop() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = longAlbum, now = np), Actions(), initialRoute = com.rise.musique.ui.Route.Album("Disco Longo")) } }
+  @Test fun albumScrolled() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = longAlbum, now = np), Actions(), initialRoute = com.rise.musique.ui.Route.Album("Disco Longo"), initialCollectionItem = 6) } }
   @Test fun searchCutRow() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(page = "Buscar", choices = DownloadChoices(media = true)), Actions()) } }
   @Test fun cutSheetMusic() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { CutContent(found.copy(
     cutVisual = CutVisual(false, peaks = (0 until 120).map { i -> (kotlin.math.abs(kotlin.math.sin(i / 7.0)) * .8 + (i % 5) * .04).toFloat() })), Actions(),
@@ -71,8 +71,27 @@ class Polish { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.c
   @Test fun cutSheetLoading() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { CutContent(found.copy(mode = Mode.Video, cutVisual = CutVisual(true)), Actions(),
     androidx.compose.ui.Modifier.padding(24.dp)) } } } }
 class PolishLight { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6)
-  @Test fun albumTop() = p.snapshot { RiseTheme(false) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo"), Actions()) } }
-  @Test fun albumScrolled() = p.snapshot { RiseTheme(false) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo"), Actions(), initialCollectionItem = 6) } } }
+  @Test fun albumTop() = p.snapshot { RiseTheme(false) { RiseApp(UiState(history = longAlbum), Actions(), initialRoute = com.rise.musique.ui.Route.Album("Disco Longo")) } }
+  @Test fun albumScrolled() = p.snapshot { RiseTheme(false) { RiseApp(UiState(history = longAlbum), Actions(), initialRoute = com.rise.musique.ui.Route.Album("Disco Longo"), initialCollectionItem = 6) } } }
 class MotionHome { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT, screenHeight = 4000))
   @Test fun carousels() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = longAlbum + (1..3).map { i -> HistoryItem("Single $i", "M4A", "s:$i", artist = "Outro", album = "Single $i") },
     playlists = mapOf("Treino" to listOf("long:1", "long:2"), "Estrada" to listOf("s:1"), "Noite" to listOf("long:3"))), Actions()) } } }
+
+private val artistLib = longAlbum.take(8) + (1..3).map { i -> HistoryItem("Single $i", "M4A", "s:$i", artist = "Artista Exemplo", album = "Single $i") } +
+  listOf(HistoryItem("Outra coisa", "MP3", "o:1", artist = "Outro Artista"))
+private val ytPopular = (1..5).map { SearchResult("yt:$it", "Sucesso número $it (Clipe Oficial)", "Artista Exemplo", 180 + it * 7, "") }
+class Round14 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val lib = UiState(history = artistLib, playlists = mapOf("Treino" to listOf("long:1", "long:2"), "Noite" to listOf("s:1")), favorites = setOf("long:2"))
+  @Test fun tabHome() = p.snapshot { RiseTheme(true) { RiseApp(lib, Actions()) } }
+  @Test fun tabSearch() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Buscar", recentSearches = listOf("lofi", "Artista Exemplo", "trilha sonora de filme")), Actions()) } }
+  @Test fun tabLibrary() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Biblioteca", now = np), Actions()) } }
+  @Test fun searchBoth() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Buscar", query = "Exemplo", results = ytPopular.take(3)), Actions()) } }
+  @Test fun searchNone() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Buscar", query = "zzzz", status = "Nada encontrado"), Actions()) } }
+  @Test fun artist() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Biblioteca", popular = mapOf("Artista Exemplo" to ytPopular)), Actions(),
+    initialRoute = com.rise.musique.ui.Route.Artist("Artista Exemplo")) } }
+  @Test fun artistScrolled() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Biblioteca", popular = mapOf("Artista Exemplo" to ytPopular)), Actions(),
+    initialRoute = com.rise.musique.ui.Route.Artist("Artista Exemplo"), initialCollectionItem = 9) } }
+  @Test fun actionSheet() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { com.rise.musique.ui.TrackActionContent(artistLib[1],
+    lib, Actions(), {}, {}) } } }
+  @Test fun undoSnackbar() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Biblioteca", now = np, undo = com.rise.musique.ui.UndoInfo(1, "Arquivo apagado")), Actions()) } }
+}

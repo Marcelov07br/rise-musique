@@ -1,4 +1,6 @@
 package com.rise.musique.ui
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
@@ -44,12 +46,16 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val previewing: String? = null, val previewLoading: Boolean = false, val now: NowPlaying? = null, val fly: FlyEvent? = null,
   val favorites: Set<String> = emptySet(), val playlists: Map<String, List<String>> = emptyMap(), val historyFilter: String = "",
   val recentSearches: List<String> = emptyList(), val moreResults: Boolean = false, val loadingMore: Boolean = false,
-  val importing: Boolean = false, val sort: String = "Recentes", val mediaFilter: String = "Tudo", val albumFilter: String = "", val theme: String = "Sistema", val settingsOpen: Boolean = false, val page: String = "Biblioteca", val choices: com.rise.musique.DownloadChoices = com.rise.musique.DownloadChoices(),
+  val importing: Boolean = false, val sort: String = "Recentes", val mediaFilter: String = "Tudo", val albumFilter: String = "", val theme: String = "Sistema", val settingsOpen: Boolean = false, val page: String = "Início", val choices: com.rise.musique.DownloadChoices = com.rise.musique.DownloadChoices(),
   val playbackQueue: List<HistoryItem> = emptyList(), val queueOpen: Boolean = false, val historyView: String = "Tudo", val sleepAt: Long = 0, val queue: List<QueueItem> = emptyList(),
   val crossfade: Int = 0, val statsOpen: Boolean = false, val radioOf: String? = null, val automix: Boolean = false, val cutOpen: Boolean = false, val cutVisual: com.rise.musique.CutVisual? = null,
   val lastfmUser: String? = null, val lastfmOn: Boolean = false, val lastfmConfigured: Boolean = false, val recapOpen: Boolean = false,
-  val recapMonth: com.rise.musique.Recap? = null, val recapYear: com.rise.musique.Recap? = null, val stats: com.rise.musique.StatsSummary? = null)
-class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, val quality: (String) -> Unit = {},
+  val recapMonth: com.rise.musique.Recap? = null, val recapYear: com.rise.musique.Recap? = null, val stats: com.rise.musique.StatsSummary? = null,
+  val undo: UndoInfo? = null, val popular: Map<String, List<SearchResult>> = emptyMap(), val popularLoading: Set<String> = emptySet(), val hidden: Set<String> = emptySet())
+
+/** Snackbar with Desfazer; the real action runs only after the timeout. */
+data class UndoInfo(val id: Long, val message: String)
+data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, val quality: (String) -> Unit = {},
   val pickFolder: () -> Unit = {}, val download: () -> Unit = {}, val toggleTheme: () -> Unit = {},
   val search: () -> Unit = {}, val select: (SearchResult) -> Unit = {}, val preview: (SearchResult) -> Unit = {},
   val selectAll: () -> Unit = {}, val format: (String) -> Unit = {}, val cut: (Boolean, String, String) -> Unit = { _, _, _ -> },
@@ -72,7 +78,10 @@ class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, v
   val radio: (SearchResult) -> Unit = {}, val radioFor: (HistoryItem) -> Unit = {}, val automix: (Boolean) -> Unit = {},
   val lastfmLogin: (String, String) -> Unit = { _, _ -> }, val lastfmLogout: () -> Unit = {}, val lastfmToggle: (Boolean) -> Unit = {},
   val recap: (Boolean) -> Unit = {}, val shareRecap: (String) -> Unit = {},
-  val openCut: (Boolean) -> Unit = {}, val previewRange: (Long, Long) -> Unit = { _, _ -> })
+  val openCut: (Boolean) -> Unit = {}, val previewRange: (Long, Long) -> Unit = { _, _ -> },
+  val undo: () -> Unit = {}, val removeSearch: (String) -> Unit = {}, val searchLive: () -> Unit = {}, val clearQueue: () -> Unit = {},
+  val artistPopular: (String) -> Unit = {}, val prepareDownload: (SearchResult) -> Unit = {}, val removeFromList: (HistoryItem, String) -> Unit = { _, _ -> },
+  val openArtist: (String) -> Unit = {}, val openAlbum: (String) -> Unit = {}, val openPlaylist: (String) -> Unit = {}, val openDownloads: () -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -82,10 +91,11 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   SearchResult("c", "Música de exemplo · versão acústica", "Outro Canal", 189, ""))
 
 @Composable fun RiseApp(state: UiState, actions: Actions, initialHistoryOpen: Boolean = false, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
-                       initialCollectionItem: Int = 0) {
+                       initialCollectionItem: Int = 0, initialRoute: Route? = null) {
   val targets = remember { FlyTargets() }
   Box(Modifier.fillMaxSize()) {
-    RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem)
+    RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute)
+    UndoBar(state, actions, Modifier.align(Alignment.BottomCenter))
     state.fly?.let { FlyOverlay(it, targets) }
     state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue) } }
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
@@ -97,115 +107,186 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
 }
 
 /**
- * The one owner of the collection SeekableTransitionState: state and Transition are created together in one
- * unconditional group, so a Transition is never re-created for an existing state.
+ * The one owner of the navigation SeekableTransitionState: state and Transition are created together in one
+ * unconditional group (no key()/branch around them), so a Transition is never re-created for an existing state.
  */
-@Composable private fun rememberCollectionTransition(initial: Boolean):
-    Pair<androidx.compose.animation.core.SeekableTransitionState<Boolean>, androidx.compose.animation.core.Transition<Boolean>> {
+@Composable private fun rememberScreenTransition(initial: Screen):
+    Pair<androidx.compose.animation.core.SeekableTransitionState<Screen>, androidx.compose.animation.core.Transition<Screen>> {
   val seek = remember { androidx.compose.animation.core.SeekableTransitionState(initial) }
-  return seek to androidx.compose.animation.core.rememberTransition(seek, label = "collection")
+  return seek to androidx.compose.animation.core.rememberTransition(seek, label = "screen")
 }
 
+private val Route?.isDetail get() = this is Route.Album || this is Route.Playlist || this is Route.Artist
+
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
-@Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0) {
+@Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0,
+                                    initialRoute: Route? = null) {
   val c = MaterialTheme.colorScheme
-  val collection = state.page != "Buscar" && state.page != "Downloads" && (state.albumFilter.isNotBlank() || state.historyView in state.playlists)
-  val (seek, transition) = rememberCollectionTransition(collection)
-  // Keep the last opened collection so its screen can play the reverse transition after the state already went back.
-  var last by remember { mutableStateOf(state) }
-  if (collection) last = state
-  val shownCollection = if (collection) state else state.copy(albumFilter = last.albumFilter, historyView = last.historyView, page = last.page)
-  val collectionKey = shownCollection.albumFilter + "|" + shownCollection.historyView
-  val collectionList = remember(collectionKey) { androidx.compose.foundation.lazy.LazyListState(initialCollectionItem) } // no movable key() group here
-  val homeList = androidx.compose.foundation.lazy.rememberLazyListState()
-  val homeRows = androidx.compose.foundation.lazy.rememberLazyListState() to androidx.compose.foundation.lazy.rememberLazyListState()
-  // Seekable: open/close are one interruptible transition; predictive back scrubs it with the finger.
+  val tab = when (state.page) { "Downloads" -> "Buscar"; in Tabs -> state.page; else -> "Início" }
+  val nav = remember { NavState().apply { if (initialRoute != null) push(tab, initialRoute) } }
+  val screen = Screen(tab, nav.top(tab))
+  val (seek, transition) = rememberScreenTransition(screen)
   val scope = rememberCoroutineScope()
   var seeking by remember { mutableStateOf(false) }
-  LaunchedEffect(collection) { if (!seeking) seek.animateTo(collection, Motion.enter(Motion.Long)) }
-  val closeCollection = { if (shownCollection.albumFilter.isNotBlank()) actions.albumFilter("") else actions.historyView("Tudo") }
-  androidx.activity.compose.PredictiveBackHandler(enabled = collection) { progress ->
+  // Mesma aba: transição animada e interrompível. Troca de aba: instantânea.
+  LaunchedEffect(screen) { if (!seeking) { if (seek.currentState.tab != screen.tab) seek.snapTo(screen) else seek.animateTo(screen, Motion.enter(Motion.Long)) } }
+  val pop: () -> Unit = { nav.pop(tab) }
+  androidx.activity.compose.PredictiveBackHandler(enabled = nav.stack(tab).isNotEmpty()) { progress ->
+    val prev = nav.previous(tab)
     try {
       seeking = true
-      progress.collect { e -> seek.seekTo((e.progress * .9f).coerceIn(0f, 1f), targetState = false) }
-      seek.animateTo(false, Motion.enter(Motion.Medium)); closeCollection()
+      progress.collect { e -> seek.seekTo((e.progress * .9f).coerceIn(0f, 1f), targetState = prev) }
+      seek.animateTo(prev, Motion.enter(Motion.Medium)); nav.pop(tab)
     } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-      scope.launch { seek.animateTo(true, Motion.settle()) }; throw e
+      scope.launch { seek.animateTo(screen, Motion.settle()) }; throw e
     } finally { seeking = false }
   }
-  val backdropAlpha = transition.animateFloat({ Motion.enter(Motion.Long) }, label = "backdrop") { if (it) 1f else 0f }
+  androidx.activity.compose.BackHandler(enabled = nav.stack(tab).isEmpty() && tab != "Início") { actions.page("Início") }
+  val rootKey = "root:$tab"
+  val navActions = remember(actions, tab, state.playlists.keys) { actions.copy(
+    openAlbum = { nav.push(tab, Route.Album(it)) }, openPlaylist = { nav.push(tab, Route.Playlist(it)) }, openArtist = { nav.push(tab, Route.Artist(it)) },
+    openDownloads = { nav.push("Buscar", Route.Downloads); actions.page("Buscar") },
+    albumFilter = { if (it.isBlank()) nav.pop(tab) else nav.push(tab, Route.Album(it)) },
+    historyView = { if (it in state.playlists) nav.push(tab, Route.Playlist(it)) else actions.historyView(it) },
+    page = { t -> val target = if (t == "Downloads") "Buscar" else t
+      // Tocar de novo na aba: volta à raiz; se já está na raiz, rola para o topo.
+      if (target == tab) { if (nav.stack(tab).isNotEmpty()) nav.popToRoot(tab) else scope.launch { nav.list("root:$tab").animateScrollToItem(0) } }
+      else actions.page(target) }) }
+  var lastDetail by remember { mutableStateOf<Route?>(initialRoute?.takeIf { it.isDetail }) }
+  if (screen.route.isDetail && lastDetail != screen.route) lastDetail = screen.route
+  val backdropAlpha = transition.animateFloat({ Motion.enter(Motion.Long) }, label = "backdrop") { if (it.route.isDetail) 1f else 0f }
   val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
   Box(Modifier.fillMaxSize().background(c.background)) {
-    // Álbum/playlist: fundo vivo fixo cobrindo a tela inteira, entrando em fade junto com a transição.
-    if (collection || transition.isRunning) CollectionBackdrop(visibleHistory(shownCollection).firstOrNull { it.art.isNotBlank() }?.art.orEmpty(),
-      collapseOf(collectionList), Modifier.fillMaxSize().graphicsLayer { alpha = (backdropAlpha.value * (1f - dismiss.value)).coerceIn(0f, 1f) })
+    // Telas de detalhe: fundo vivo fixo cobrindo a tela inteira, entrando em fade junto com a transição.
+    lastDetail?.let { d -> if (screen.route.isDetail || transition.isRunning) {
+      val art = when (d) { is Route.Artist -> artistArt(state, d.name)
+        is Route.Album -> state.history.firstOrNull { it.album == d.name && it.art.isNotBlank() }?.art.orEmpty()
+        is Route.Playlist -> state.playlists[d.name].orEmpty().firstNotNullOfOrNull { u -> state.history.firstOrNull { it.uri == u && it.art.isNotBlank() }?.art }.orEmpty()
+        else -> "" }
+      CollectionBackdrop(art, collapseOf(nav.list(d.key, initialCollectionItem)),
+        Modifier.fillMaxSize().graphicsLayer { alpha = (backdropAlpha.value * (1f - dismiss.value)).coerceIn(0f, 1f) })
+    } }
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
       androidx.compose.animation.SharedTransitionLayout(Modifier.weight(1f).fillMaxWidth()) {
         CompositionLocalProvider(LocalShared provides this) {
-          transition.AnimatedContent(Modifier.fillMaxSize(), transitionSpec = { Motion.pageEnter togetherWith Motion.pageExit using SizeTransform(clip = false) }) { open ->
+          transition.AnimatedContent(Modifier.fillMaxSize(), transitionSpec = {
+            if (initialState.tab != targetState.tab) EnterTransition.None togetherWith ExitTransition.None
+            else Motion.pageEnter togetherWith Motion.pageExit using SizeTransform(clip = false) }) { sc ->
             CompositionLocalProvider(LocalAnimScope provides this) {
-              if (open) CollectionScreen(shownCollection, actions, collectionList, Modifier.fillMaxSize(), closeCollection, dismiss)
-              else Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                  Text("rise", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
-                  RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
-                  Spacer(Modifier.width(8.dp))
-                  RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
+              val clean = state.copy(historyFilter = "", mediaFilter = "Tudo", albumFilter = "", historyView = "Tudo")
+              when (val r = sc.route) {
+                is Route.Album -> CollectionScreen(clean.copy(albumFilter = r.name), navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
+                is Route.Playlist -> CollectionScreen(clean.copy(historyView = r.name), navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
+                is Route.Artist -> ArtistScreen(clean, navActions, r.name, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
+                Route.Downloads -> Column(Modifier.fillMaxSize()) {
+                  Row(Modifier.fillMaxWidth().height(TopBarHeight).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(pop) { Icon(Icons.Rounded.ArrowBack, "Voltar") }
+                    Text("Downloads", style = MaterialTheme.typography.titleLarge) }
+                  DownloadHub(state, navActions, Modifier.weight(1f).fillMaxWidth())
                 }
-                if (state.status.isNotBlank()) Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
-                // Abas: troca instantânea, sem animação entre páginas.
-                when (state.page) {
-                  "Buscar" -> MainPane(state, actions, targets, null, Modifier.weight(1f).fillMaxWidth())
-                  "Downloads" -> DownloadHub(state, actions, Modifier.weight(1f).fillMaxWidth())
-                  else -> LibraryHome(if (collection) state.copy(albumFilter = "", historyView = "Tudo") else state, actions, Modifier.weight(1f).fillMaxWidth(), homeList, homeRows)
+                null -> Column(Modifier.fillMaxSize()) {
+                  Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("rise", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
+                    RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
+                    Spacer(Modifier.width(8.dp))
+                    RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
+                  }
+                  if (state.status.isNotBlank() && state.status != "Nada encontrado") Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
+                  when (sc.tab) {
+                    "Buscar" -> MainPane(state, navActions, targets, null, Modifier.weight(1f).fillMaxWidth())
+                    "Biblioteca" -> LibraryHome(state.copy(albumFilter = "", historyView = state.historyView.takeIf { it !in state.playlists } ?: "Tudo"), navActions,
+                      Modifier.weight(1f).fillMaxWidth(), nav.list("root:Biblioteca"), nav.list("row:lib-al") to nav.list("row:lib-pl"), false, nav.list("row:lib-ar"))
+                    else -> LibraryHome(clean.copy(sort = "Recentes"), navActions, Modifier.weight(1f).fillMaxWidth(), nav.list("root:Início"),
+                      nav.list("row:home-al") to nav.list("row:home-pl"), true, nav.list("row:home-ar"))
+                  }
                 }
               }
             }
           }
         }
       }
-      NavigationDock(state, actions, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+      NavigationDock(tab, navActions, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
         .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) })
     }
   }
 }
 
-@Composable private fun NavigationDock(s: UiState, a: Actions, modifier: Modifier) {
+@Composable private fun NavigationDock(tab: String, a: Actions, modifier: Modifier) {
   val c = MaterialTheme.colorScheme
   val haptics = rememberHaptics()
   // Barra de vidro: translúcida, com borda de luz em cima.
   val edge = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.onSurface.copy(alpha = .22f), c.onSurface.copy(alpha = .04f)))
   Row(modifier.clip(RoundedCornerShape(32.dp)).background(c.surface.copy(alpha = .78f)).border(1.dp, edge, RoundedCornerShape(32.dp)).padding(5.dp)) {
-    listOf("Biblioteca", "Buscar", "Downloads").forEach { page ->
-      val on = s.page == page
+    Tabs.forEach { page ->
+      val on = tab == page
       val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-      Column(Modifier.weight(1f).springPress(src).clip(RoundedCornerShape(28.dp)).background(if (on) c.surfaceVariant else c.surface)
-        .clickable(src, null) { if (!on) haptics.tick(); a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(when (page) { "Biblioteca" -> Icons.Rounded.LibraryMusic; "Buscar" -> Icons.Rounded.Search; else -> Icons.Rounded.Download }, null,
+      Column(Modifier.weight(1f).springPress(src).clip(RoundedCornerShape(28.dp)).background(if (on) c.surfaceVariant else androidx.compose.ui.graphics.Color.Transparent)
+        .clickable(src, null) { haptics.tick(); a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(when (page) { "Biblioteca" -> Icons.Rounded.LibraryMusic; "Buscar" -> Icons.Rounded.Search; else -> Icons.Rounded.Home }, null,
           tint = if (on) c.onSurface else c.onSurfaceVariant, modifier = Modifier.size(23.dp))
-        Text(if (page == "Biblioteca") "Ouvir" else page, color = if (on) c.onSurface else c.onSurfaceVariant, fontSize = 11.sp, maxLines = 1)
+        Text(page, color = if (on) c.onSurface else c.onSurfaceVariant, fontSize = 11.sp, maxLines = 1)
       }
     }
   }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable private fun MainPane(state: UiState, a: Actions, targets: FlyTargets, onHistory: (() -> Unit)?, modifier: Modifier) {
   val c = MaterialTheme.colorScheme
-  Column(modifier.background(c.background).padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Text("Buscar", style = MaterialTheme.typography.headlineLarge)
+  val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+  val focus = androidx.compose.ui.platform.LocalFocusManager.current
+  var typed by remember { mutableStateOf(false) }
+  val q = state.query.trim()
+  val isLink = com.rise.musique.Engine.isLink(q)
+  // Busca ao vivo: links na hora; texto depois de 600 ms sem digitar (só quando foi o usuário que digitou).
+  LaunchedEffect(state.query, typed) {
+    if (!typed || q.isBlank()) return@LaunchedEffect
+    kotlinx.coroutines.delay(if (isLink) 150 else 600)
+    if (isLink || q.length >= 3) { typed = false; a.searchLive() }
+  }
+  val local = remember(q, state.history, state.playlists, state.hidden) { localMatches(state, q) }
+  val hideKeyboard = remember { object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+    override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+      if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && kotlin.math.abs(available.y) > 2f) { keyboard?.hide(); focus.clearFocus() }
+      return androidx.compose.ui.geometry.Offset.Zero } } }
+  Column(modifier.background(c.background).padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Text("Buscar", Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge)
+      val active = state.queue.count { it.error == null && !it.completed }
+      BadgedBox({ if (active > 0) Badge(containerColor = c.onSurface, contentColor = c.surface) { Text("$active") } }) {
+        RoundIconButton(Icons.Rounded.Download, "Downloads", a.openDownloads) }
+    }
     Row(Modifier.fillMaxWidth().clip(CircleShape).background(c.surfaceVariant).padding(start = 18.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
       verticalAlignment = Alignment.CenterVertically) {
       Icon(Icons.Rounded.Search, null, tint = c.onSurfaceVariant)
-      TextField(state.query, a.query, Modifier.weight(1f), singleLine = true,
-        placeholder = { Text("Link ou nome da música", color = c.onSurfaceVariant) },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { a.search() }),
+      TextField(state.query, { typed = true; a.query(it) }, Modifier.weight(1f), singleLine = true,
+        placeholder = { Text("Músicas, artistas ou um link", color = c.onSurfaceVariant) },
+        trailingIcon = { if (state.query.isNotEmpty()) IconButton({ typed = false; a.query("") }) { Icon(Icons.Rounded.Close, "Limpar busca") } },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { typed = false; keyboard?.hide(); a.search() }),
         colors = TextFieldDefaults.colors(focusedContainerColor = c.surfaceVariant, unfocusedContainerColor = c.surfaceVariant,
           focusedIndicatorColor = c.surfaceVariant, unfocusedIndicatorColor = c.surfaceVariant))
       if (state.searching) CircularProgressIndicator(Modifier.size(44.dp).padding(10.dp), strokeWidth = 2.dp, color = c.onSurface)
       else RoundIconButton(Icons.Rounded.ArrowForward, "Buscar", a.search, filled = state.query.isNotBlank())
     }
-    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.weight(1f).nestedScroll(hideKeyboard), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      if (isLink && state.results.isEmpty()) item(key = "link") { Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceVariant)
+          .clickable { keyboard?.hide(); a.search() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Link, null); Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) { Text("Link detectado", style = MaterialTheme.typography.titleMedium)
+          Text(if (state.searching) "Abrindo…" else "Toque para abrir este link", color = c.onSurfaceVariant, fontSize = 13.sp) }
+        if (state.searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onSurface) else Icon(Icons.Rounded.ArrowForward, null)
+      } }
+      if (q.isNotBlank() && !isLink && !local.isEmpty) {
+        item(key = "local-title") { Text("Na sua biblioteca", style = MaterialTheme.typography.titleLarge) }
+        items(local.tracks, key = { "lt:" + it.uri }) { h -> TrackRow(h, state, a) }
+        items(local.albums, key = { "la:" + it.first }) { (name, h) -> LocalRow(h, name, "Álbum", false) { a.openAlbum(name) } }
+        items(local.artists, key = { "lr:" + it.first }) { (name, h) -> LocalRow(h, name, "Artista", true) { a.openArtist(name) } }
+        items(local.playlists, key = { "lp:" + it.first }) { (name, h) -> LocalRow(h, name, "Playlist", false) { a.openPlaylist(name) } }
+      }
+      if (q.isNotBlank() && !isLink && (state.searching || state.results.isNotEmpty()) && state.radioOf == null) item(key = "yt-title") {
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("No YouTube", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+          if (state.searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onSurface) } }
       state.radioOf?.let { seed -> item { Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Radio, null, tint = c.onSurface); Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) { Text("Rádio", style = MaterialTheme.typography.titleLarge)
@@ -224,22 +305,28 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
       }
       if (state.moreResults) item { PillButton(if (state.loadingMore) "Carregando…" else "Carregar mais resultados", a.moreResults, Modifier.fillMaxWidth(), filled = false, enabled = !state.loadingMore) }
       if (state.results.isEmpty() && !state.searching) {
-        item { Text("Um nome, artista ou link. Encontre o que quer ouvir.", color = c.onSurfaceVariant, modifier = Modifier.padding(vertical = 16.dp)) }
-        if (state.recentSearches.isNotEmpty()) {
-          item { Row(verticalAlignment = Alignment.CenterVertically) {
+        if (q.isNotBlank() && state.status == "Nada encontrado" && local.isEmpty) item(key = "none") {
+          EmptyState(Icons.Rounded.SearchOff, "Nada encontrado para “$q”", "Confira a grafia, tente o nome do artista ou cole um link.") }
+        else if (q.isBlank()) item(key = "hint") { Text("Um nome, artista ou link. Encontre o que quer ouvir.", color = c.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp)) }
+        if (q.isBlank() && state.recentSearches.isNotEmpty()) {
+          item(key = "recent-title") { Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Buscas recentes", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            TextButton(a.clearSearches) { Text("Limpar") }
+            TextButton(a.clearSearches) { Text("Limpar tudo") }
           } }
-          items(state.recentSearches) { query -> Row(Modifier.fillMaxWidth().clickable { a.query(query); a.search() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.History, null, tint = c.onSurfaceVariant); Spacer(Modifier.width(14.dp)); Text(query, maxLines = 2, overflow = TextOverflow.Ellipsis)
-          } }
+          item(key = "recent") { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.recentSearches.forEach { query ->
+              InputChip(false, { typed = false; a.query(query); a.search() }, label = { Text(query, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = { Icon(Icons.Rounded.History, null, Modifier.size(18.dp)) },
+                trailingIcon = { Icon(Icons.Rounded.Close, "Remover $query", Modifier.size(18.dp).clickable { a.removeSearch(query) }) },
+                modifier = Modifier.heightIn(min = 40.dp))
+            } } }
         }
       }
     }
-    val active = state.queue.count { it.error == null && !it.completed }
+    val activeJobs = state.queue.count { it.error == null && !it.completed }
     if (state.selected.isNotEmpty()) PillButton(modifier = Modifier.fillMaxWidth().onGloballyPositioned { targets.source = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 2f, it.size.height / 2f) },
-      text = when { state.selected.size > 1 -> "Baixar ${state.selected.size} faixas"; active == 0 -> "Baixar"
-        else -> "Adicionar à fila ($active)" }, onClick = a.download, icon = Icons.Rounded.Download, enabled = state.selected.isNotEmpty() && state.choices.ready(state.mode, state.format))
+      text = when { state.selected.size > 1 -> "Baixar ${state.selected.size} faixas"; activeJobs == 0 -> "Baixar"
+        else -> "Adicionar à fila ($activeJobs)" }, onClick = a.download, icon = Icons.Rounded.Download, enabled = state.selected.isNotEmpty() && state.choices.ready(state.mode, state.format))
     if (state.now != null) Spacer(Modifier.height(88.dp))
   }
 }
@@ -316,8 +403,9 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
 }
 
 fun visibleHistory(state: UiState): List<HistoryItem> {
-  val base = when (state.historyView) { "Tudo" -> state.history; "Favoritos" -> state.history.filter { it.uri in state.favorites }
-    else -> state.playlists[state.historyView].orEmpty().mapNotNull { u -> state.history.firstOrNull { it.uri == u } } }
+  val all = if (state.hidden.isEmpty()) state.history else state.history.filter { it.uri !in state.hidden }
+  val base = when (state.historyView) { "Tudo" -> all; "Favoritos" -> all.filter { it.uri in state.favorites }
+    else -> state.playlists[state.historyView].orEmpty().mapNotNull { u -> all.firstOrNull { it.uri == u } } }
   val q = state.historyFilter.trim()
   val filtered = base.filter { h ->
     (state.mediaFilter == "Tudo" || (state.mediaFilter == "Vídeos") == h.video) &&
@@ -342,3 +430,45 @@ fun visibleHistory(state: UiState): List<HistoryItem> {
     dismissButton = { TextButton(dismiss) { Text("Cancelar") } })
 }
 
+
+/** Instant local matches for the unified search. */
+data class LocalMatches(val tracks: List<HistoryItem>, val albums: List<Pair<String, HistoryItem>>, val artists: List<Pair<String, HistoryItem>>,
+                        val playlists: List<Pair<String, HistoryItem>>) { val isEmpty get() = tracks.isEmpty() && albums.isEmpty() && artists.isEmpty() && playlists.isEmpty() }
+
+fun localMatches(s: UiState, q: String): LocalMatches {
+  if (q.isBlank()) return LocalMatches(emptyList(), emptyList(), emptyList(), emptyList())
+  val all = s.history.filter { it.uri !in s.hidden }
+  fun has(t: String) = t.contains(q, ignoreCase = true)
+  val tracks = all.filter { has(it.title) || has(it.artist) }.take(4)
+  val albums = all.filter { it.album.isNotBlank() && has(it.album) }.groupBy { it.album }.map { (n, t) -> n to (t.firstOrNull { it.art.isNotBlank() } ?: t.first()) }.take(3)
+  val artists = all.filter { it.artist.isNotBlank() && has(it.artist) }.groupBy { it.artist }.map { (n, t) -> n to (t.firstOrNull { it.art.isNotBlank() } ?: t.first()) }.take(3)
+  val lists = s.playlists.keys.filter(::has).map { n -> n to (s.playlists[n].orEmpty().firstNotNullOfOrNull { u -> all.firstOrNull { it.uri == u } } ?: HistoryItem(n, "", "pl:$n")) }.take(3)
+  return LocalMatches(tracks, albums, artists, lists)
+}
+
+@Composable private fun LocalRow(h: HistoryItem, title: String, kind: String, circle: Boolean, onClick: () -> Unit) {
+  val c = MaterialTheme.colorScheme
+  val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+  Row(Modifier.fillMaxWidth().weightedPress(src, 16.dp).clip(RoundedCornerShape(16.dp)).clickable(src, null, onClick = onClick).padding(vertical = 4.dp),
+    verticalAlignment = Alignment.CenterVertically) {
+    Cover(h, Modifier.size(60.dp), if (circle) 30.dp else 14.dp); Spacer(Modifier.width(14.dp))
+    Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(kind, color = c.onSurfaceVariant, fontSize = 13.sp) }
+    Icon(Icons.Rounded.ChevronRight, null, tint = c.onSurfaceVariant)
+  }
+}
+
+/** Snackbar "Desfazer": glass pill above the mini player / dock; the real deletion waits ~5 s. */
+@Composable fun UndoBar(state: UiState, a: Actions, modifier: Modifier) {
+  val c = MaterialTheme.colorScheme
+  val u = state.undo
+  androidx.compose.animation.AnimatedVisibility(u != null, modifier.navigationBarsPadding().padding(bottom = if (state.now != null) 168.dp else 92.dp, start = 16.dp, end = 16.dp),
+    enter = fadeIn(Motion.enter()) + slideInVertically(Motion.enter()) { it / 2 }, exit = fadeOut(Motion.exit())) {
+    val last = remember { mutableStateOf(u) }; if (u != null) last.value = u
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.inverseSurface).padding(start = 20.dp, end = 8.dp).heightIn(min = 56.dp),
+      verticalAlignment = Alignment.CenterVertically) {
+      Text(last.value?.message.orEmpty(), Modifier.weight(1f), color = c.inverseOnSurface, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      TextButton(a.undo, Modifier.heightIn(min = 48.dp)) { Text("Desfazer", color = c.inverseOnSurface, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) }
+    }
+  }
+}

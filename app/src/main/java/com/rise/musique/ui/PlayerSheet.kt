@@ -27,7 +27,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-private val bouncy = Motion.settle<Float>(380f) // sem quique; carrega a velocidade do dedo
+private val bouncy = Motion.settle<Float>(247f) // sem quique; carrega a velocidade do dedo
 private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 60) }
 
 /**
@@ -98,7 +98,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       // Capa: o mesmo elemento cresce do mini até o tamanho cheio.
       val artAlpha by animateFloatAsState(if (showLyrics && !wide && p > .9f) 0f else 1f, Motion.standard(), label = "art")
       // Capa que respira: cheia no play, recua no pause, sempre com mola.
-      val breath by animateFloatAsState(if (now.playing || p < .5f) 1f else 0.84f, Motion.settle(260f), label = "breath")
+      val breath by animateFloatAsState(if (now.playing || p < .5f) 1f else 0.84f, Motion.settle(169f), label = "breath")
       // Capa arremessável: arrasta na horizontal; forte o bastante troca de faixa, fraco volta com mola.
       val throwX = remember { Animatable(0f) }
       val maxWpx = with(density) { maxW.toPx() }
@@ -117,11 +117,11 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
               val go = if (throwX.value < -maxWpx / 3 || v < -1800f) 1 else if (throwX.value > maxWpx / 3 || v > 1800f) -1 else 0
               val canGo = (go == 1 && now.hasNext) || (go == -1 && now.hasPrev)
               if (go != 0 && canGo) {
-                haptics.press(); throwX.animateTo(-go * maxWpx * 1.3f, Motion.settle(500f))
+                haptics.press(); throwX.animateTo(-go * maxWpx * 1.3f, Motion.settle(325f))
                 if (go == 1) a.next() else a.prev()
                 throwX.snapTo(go * maxWpx * 1.1f)
               }
-              throwX.animateTo(0f, Motion.settle(320f))
+              throwX.animateTo(0f, Motion.settle(208f))
             }) else Modifier).shadow(lerp(0.dp, 24.dp, p), RoundedCornerShape(lerp(12.dp, 28.dp, p)))
           .clip(RoundedCornerShape(lerp(12.dp, 28.dp, p))).background(c.outline), contentAlignment = Alignment.Center) {
         if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -223,7 +223,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
     items(lines.size) { i -> val l = lines[i]
       val dist = kotlin.math.abs(i - cur).coerceAtMost(4)
       // Linha ativa: maior e nítida; as outras menores, apagadas e desfocadas conforme a distância.
-      val focus by animateFloatAsState(if (i == cur) 1f else 0f, Motion.settle(260f), label = "focus")
+      val focus by animateFloatAsState(if (i == cur) 1f else 0f, Motion.settle(169f), label = "focus")
       val fz = focus.coerceIn(0f, 1f)
       val blurDp = if (Build.VERSION.SDK_INT >= 31) (dist * 1.6f * (1f - fz)).dp else 0.dp
       Text(l.text.ifBlank { "♪" }, Modifier.fillMaxWidth()

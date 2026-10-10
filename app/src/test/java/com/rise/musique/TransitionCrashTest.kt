@@ -1,6 +1,7 @@
 package com.rise.musique
 
 import androidx.compose.runtime.*
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.rise.musique.ui.*
@@ -9,28 +10,38 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
-/** Regression for 0.13.0: "SeekableTransitionState has been used in different Transitions" on launch/recomposition. */
+/**
+ * Regression for 0.13.0 ("SeekableTransitionState has been used in different Transitions") extended in 0.14:
+ * real taps through the UI — open album/playlist/artist, back, interrupt mid-flight, tab switches and reselects,
+ * theme flips and full removal/re-creation of the UI (config-change-like).
+ */
 @RunWith(AndroidJUnit4::class)
-@Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
+@Config(sdk = [34], qualifiers = "w411dp-h2400dp-mdpi")
 class TransitionCrashTest {
   @get:Rule val rule = createComposeRule()
-  private val album = (1..8).map { HistoryItem("Faixa $it", "M4A", "u:$it", artist = "A", album = "Disco") }
+  private val album = (1..3).map { HistoryItem("Faixa $it", "M4A", "u:$it", artist = "Fulano", album = "Disco") }
 
-  @Test fun openBackThemeAndRecreate() {
+  @Test fun navigateEverywhere() {
     var state by mutableStateOf(UiState(history = album, playlists = mapOf("Treino" to listOf("u:1"))))
     var dark by mutableStateOf(true)
     var alive by mutableStateOf(true)
-    rule.setContent { if (alive) RiseTheme(dark) { RiseApp(state, Actions(albumFilter = { state = state.copy(albumFilter = it) },
+    rule.setContent { if (alive) RiseTheme(dark) { RiseApp(state, Actions(page = { state = state.copy(page = it) },
       historyView = { state = state.copy(historyView = it) })) } }
     rule.waitForIdle()
-    repeat(3) {
-      state = state.copy(albumFilter = "Disco"); rule.waitForIdle()
-      state = state.copy(albumFilter = ""); rule.waitForIdle()
-      state = state.copy(historyView = "Treino"); rule.mainClock.advanceTimeBy(120) // interrupt mid-flight
-      state = state.copy(historyView = "Tudo"); rule.waitForIdle()
+    repeat(2) {
+      rule.onAllNodesWithText("Disco")[0].performClick(); rule.waitForIdle()               // album (shared element)
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Treino")[0].performClick(); rule.mainClock.advanceTimeBy(120) // playlist, interrupted
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Fulano")[0].performClick(); rule.waitForIdle()              // artist
+      rule.onAllNodesWithText("Disco")[0].performClick(); rule.waitForIdle()               // artist → album
+      rule.onAllNodesWithText("Biblioteca")[0].performClick(); rule.waitForIdle()          // tab switch keeps stacks
+      rule.onAllNodesWithText("Buscar")[0].performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Início")[0].performClick(); rule.waitForIdle()              // back to the stacked album
+      rule.onAllNodesWithText("Início")[0].performClick(); rule.waitForIdle()              // reselect: pop to root
+      rule.onAllNodesWithText("Ouvir agora").assertCountEquals(1)
       dark = !dark; rule.waitForIdle()
-      state = state.copy(page = "Buscar"); rule.waitForIdle(); state = state.copy(page = "Biblioteca"); rule.waitForIdle()
-      alive = false; rule.waitForIdle(); alive = true; rule.waitForIdle() // config-change-like recreation
+      alive = false; rule.waitForIdle(); alive = true; rule.waitForIdle()
     }
   }
 }

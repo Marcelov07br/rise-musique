@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
             java.io.File(filesDir, "crash.txt").delete(); crash = null }) { androidx.compose.material3.Text("Compartilhar") } },
           dismissButton = { androidx.compose.material3.TextButton({ java.io.File(filesDir, "crash.txt").delete(); crash = null }) { androidx.compose.material3.Text("Ignorar") } }) }
         RiseApp(vm.state, Actions(vm::onQuery, vm::onMode, vm::onQuality, { picker.launch(null) },
-        vm::enqueue, { vm.theme(if (dark) "Claro" else "Escuro") }, vm::search, vm::select, vm::togglePreview,
+        vm::enqueue, { vm.theme(if (dark) "Claro" else "Escuro") }, { vm.search() }, vm::select, vm::togglePreview,
         selectAll = vm::selectAll, format = vm::onFormat, cut = vm::onCut, cancel = vm::cancel, retry = vm::retry, dismiss = vm::dismiss,
         open = { h -> vm.openIntent(h, false)?.let(::startActivity) }, share = { h -> vm.openIntent(h, true)?.let(::startActivity) },
         delete = vm::delete, play = vm::play, playPause = vm::playPause, seek = vm::seek, closePlayer = vm::closePlayer, next = vm::next, prev = vm::prev, shuffle = vm::shuffle,
@@ -62,7 +62,8 @@ class MainActivity : ComponentActivity() {
         renamePlaylist = vm::renamePlaylist, movePlaylist = vm::movePlaylist, refreshMetadata = vm::refreshMetadata,
         theme = vm::theme, settings = vm::settings, removeLocal = vm::removeLocal, crossfade = vm::crossfade, stats = vm::stats, playShuffled = vm::playShuffled, queueAll = vm::queueAll,
         radio = vm::radio, radioFor = vm::radioFor, automix = vm::automix, lastfmLogin = vm::lastfmLogin, lastfmLogout = vm::lastfmLogout,
-        lastfmToggle = vm::lastfmToggle, openCut = vm::openCut, previewRange = vm::previewRange, recap = vm::recap, shareRecap = { p -> vm.recapIntent(p)?.let(::startActivity) })) } }
+        lastfmToggle = vm::lastfmToggle, openCut = vm::openCut, undo = vm::undo, removeSearch = vm::removeSearch, searchLive = vm::searchLive, clearQueue = vm::clearQueue,
+        artistPopular = vm::artistPopular, prepareDownload = vm::prepareDownload, removeFromList = vm::removeFromList, previewRange = vm::previewRange, recap = vm::recap, shareRecap = { p -> vm.recapIntent(p)?.let(::startActivity) })) } }
   }
   override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }
   private fun handle(i: Intent?) { if (i?.action == Intent.ACTION_SEND) vm.onIncomingLink(i.getStringExtra(Intent.EXTRA_TEXT)) }

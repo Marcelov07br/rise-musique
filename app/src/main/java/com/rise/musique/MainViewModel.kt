@@ -94,6 +94,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private fun recentSearches(): List<String> = runCatching {
     val a = org.json.JSONArray(prefs.getString("searches", "[]")); List(a.length()) { a.getString(it) }
   }.getOrDefault(emptyList())
+  fun removeSearch(q: String) { val list = recentSearches() - q; prefs.edit().putString("searches", org.json.JSONArray(list).toString()).apply(); state = state.copy(recentSearches = list) }
+  /** Live (debounced) search: same as search() but doesn't write the query into the history. */
+  fun searchLive() = search(record = false)
+
+  // ---- Desfazer: a ação real só acontece depois de ~5 s; até lá o item fica só escondido. ----
+  private var undoJob: Job? = null
+  private var undoRestore: (() -> Unit)? = null
+  private var undoCommit: (suspend () -> Unit)? = null
+  private fun withUndo(message: String, hide: () -> Unit, restore: () -> Unit, commit: suspend () -> Unit) {
+    flushUndo()
+    hide(); undoRestore = restore; undoCommit = commit
+    val id = System.nanoTime(); state = state.copy(undo = UndoInfo(id, message))
+    undoJob = viewModelScope.launch { delay(5_000); val c = undoCommit; undoCommit = null; undoRestore = null
+      if (state.undo?.id == id) state = state.copy(undo = null); c?.invoke() }
+  }
+  /** Commits a pending action right away (a new one replaces the snackbar). */
+  private fun flushUndo() { undoJob?.cancel(); val c = undoCommit; undoCommit = null; undoRestore = null
+    if (c != null) viewModelScope.launch { c() }; state = state.copy(undo = null) }
+  fun undo() { undoJob?.cancel(); undoCommit = null; undoRestore?.invoke(); undoRestore = null; state = state.copy(undo = null) }
+
+  fun removeFromList(h: HistoryItem, list: String) {
+    val before = state.playlists
+    withUndo("Removida de $list", { state = state.copy(playlists = before + (list to before[list].orEmpty().filter { it != h.uri })) },
+      { state = state.copy(playlists = Library.playlists(ctx)) },
+      { Library.removeFromPlaylist(ctx, list, h.uri); state = state.copy(playlists = Library.playlists(ctx)) })
+  }
+  fun clearQueue() {
+    val c = controller ?: return; val from = c.currentMediaItemIndex + 1
+    val items = (from until c.mediaItemCount).map { c.getMediaItemAt(it) }; if (items.isEmpty()) return
+    c.removeMediaItems(from, c.mediaItemCount)
+    withUndo("Fila limpa", {}, { withPlayer { p -> p.addMediaItems((p.currentMediaItemIndex + 1).coerceAtMost(p.mediaItemCount), items) } }, {})
+  }
+  fun artistPopular(name: String) {
+    if (name in state.popular || name in state.popularLoading) return
+    state = state.copy(popularLoading = state.popularLoading + name)
+    viewModelScope.launch {
+      val r = runCatching { Engine.search(name).take(10) }.getOrDefault(emptyList())
+      state = state.copy(popular = state.popular + (name to r), popularLoading = state.popularLoading - name)
+    }
+  }
+  /** "Baixar" from an artist's Populares: opens Buscar with just that result selected and the download controls. */
+  fun prepareDownload(r: SearchResult) { stopPreview()
+    state = state.copy(page = "Buscar", query = r.title, results = listOf(r), selected = setOf(r.url), isPlaylist = false, moreResults = false, radioOf = null) }
+
   fun clearSearches() { prefs.edit().remove("searches").apply(); state = state.copy(recentSearches = emptyList()) }
   /** Song radio: similar tracks from YouTube Music's mix for this song; shown as selectable results with previews. */
   fun radio(r: SearchResult) = startRadio(r.title) { Engine.radio(r.url) }
@@ -114,13 +158,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   }
   private var moreRadio = false
 
-  fun search() {
-    if (state.query.isBlank() || state.searching || state.loadingMore) return
+  fun search() = search(true)
+  private var searchJob: Job? = null
+  fun search(record: Boolean) {
+    if (state.query.isBlank() || state.loadingMore) return
+    if (state.searching) { if (!record) searchJob?.cancel() else return }
     stopPreview(); val query = state.query.trim(); searchTerm = query; searchFetched = 0
-    val recent = (listOf(query) + recentSearches()).distinct().take(12)
-    prefs.edit().putString("searches", org.json.JSONArray(recent).toString()).apply()
+    val recent = if (record) (listOf(query) + recentSearches()).distinct().take(12) else recentSearches()
+    if (record) prefs.edit().putString("searches", org.json.JSONArray(recent).toString()).apply()
     state = state.copy(page = "Buscar", searching = true, results = emptyList(), selected = emptySet(), moreResults = false, recentSearches = recent, status = "", radioOf = null)
-    viewModelScope.launch {
+    searchJob = viewModelScope.launch {
       runCatching { Engine.search(query).also { ensureActive() } }
         .onSuccess { r -> searchFetched = r.size; state = state.copy(searching = false, results = r,
           selected = if (r.size == 1) setOf(r[0].url) else emptySet(), isPlaylist = Engine.isPlaylist(query),
@@ -379,8 +426,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
           state = state.copy(importing = false, status = "Falha ao ler informações: ${it.message}") }
     }
   }
-  fun removeLocal(h: HistoryItem) { HistoryStore.remove(ctx, h); Library.removeTrack(ctx, h.uri)
-    state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx), status = "Removida da biblioteca. O arquivo original foi preservado.") }
+  fun removeLocal(h: HistoryItem) = withUndo("Removida da biblioteca", { state = state.copy(hidden = state.hidden + h.uri) }, { state = state.copy(hidden = state.hidden - h.uri) }) { removeLocalNow(h) }
+  private fun removeLocalNow(h: HistoryItem) { HistoryStore.remove(ctx, h); Library.removeTrack(ctx, h.uri)
+    state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx), hidden = state.hidden - h.uri) }
   fun renamePlaylist(old: String, name: String) { runCatching { Library.renamePlaylist(ctx, old, name.trim()) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx), historyView = if (state.historyView == old) name.trim() else state.historyView) }
     .onFailure { state = state.copy(status = it.message.orEmpty()) } }
@@ -421,17 +469,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             else Intent(Intent.ACTION_VIEW).setDataAndType(u, Engine.mime(ext(h)))
     return Intent.createChooser(i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null) }
 
-  fun delete(h: HistoryItem) {
+  fun delete(h: HistoryItem) = withUndo("Arquivo apagado", { state = state.copy(hidden = state.hidden + h.uri) }, { state = state.copy(hidden = state.hidden - h.uri) }) { deleteNow(h) }
+  private fun deleteNow(h: HistoryItem) {
     viewModelScope.launch {
       runCatching { withContext(Dispatchers.IO) {
         val deleted = if (h.uri.startsWith("content://")) DocumentsContract.deleteDocument(ctx.contentResolver, Uri.parse(h.uri)) else File(h.uri).let { !it.exists() || it.delete() }
         require(deleted) { "O arquivo não pôde ser apagado" }
         HistoryStore.remove(ctx, h); Library.removeTrack(ctx, h.uri)
-      } }.onSuccess { state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx)) }
-        .onFailure { state = state.copy(status = "Falha ao apagar: ${it.message}") }
+      } }.onSuccess { state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx), hidden = state.hidden - h.uri) }
+        .onFailure { state = state.copy(status = "Falha ao apagar: ${it.message}", hidden = state.hidden - h.uri) }
     }
   }
 
-  override fun onCleared() { cleared = true; pending.clear(); controllerFuture?.let(MediaController::releaseFuture); super.onCleared() }
+  override fun onCleared() { runBlocking { undoJob?.cancel(); undoCommit?.invoke() }; cleared = true; pending.clear(); controllerFuture?.let(MediaController::releaseFuture); super.onCleared() }
 }
 

@@ -26,7 +26,8 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
 }
 
 @Composable fun LibraryHome(s: UiState, a: Actions, modifier: Modifier, list: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
-                            rows: Pair<androidx.compose.foundation.lazy.LazyListState, androidx.compose.foundation.lazy.LazyListState>? = null) {
+                            rows: Pair<androidx.compose.foundation.lazy.LazyListState, androidx.compose.foundation.lazy.LazyListState>? = null,
+                            homeTab: Boolean = false, artistRow: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState()) {
   val c = MaterialTheme.colorScheme
   val shown = visibleHistory(s)
   var importMenu by remember { mutableStateOf(false) }
@@ -38,7 +39,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   LazyColumn(modifier.padding(horizontal = 24.dp), state = list, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = if (s.now != null) 104.dp else 24.dp)) {
     item { Row(verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f)) {
-        Text(when (s.historyView) { "Tudo" -> "Ouvir agora"; else -> s.historyView }, style = MaterialTheme.typography.headlineLarge)
+        Text(if (homeTab) "Ouvir agora" else if (s.historyView == "Favoritos") "Favoritos" else "Biblioteca", style = MaterialTheme.typography.headlineLarge)
         Text("${s.history.size} arquivos · sua coleção", color = c.onSurfaceVariant, fontSize = 13.sp)
       }
       Box {
@@ -50,14 +51,14 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
         }
       }
     } }
-    item { OutlinedTextField(s.historyFilter, a.historyFilter, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(20.dp),
+    if (!homeTab) item { OutlinedTextField(s.historyFilter, a.historyFilter, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(20.dp),
       placeholder = { Text("Buscar na sua coleção") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
       trailingIcon = { if (s.historyFilter.isNotBlank()) IconButton({ a.historyFilter("") }) { Icon(Icons.Rounded.Close, "Limpar busca") } }) }
-    item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (!homeTab) item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
       items(listOf("Tudo", "Favoritos") + s.playlists.keys.sorted()) { name ->
         var menu by remember { mutableStateOf(false) }
         Box {
-          FilterChip(s.historyView == name, { a.historyView(name) }, label = { Text(name) },
+          FilterChip(s.historyView == name, { if (name in s.playlists) a.openPlaylist(name) else a.historyView(name) }, label = { Text(name) },
             trailingIcon = { if (name in s.playlists) Icon(Icons.Rounded.MoreHoriz, "Opções da playlist", Modifier.size(20.dp).clickable { menu = true }) })
           DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem({ Text("Renomear") }, { menu = false; rename = name })
@@ -66,7 +67,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
         }
       }
     } }
-    item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    if (!homeTab) item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       listOf("Tudo", "Músicas", "Vídeos").forEach { filter ->
         TextButton({ a.mediaFilter(filter) }, contentPadding = PaddingValues(horizontal = 10.dp)) {
           Text(filter, color = if (s.mediaFilter == filter) c.onSurface else c.onSurfaceVariant, fontSize = 13.sp)
@@ -84,22 +85,35 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     if (shown.isEmpty()) item {
       Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Icon(Icons.Rounded.LibraryMusic, null, Modifier.size(48.dp), tint = c.onSurfaceVariant)
-        Text(when { s.historyFilter.isNotBlank() || s.albumFilter.isNotBlank() -> "Nenhum arquivo encontrado"; s.historyView == "Favoritos" -> "Suas preferidas ficam aqui"; s.historyView in s.playlists -> "Esta playlist está vazia"; else -> "Sua coleção começa aqui" }, style = MaterialTheme.typography.titleLarge)
-        Text("Importe músicas do celular ou encontre algo em Buscar. O coração guarda suas favoritas.", color = c.onSurfaceVariant)
-        PillButton("Importar músicas", a.importFiles, icon = Icons.Rounded.Add, enabled = !s.importing)
-        TextButton({ a.page("Buscar") }) { Text("Encontrar uma música") }
+        val filtered = s.historyFilter.isNotBlank() || s.albumFilter.isNotBlank() || s.mediaFilter != "Tudo"
+        Text(when { filtered -> "Nada com esse filtro"; s.historyView == "Favoritos" -> "Suas preferidas ficam aqui"; else -> "Sua coleção começa aqui" }, style = MaterialTheme.typography.titleLarge)
+        Text(when { filtered -> "Tente outro termo ou limpe os filtros."
+          s.historyView == "Favoritos" -> "Toque e segure uma faixa e escolha Favoritar."
+          else -> "Importe músicas do celular ou encontre algo em Buscar." }, color = c.onSurfaceVariant)
+        if (filtered) PillButton("Limpar filtros", { a.historyFilter(""); a.mediaFilter("Tudo") }, filled = false)
+        else if (s.historyView == "Favoritos") PillButton("Ver tudo", { a.historyView("Tudo") }, filled = false)
+        else { PillButton("Importar músicas", a.importFiles, icon = Icons.Rounded.Add, enabled = !s.importing)
+          TextButton({ a.page("Buscar") }) { Text("Encontrar uma música") } }
       }
     }
-    val home = s.historyView == "Tudo" && s.historyFilter.isBlank() && s.albumFilter.isBlank() && s.sort == "Recentes"
+    val home = homeTab
+    val browse = home || (s.historyView == "Tudo" && s.historyFilter.isBlank() && s.mediaFilter == "Tudo")
     val recent = if (home) shown.take(6) else shown
-    if (shown.isNotEmpty()) item { Text(if (home) "Recentes" else "${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
+    if (shown.isNotEmpty() && (home || !browse)) item { Text(if (home) "Recentes" else "${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
+    if (!home) { // Biblioteca: álbuns e artistas no topo, depois todas as faixas
+      AlbumAndArtistRows(shown.takeIf { browse }.orEmpty(), a, albumRow, artistRow)
+    }
     items(recent, key = { it.uri }) { h -> TrackRow(h, s, a) }
+    if (home && shown.isNotEmpty()) item(key = "recap") { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      EntryCard("Sua retrospectiva", "O mês e o ano em música", Icons.Rounded.AutoAwesome, Modifier.weight(1f)) { a.recap(true) }
+      EntryCard("Estatísticas", "O que você mais ouve", Icons.Rounded.BarChart, Modifier.weight(1f)) { a.stats(true) }
+    } }
     val albums = if (home) shown.filter { !it.video && it.album.isNotBlank() }.groupBy { it.album to it.artist }.entries.take(20) else emptyList()
     if (albums.isNotEmpty()) {
       item(key = "albums-title") { Text("Álbuns e singles", style = MaterialTheme.typography.titleLarge) }
       item(key = "albums") { Carousel(albumRow) {
         items(albums, key = { it.key.first + "|" + it.key.second }) { entry -> val h = entry.value.first()
-          CoverCard(h, h.album, h.artist.ifBlank { "${entry.value.size} faixas" }, "cover-al-${h.album}") { a.albumFilter(h.album) } }
+          CoverCard(h, h.album, h.artist.ifBlank { "${entry.value.size} faixas" }, "cover-al-${h.album}") { a.openAlbum(h.album) } }
       } }
     }
     val lists = if (home) s.playlists.entries.sortedBy { it.key }.map { (name, uris) -> Triple(name, uris.size, uris.firstNotNullOfOrNull { u -> s.history.firstOrNull { it.uri == u && it.art.isNotBlank() } }) } else emptyList()
@@ -107,12 +121,17 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       item(key = "lists-title") { Text("Suas playlists", style = MaterialTheme.typography.titleLarge) }
       item(key = "lists") { Carousel(playlistRow) {
         items(lists, key = { it.first }) { (name, n, cover) ->
-          CoverCard(cover ?: HistoryItem(name, "", "pl:$name"), name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-pl-$name") { a.historyView(name) } }
+          CoverCard(cover ?: HistoryItem(name, "", "pl:$name"), name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-pl-$name") { a.openPlaylist(name) } }
       } }
     }
-    if (home && shown.size > 6) {
-      item { Text("Sua biblioteca", style = MaterialTheme.typography.titleLarge) }
-      items(shown.drop(6), key = { it.uri }) { h -> TrackRow(h, s, a) }
+    if (home) {
+      val artists = artistsOf(shown)
+      if (artists.isNotEmpty()) {
+        item(key = "artists-title") { Text("Artistas", style = MaterialTheme.typography.titleLarge) }
+        item(key = "artists") { Carousel(artistRow) { items(artists, key = { it.first }) { (name, h, n) ->
+          CoverCard(h, name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-ar-$name", circle = true) { a.openArtist(name) } } } }
+      }
+      if (shown.size > 6) item(key = "all") { PillButton("Ver a biblioteca inteira", { a.page("Biblioteca") }, Modifier.fillMaxWidth(), filled = false) }
     }
   }
   rename?.let { old -> var name by remember(old) { mutableStateOf(old) }
@@ -129,7 +148,6 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   val c = MaterialTheme.colorScheme
   var menu by remember(h.uri) { mutableStateOf(false) }
   var pick by remember(h.uri) { mutableStateOf(false) }
-  var delete by remember(h.uri) { mutableStateOf(false) }
   Box {
     val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Row(Modifier.fillMaxWidth().weightedPress(press, 16.dp).clip(RoundedCornerShape(16.dp)).combinedClickable(press, null, onClick = { a.play(h) }, onLongClick = { menu = true }).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -153,27 +171,13 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       }
       IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "Opções de ${h.title}", tint = c.onSurfaceVariant) }
     }
-    DropdownMenu(menu, { menu = false }) {
-      DropdownMenuItem({ Text(if (h.uri in s.favorites) "Remover dos favoritos" else "Favoritar") }, { menu = false; a.favorite(h) }, leadingIcon = { Icon(Icons.Rounded.FavoriteBorder, null) })
-      DropdownMenuItem({ Text("Tocar a seguir") }, { menu = false; a.playNext(h) }, leadingIcon = { Icon(Icons.Rounded.QueuePlayNext, null) })
-      DropdownMenuItem({ Text("Adicionar à fila") }, { menu = false; a.addQueue(h) })
-      DropdownMenuItem({ Text("Adicionar à playlist") }, { menu = false; pick = true })
-      if (!h.video) DropdownMenuItem({ Text("Rádio desta música") }, { menu = false; a.radioFor(h) })
-      if (s.historyView in s.playlists) DropdownMenuItem({ Text("Tirar desta playlist") }, { menu = false; a.removeFromPlaylist(h) })
-      DropdownMenuItem({ Text("Compartilhar") }, { menu = false; a.share(h) })
-      DropdownMenuItem({ Text("Abrir em outro app") }, { menu = false; a.open(h) })
-      DropdownMenuItem({ Text(if (h.imported) "Remover da biblioteca" else "Apagar arquivo") }, { menu = false; delete = true })
-    }
   }
+  if (menu) TrackActionSheet(h, s, a, { menu = false }, { pick = true })
   if (pick) PlaylistPicker(s.playlists.keys.sorted(), { pick = false }) { name -> a.addToPlaylist(h, name); pick = false }
-  if (delete) AlertDialog({ delete = false }, title = { Text(if (h.imported) "Remover da biblioteca?" else "Apagar este arquivo?") },
-    text = { Text(if (h.imported) "O arquivo original permanece no celular." else "O arquivo baixado será apagado do armazenamento.") },
-    confirmButton = { TextButton({ delete = false; if (h.imported) a.removeLocal(h) else a.delete(h) }) { Text(if (h.imported) "Remover" else "Apagar") } },
-    dismissButton = { TextButton({ delete = false }) { Text("Cancelar") } })
 }
 
 /** Horizontal row that bleeds to the screen edges and snaps cards to the left margin with natural deceleration. */
-@Composable private fun Carousel(state: androidx.compose.foundation.lazy.LazyListState, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+@Composable internal fun Carousel(state: androidx.compose.foundation.lazy.LazyListState, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
   val bleed = 24.dp
   LazyRow(Modifier.layout { m, cs -> val p = bleed.roundToPx()
       val pl = m.measure(cs.copy(minWidth = cs.maxWidth + 2 * p, maxWidth = cs.maxWidth + 2 * p)); layout(cs.maxWidth, pl.height) { pl.place(-p, 0) } },
@@ -183,14 +187,47 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
 }
 
 /** Flat cover card with weighted press; its cover is the shared element that becomes the collection header. */
-@Composable private fun CoverCard(h: HistoryItem, title: String, subtitle: String, sharedKey: String, onClick: () -> Unit) {
+@Composable internal fun CoverCard(h: HistoryItem, title: String, subtitle: String, sharedKey: String, circle: Boolean = false, onClick: () -> Unit) {
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   val haptics = rememberHaptics()
   val r = morphCorner(8.dp, 14.dp)
   Column(Modifier.width(156.dp).weightedPress(src, 14.dp).clickable(src, null) { haptics.tick(); onClick() }) {
-    Cover(h, Modifier.size(156.dp).sharedCover(sharedKey), r?.value ?: 14.dp); Spacer(Modifier.height(8.dp))
-    Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-    Text(subtitle, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+    Cover(h, Modifier.size(156.dp).sharedCover(sharedKey), if (circle) 78.dp else r?.value ?: 14.dp); Spacer(Modifier.height(8.dp))
+    Text(title, Modifier.fillMaxWidth(), textAlign = if (circle) androidx.compose.ui.text.style.TextAlign.Center else null, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+    Text(subtitle, Modifier.fillMaxWidth(), textAlign = if (circle) androidx.compose.ui.text.style.TextAlign.Center else null, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+  }
+}
+
+/** Artists from local tracks: (name, track with the best cover, count), most tracks first. */
+fun artistsOf(list: List<HistoryItem>): List<Triple<String, HistoryItem, Int>> =
+  list.filter { !it.video && it.artist.isNotBlank() }.groupBy { it.artist }.map { (n, t) -> Triple(n, t.firstOrNull { it.art.isNotBlank() } ?: t.first(), t.size) }
+    .sortedByDescending { it.third }.take(20)
+
+private fun androidx.compose.foundation.lazy.LazyListScope.AlbumAndArtistRows(shown: List<HistoryItem>, a: Actions,
+    albumRow: androidx.compose.foundation.lazy.LazyListState, artistRow: androidx.compose.foundation.lazy.LazyListState) {
+  val albums = shown.filter { !it.video && it.album.isNotBlank() }.groupBy { it.album to it.artist }.entries.take(20)
+  if (albums.isNotEmpty()) {
+    item(key = "lib-albums-title") { Text("Álbuns", style = MaterialTheme.typography.titleLarge) }
+    item(key = "lib-albums") { Carousel(albumRow) { items(albums, key = { it.key.first + "|" + it.key.second }) { e -> val h = e.value.first()
+      CoverCard(h, h.album, h.artist.ifBlank { "${e.value.size} faixas" }, "cover-al-${h.album}") { a.openAlbum(h.album) } } } }
+  }
+  val artists = artistsOf(shown)
+  if (artists.isNotEmpty()) {
+    item(key = "lib-artists-title") { Text("Artistas", style = MaterialTheme.typography.titleLarge) }
+    item(key = "lib-artists") { Carousel(artistRow) { items(artists, key = { it.first }) { (name, h, n) ->
+      CoverCard(h, name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-ar-$name", circle = true) { a.openArtist(name) } } } }
+  }
+  if (shown.isNotEmpty()) item(key = "lib-tracks-title") { Text("Faixas", style = MaterialTheme.typography.titleLarge) }
+}
+
+@Composable private fun EntryCard(title: String, sub: String, icon: androidx.compose.ui.graphics.vector.ImageVector, m: Modifier, onClick: () -> Unit) {
+  val c = MaterialTheme.colorScheme
+  val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+  Column(m.weightedPress(src, 20.dp).clip(RoundedCornerShape(20.dp)).background(c.surfaceVariant).clickable(src, null, onClick = onClick).padding(16.dp),
+    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Icon(icon, null, tint = c.onSurface); Spacer(Modifier.height(4.dp))
+    Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(sub, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
   }
 }

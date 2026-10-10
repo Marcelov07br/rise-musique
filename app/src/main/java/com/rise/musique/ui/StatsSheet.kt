@@ -1,4 +1,5 @@
 package com.rise.musique.ui
+import androidx.compose.material.icons.rounded.QueryStats
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -35,7 +36,8 @@ import com.rise.musique.StatsSummary
   Column(modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
     Text("Estatísticas", style = MaterialTheme.typography.headlineLarge)
     if (stats == null) { Text("Carregando…", color = c.onSurfaceVariant); return@Column }
-    if (stats.totalPlays == 0) { Text("Ainda não há reproduções. Uma faixa conta depois de 30 segundos ou metade da duração.", color = c.onSurfaceVariant); return@Column }
+    if (stats.totalPlays == 0) { EmptyState(androidx.compose.material.icons.Icons.Rounded.QueryStats, "Suas estatísticas aparecem aqui",
+      "Ouça algumas faixas: cada uma conta depois de 30 segundos ou da metade da duração."); return@Column }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
       Tile("Tempo ouvindo", PlayStats.duration(stats.totalMs), Modifier.weight(1f))
       Tile("Reproduções", stats.totalPlays.toString(), Modifier.weight(1f))
@@ -67,7 +69,7 @@ import com.rise.musique.StatsSummary
   Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
     stats.months.forEach { m ->
       val target = (m.ms.toFloat() / max).coerceIn(0f, 1f)
-      val grow by animateFloatAsState(if (shown) target else 0f, Motion.settle(220f), label = "bar")
+      val grow by animateFloatAsState(if (shown) target else 0f, Motion.settle(143f), label = "bar")
       Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
         Text(if (m.plays > 0) m.plays.toString() else "", fontSize = 11.sp, color = c.onSurfaceVariant)
         Box(Modifier.fillMaxWidth().height(4.dp + 86.dp * grow.coerceIn(0f, 1f))

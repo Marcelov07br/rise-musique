@@ -56,7 +56,7 @@ object StaticPreview { @JvmField var on = false }
   val goingRight = remember { mutableStateOf(true) }
   val last = remember { mutableFloatStateOf(idx) }
   if (idx != last.floatValue) { goingRight.value = idx > last.floatValue; last.floatValue = idx }
-  val fast = Motion.settle<Float>(700f); val slow = Motion.settle<Float>(260f)
+  val fast = Motion.settle<Float>(455f); val slow = Motion.settle<Float>(169f)
   val left by animateFloatAsState(idx, if (goingRight.value) slow else fast, label = "l")
   val right by animateFloatAsState(idx + 1, if (goingRight.value) fast else slow, label = "r")
   val n = options.size.coerceAtLeast(1)

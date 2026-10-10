@@ -1,4 +1,13 @@
-# Rise Musique 0.13.1
+# Rise Musique 0.14.0
+
+## Novidades (0.14.0)
+- Três abas: Início (recentes, álbuns, playlists, artistas e retrospectiva), Buscar (busca unificada e downloads) e Biblioteca (tudo o que você tem). Cada aba guarda o próprio caminho e a posição da lista; tocar de novo na aba volta ao começo.
+- Tela de artista: foto, suas faixas, álbuns e as mais tocadas do YouTube com prévia e download. Abre com a mesma transição dos álbuns, fecha arrastando para baixo ou com o gesto de voltar.
+- Busca unificada: um só campo procura na sua biblioteca na hora (faixas, álbuns, artistas e playlists) e no YouTube logo depois que você para de digitar. Histórico em chips com botão de remover, links colados são reconhecidos e o teclado some ao rolar.
+- Menu da faixa (toque e segure em qualquer lista): Tocar a seguir, Adicionar à fila, Adicionar à playlist, Favoritar, Rádio, Ir para artista, Ir para álbum, Compartilhar e Apagar.
+- Desfazer: apagar, tirar da playlist e limpar a fila mostram “Desfazer” por alguns segundos; o arquivo só é apagado depois.
+- Telas vazias explicam o que fazer (biblioteca, favoritos, playlists, fila, busca, estatísticas e artista).
+- Animações um pouco mais calmas, sem quique.
 
 ## Correção (0.13.1)
 - Corrigido o fechamento do app ao abrir na versão 0.13.0 (erro "SeekableTransitionState has been used in different Transitions"). A transição de abrir e fechar álbuns continua igual.

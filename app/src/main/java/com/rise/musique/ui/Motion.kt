@@ -21,12 +21,13 @@ object Motion {
   val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
   val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
   val Standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-  const val Short = 150; const val Medium = 300; const val Long = 400; const val ExtraLong = 650
+  // 0.14: ~35% mais longas a pedido do Marce (150→200, 300→400, 400→540, 650→850).
+  const val Short = 200; const val Medium = 400; const val Long = 540; const val ExtraLong = 850; const val PressDown = 130
   fun <T> enter(ms: Int = Medium) = tween<T>(ms, easing = EmphasizedDecelerate)
   fun <T> exit(ms: Int = Short) = tween<T>(ms, easing = EmphasizedAccelerate)
   fun <T> standard(ms: Int = Medium) = tween<T>(ms, easing = Standard)
   /** Layout / settle after a gesture: critically damped, carries velocity, never overshoots. */
-  fun <T> settle(stiffness: Float = 400f) = spring<T>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = stiffness)
+  fun <T> settle(stiffness: Float = 260f) = spring<T>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = stiffness)
   /** Small presses only: stiff with a hint of bounce. */
   fun <T> press() = spring<T>(dampingRatio = 0.8f, stiffness = Spring.StiffnessHigh)
   /** Fling threshold for drag-to-dismiss, px/s. */
@@ -40,7 +41,7 @@ object Motion {
   val p = remember { Animatable(0f) }
   LaunchedEffect(src) {
     src.interactions.collect { i -> val t = if (i is PressInteraction.Press) 1f else 0f
-      launch { p.animateTo(t, if (t > 0f) Motion.enter(100) else Motion.press()) } }
+      launch { p.animateTo(t, if (t > 0f) Motion.enter(Motion.PressDown) else Motion.press()) } }
   }
   return graphicsLayer { val v = p.value.coerceIn(0f, 1f); scaleX = 1f - .05f * v; scaleY = scaleX }
     .drawWithContent { drawContent(); val v = p.value.coerceIn(0f, 1f)

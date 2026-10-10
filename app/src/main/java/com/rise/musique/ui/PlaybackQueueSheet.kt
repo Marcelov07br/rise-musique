@@ -22,7 +22,11 @@ import androidx.compose.ui.unit.sp
   val rowHeight = with(LocalDensity.current) { 88.dp.toPx() }
   ModalBottomSheet(onDismissRequest = { a.showQueue(false) }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding()) {
-      Text("Fila de reprodução", style = MaterialTheme.typography.titleLarge)
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Fila de reprodução", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+        if (state.playbackQueue.size > (state.now?.index ?: 0) + 1) TextButton({ a.clearQueue() }, Modifier.heightIn(min = 48.dp)) { Text("Limpar") }
+      }
+      if (state.playbackQueue.size <= 1) EmptyState(Icons.Rounded.QueueMusic, "Nada na fila depois desta", "Toque e segure uma faixa e escolha Tocar a seguir ou Adicionar à fila.")
       Text("Segure a alça e arraste. As setas também mudam a ordem.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
       LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
         itemsIndexed(state.playbackQueue) { index, h ->

@@ -30,8 +30,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val HeaderHeight = 420.dp
-private val TopBarHeight = 64.dp
+internal val HeaderHeight = 470.dp
+internal val TopBarHeight = 64.dp
 
 /** 0 = header fully visible, 1 = scrolled past the header (collapsed top bar). Always clamped. */
 @Composable fun collapseOf(list: LazyListState): Float {
@@ -65,29 +65,7 @@ private val TopBarHeight = 64.dp
   val haptics = rememberHaptics()
   val back = { haptics.tick(); onBack() }
   val collapseState = rememberUpdatedState(collapseOf(list)); val collapse = collapseState.value
-  // Arrastar para fechar: puxando para baixo no topo da lista, a tela segue o dedo 1:1 (escala/fade proporcionais)
-  // e ao soltar decide pela distância ou pela velocidade.
-  val scope = rememberCoroutineScope()
-  var heightPx by remember { mutableFloatStateOf(1f) }
-  LaunchedEffect(Unit) { dismiss.snapTo(0f) }
-  val drag = remember(list) { object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
-    override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource) =
-      if (dismiss.value > 0f && available.y < 0f) { val d = (available.y / heightPx).coerceAtLeast(-dismiss.value)
-        scope.launch { dismiss.snapTo((dismiss.value + d).coerceIn(0f, 1f)) }; androidx.compose.ui.geometry.Offset(0f, d * heightPx) }
-      else androidx.compose.ui.geometry.Offset.Zero
-    override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource) =
-      if (available.y > 0f && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
-        scope.launch { dismiss.snapTo((dismiss.value + available.y / heightPx).coerceIn(0f, 1f)) }; available }
-      else androidx.compose.ui.geometry.Offset.Zero
-    override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-      if (dismiss.value <= 0f) return androidx.compose.ui.unit.Velocity.Zero
-      if (dismiss.value > .25f || available.y > Motion.FlingVelocity) { haptics.tick(); onBack() }
-      else dismiss.animateTo(0f, Motion.settle(), initialVelocity = available.y / heightPx)
-      return available
-    }
-  } }
-  Box(modifier.onSizeChanged { heightPx = it.height.toFloat().coerceAtLeast(1f) }.nestedScroll(drag).graphicsLayer {
-    val d = dismiss.value.coerceIn(0f, 1f); translationY = d * heightPx * .5f; val sc = 1f - .1f * d; scaleX = sc; scaleY = sc; alpha = 1f - .4f * d }) {
+  Box(modifier.dragToDismiss(dismiss, onBack)) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = TopBarHeight, bottom = if (s.now != null) 104.dp else 24.dp)) {
       item(key = "header") {
         Column(Modifier.fillMaxWidth().height(HeaderHeight - TopBarHeight).padding(horizontal = 24.dp)
@@ -103,7 +81,9 @@ private val TopBarHeight = 64.dp
           Column(Modifier.enterRise(), horizontalAlignment = Alignment.CenterHorizontally) {
           Text(title, color = Color.White, fontSize = 24.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
           Spacer(Modifier.height(4.dp))
-          Text(meta, color = Color.White.copy(.7f), fontSize = 12.sp, letterSpacing = 1.sp, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          if (artist.isNotBlank()) Text(artist, Modifier.clip(CircleShape).clickable { haptics.tick(); a.openArtist(artist) }.padding(horizontal = 12.dp, vertical = 4.dp),
+            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+          Text(if (artist.isBlank()) meta else meta.replace(" · " + artist.uppercase(), ""), color = Color.White.copy(.7f), fontSize = 12.sp, letterSpacing = 1.sp, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
           Spacer(Modifier.height(16.dp))
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             GlassIcon(Icons.Rounded.Shuffle, "Aleatório", { haptics.press(); tracks.randomOrNull()?.let(a.playShuffled) }, enabled = tracks.isNotEmpty())
@@ -121,7 +101,7 @@ private val TopBarHeight = 64.dp
       if (tracks.isEmpty()) item(key = "empty") {
         Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
           Text(if (isAlbum) "Nenhuma faixa deste álbum" else "Esta playlist está vazia", style = MaterialTheme.typography.titleMedium)
-          Text("Toque e segure uma faixa na biblioteca para adicionar.", color = c.onSurfaceVariant, fontSize = 13.sp, textAlign = TextAlign.Center)
+          Text("Toque e segure uma faixa e escolha “Adicionar à playlist”.", color = c.onSurfaceVariant, fontSize = 13.sp, textAlign = TextAlign.Center)
         }
       }
       itemsIndexed(tracks, key = { _, h -> h.uri }) { i, h ->
@@ -129,24 +109,55 @@ private val TopBarHeight = 64.dp
         if (i < tracks.lastIndex) HorizontalDivider(Modifier.padding(start = 64.dp, end = 16.dp), color = c.outlineVariant)
       }
     }
-    // Barra superior: voltar sempre visível; título aparece quando o cabeçalho sai da tela.
-    val barT = ((collapse - .6f) / .4f).coerceIn(0f, 1f)
-    Row(Modifier.fillMaxWidth().height(TopBarHeight).background(c.background.copy(alpha = (barT * .92f).coerceIn(0f, 1f))).padding(horizontal = 8.dp),
-      verticalAlignment = Alignment.CenterVertically) {
-      GlassIcon(Icons.Rounded.ArrowBack, "Voltar", back, light = barT > .5f)
-      Text(title, Modifier.weight(1f).padding(horizontal = 12.dp).graphicsLayer { alpha = barT }, style = MaterialTheme.typography.titleMedium,
-        color = c.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-      if (barT > 0f) Box(Modifier.size(48.dp).graphicsLayer { alpha = barT }.clip(CircleShape).clickable(enabled = barT > .5f && tracks.isNotEmpty()) {
-          haptics.press(); tracks.firstOrNull()?.let(a.play) }, contentAlignment = Alignment.Center) {
-        Icon(Icons.Rounded.PlayCircle, "Tocar", tint = c.onBackground, modifier = Modifier.size(32.dp)) }
-    }
+    DetailTopBar(title, collapse, back) { haptics.press(); tracks.firstOrNull()?.let(a.play) }
   }
 }
 
-@Composable private fun GlassIcon(icon: ImageVector, desc: String, onClick: () -> Unit, enabled: Boolean = true, light: Boolean = false) {
+/** Barra superior das telas de detalhe: voltar sempre visível; título e tocar aparecem quando o cabeçalho sai. */
+@Composable internal fun DetailTopBar(title: String, collapse: Float, back: () -> Unit, onPlay: (() -> Unit)?) {
+  val c = MaterialTheme.colorScheme
+  val barT = ((collapse - .6f) / .4f).coerceIn(0f, 1f)
+  Row(Modifier.fillMaxWidth().height(TopBarHeight).background(c.background.copy(alpha = (barT * .92f).coerceIn(0f, 1f))).padding(horizontal = 8.dp),
+    verticalAlignment = Alignment.CenterVertically) {
+    GlassIcon(Icons.Rounded.ArrowBack, "Voltar", back, light = barT > .5f)
+    Text(title, Modifier.weight(1f).padding(horizontal = 12.dp).graphicsLayer { alpha = barT }, style = MaterialTheme.typography.titleMedium,
+      color = c.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    if (barT > 0f && onPlay != null) Box(Modifier.size(48.dp).graphicsLayer { alpha = barT }.clip(CircleShape).clickable(enabled = barT > .5f, onClick = onPlay),
+      contentAlignment = Alignment.Center) { Icon(Icons.Rounded.PlayCircle, "Tocar", tint = c.onBackground, modifier = Modifier.size(32.dp)) }
+  }
+}
+
+@Composable internal fun GlassIcon(icon: ImageVector, desc: String, onClick: () -> Unit, enabled: Boolean = true, light: Boolean = false) {
   val tint = if (light) MaterialTheme.colorScheme.onBackground else Color.White
   GlassBox(Modifier.size(48.dp), CircleShape, dark = !light || MaterialTheme.colorScheme.background.red < .5f) {
     Box(Modifier.matchParentSize().clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
       Icon(icon, desc, tint = tint.copy(alpha = if (enabled) 1f else .4f)) }
   }
+}
+
+/** Arrastar para fechar: puxando para baixo no topo da lista, a tela segue o dedo 1:1 (escala/fade proporcionais)
+ * e ao soltar decide pela distância (25%) ou pela velocidade. */
+@Composable fun Modifier.dragToDismiss(dismiss: androidx.compose.animation.core.Animatable<Float, androidx.compose.animation.core.AnimationVector1D>, onBack: () -> Unit): Modifier {
+  val haptics = rememberHaptics()
+  val scope = rememberCoroutineScope()
+  var heightPx by remember { mutableFloatStateOf(1f) }
+  LaunchedEffect(Unit) { dismiss.snapTo(0f) }
+  val drag = remember(dismiss) { object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+    override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource) =
+      if (dismiss.value > 0f && available.y < 0f) { val d = (available.y / heightPx).coerceAtLeast(-dismiss.value)
+        scope.launch { dismiss.snapTo((dismiss.value + d).coerceIn(0f, 1f)) }; androidx.compose.ui.geometry.Offset(0f, d * heightPx) }
+      else androidx.compose.ui.geometry.Offset.Zero
+    override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource) =
+      if (available.y > 0f && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
+        scope.launch { dismiss.snapTo((dismiss.value + available.y / heightPx).coerceIn(0f, 1f)) }; available }
+      else androidx.compose.ui.geometry.Offset.Zero
+    override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+      if (dismiss.value <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+      if (dismiss.value > .25f || available.y > Motion.FlingVelocity) { haptics.tick(); onBack() }
+      else dismiss.animateTo(0f, Motion.settle(), initialVelocity = available.y / heightPx)
+      return available
+    }
+  } }
+  return this.onSizeChanged { heightPx = it.height.toFloat().coerceAtLeast(1f) }.nestedScroll(drag).graphicsLayer {
+    val d = dismiss.value.coerceIn(0f, 1f); translationY = d * heightPx * .5f; val sc = 1f - .1f * d; scaleX = sc; scaleY = sc; alpha = 1f - .4f * d }
 }
