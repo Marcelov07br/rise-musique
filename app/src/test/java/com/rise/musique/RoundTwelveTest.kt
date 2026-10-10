@@ -77,3 +77,21 @@ class RecapTest {
     assertEquals("Seu 2026", y.title); assertEquals(2, y.plays); assertEquals("Ana", y.topArtist?.name)
   }
 }
+
+class CutTest {
+  @Test fun storyboardFrames() {
+    val b = Storyboard(listOf("a" to 100.0, "b" to 50.0), 80, 45, 10, 10)
+    assertEquals(Triple(0, 0, 0), b.frameAt(0.0)); assertEquals(Triple(0, 5, 1), b.frameAt(15.2)); assertEquals(Triple(1, 0, 0), b.frameAt(100.1))
+    assertEquals(Triple(1, 9, 9), b.frameAt(9999.0))
+  }
+  @Test fun picksStoryboard() {
+    val j = JSONObject("""{"formats":[{"format_note":"storyboard","width":48,"height":27,"rows":10,"columns":10,"fragments":[{"url":"u3","duration":213}]},
+      {"format_note":"storyboard","width":80,"height":45,"rows":10,"columns":10,"fragments":[{"url":"u2a","duration":197},{"url":"u2b","duration":16}]},{"format_id":"140"}]}""")
+    val b = CutInfo.storyboard(j)!!; assertEquals(80, b.width); assertEquals(2, b.sheets.size)
+    assertNull(CutInfo.storyboard(JSONObject("{}")))
+  }
+  @Test fun peaksNormalised() {
+    val p = CutInfo.peaks(floatArrayOf(0f, .5f, -1f, .25f), 4, 2); assertEquals(listOf(.5f, 1f), p)
+    assertEquals(3, CutInfo.peaks(FloatArray(0), 0, 3).size)
+  }
+}

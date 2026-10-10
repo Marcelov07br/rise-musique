@@ -45,7 +45,7 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val recentSearches: List<String> = emptyList(), val moreResults: Boolean = false, val loadingMore: Boolean = false,
   val importing: Boolean = false, val sort: String = "Recentes", val mediaFilter: String = "Tudo", val albumFilter: String = "", val theme: String = "Sistema", val settingsOpen: Boolean = false, val page: String = "Biblioteca", val choices: com.rise.musique.DownloadChoices = com.rise.musique.DownloadChoices(),
   val playbackQueue: List<HistoryItem> = emptyList(), val queueOpen: Boolean = false, val historyView: String = "Tudo", val sleepAt: Long = 0, val queue: List<QueueItem> = emptyList(),
-  val crossfade: Int = 0, val statsOpen: Boolean = false, val radioOf: String? = null, val automix: Boolean = false,
+  val crossfade: Int = 0, val statsOpen: Boolean = false, val radioOf: String? = null, val automix: Boolean = false, val cutOpen: Boolean = false, val cutVisual: com.rise.musique.CutVisual? = null,
   val lastfmUser: String? = null, val lastfmOn: Boolean = false, val lastfmConfigured: Boolean = false, val recapOpen: Boolean = false,
   val recapMonth: com.rise.musique.Recap? = null, val recapYear: com.rise.musique.Recap? = null, val stats: com.rise.musique.StatsSummary? = null)
 class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, val quality: (String) -> Unit = {},
@@ -70,7 +70,8 @@ class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, v
   val playShuffled: (HistoryItem) -> Unit = {}, val queueAll: (List<HistoryItem>) -> Unit = {},
   val radio: (SearchResult) -> Unit = {}, val radioFor: (HistoryItem) -> Unit = {}, val automix: (Boolean) -> Unit = {},
   val lastfmLogin: (String, String) -> Unit = { _, _ -> }, val lastfmLogout: () -> Unit = {}, val lastfmToggle: (Boolean) -> Unit = {},
-  val recap: (Boolean) -> Unit = {}, val shareRecap: (String) -> Unit = {})
+  val recap: (Boolean) -> Unit = {}, val shareRecap: (String) -> Unit = {},
+  val openCut: (Boolean) -> Unit = {}, val previewRange: (Long, Long) -> Unit = { _, _ -> })
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -79,38 +80,49 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   SearchResult("b", "Música de exemplo (Ao Vivo)", "Canal Exemplo", 251, ""),
   SearchResult("c", "Música de exemplo · versão acústica", "Outro Canal", 189, ""))
 
-@Composable fun RiseApp(state: UiState, actions: Actions, initialHistoryOpen: Boolean = false, initialExpanded: Boolean = false, initialLyrics: Boolean = false) {
+@Composable fun RiseApp(state: UiState, actions: Actions, initialHistoryOpen: Boolean = false, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
+                       initialCollectionItem: Int = 0) {
   val targets = remember { FlyTargets() }
   Box(Modifier.fillMaxSize()) {
-    RiseContent(state, actions, initialHistoryOpen, targets)
+    RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem)
     state.fly?.let { FlyOverlay(it, targets) }
     state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue) } }
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
     if (state.settingsOpen) SettingsSheet(state, actions)
     if (state.statsOpen) StatsSheet(state, actions)
+    if (state.cutOpen) CutSheet(state, actions)
     if (state.recapOpen) RecapSheet(state, actions)
   }
 }
 
-@Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets) {
+@Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0) {
   val c = MaterialTheme.colorScheme
-  Column(Modifier.fillMaxSize().background(c.background).safeDrawingPadding()) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-      Text("rise", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
-      RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
-      Spacer(Modifier.width(8.dp))
-      RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
+  val collection = state.page != "Buscar" && state.page != "Downloads" && (state.albumFilter.isNotBlank() || state.historyView in state.playlists)
+  val collectionKey = state.albumFilter + "|" + state.historyView
+  val collectionList = androidx.compose.runtime.key(collectionKey) { androidx.compose.foundation.lazy.rememberLazyListState(initialCollectionItem) }
+  Box(Modifier.fillMaxSize().background(c.background)) {
+    // Álbum/playlist: fundo vivo fixo cobrindo a tela inteira (atrás da barra de status e da de navegação),
+    // que se dissolve na cor de base para baixo e conforme a lista rola, sem cortes.
+    if (collection) CollectionBackdrop(visibleHistory(state).firstOrNull { it.art.isNotBlank() }?.art.orEmpty(),
+      collapseOf(collectionList), Modifier.fillMaxSize())
+    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+      if (!collection) Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("rise", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
+        RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
+        Spacer(Modifier.width(8.dp))
+        RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
+      }
+      if (state.status.isNotBlank() && !collection) Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
+      when {
+        state.page == "Buscar" -> MainPane(state, actions, targets, null, Modifier.weight(1f).fillMaxWidth())
+        state.page == "Downloads" -> DownloadHub(state, actions, Modifier.weight(1f).fillMaxWidth())
+        collection -> CollectionScreen(state, actions, collectionList, Modifier.weight(1f).fillMaxWidth())
+        else -> LibraryHome(state, actions, Modifier.weight(1f).fillMaxWidth())
+      }
+      NavigationDock(state, actions, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
+        .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) })
     }
-    if (state.status.isNotBlank()) Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
-    when (state.page) {
-      "Buscar" -> MainPane(state, actions, targets, null, Modifier.weight(1f).fillMaxWidth())
-      "Downloads" -> DownloadHub(state, actions, Modifier.weight(1f).fillMaxWidth())
-      else -> if (state.albumFilter.isNotBlank() || state.historyView in state.playlists) CollectionScreen(state, actions, Modifier.weight(1f).fillMaxWidth())
-        else LibraryHome(state, actions, Modifier.weight(1f).fillMaxWidth())
-    }
-    NavigationDock(state, actions, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
-      .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
-      .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) })
   }
 }
 
@@ -178,7 +190,6 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
           } }
         }
       }
-      if (state.selected.size == 1) item { CutPanel(state, a) }
     }
     val active = state.queue.count { it.error == null && !it.completed }
     if (state.selected.isNotEmpty()) PillButton(modifier = Modifier.fillMaxWidth().onGloballyPositioned { targets.source = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 2f, it.size.height / 2f) },
@@ -190,23 +201,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
 
 private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
 
-@Composable private fun CutPanel(state: UiState, a: Actions) {
-  val c = MaterialTheme.colorScheme
-  Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(c.surfaceVariant).padding(horizontal = 16.dp, vertical = 8.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Icon(Icons.Rounded.ContentCut, null, tint = c.onSurfaceVariant, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp))
-      Text("Cortar trecho", Modifier.weight(1f), color = c.onSurface, fontSize = 14.sp)
-      Switch(state.cutOn, { a.cut(it, state.cutStart, state.cutEnd) }, colors = SwitchDefaults.colors(checkedTrackColor = c.primary,
-        checkedThumbColor = c.onPrimary, uncheckedTrackColor = c.background, uncheckedBorderColor = c.outline))
-    }
-    AnimatedVisibility(state.cutOn) { Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-      TimeField("Início", state.cutStart, "0:00", Modifier.weight(1f)) { a.cut(true, it, state.cutEnd) }
-      TimeField("Fim", state.cutEnd, "fim", Modifier.weight(1f)) { a.cut(true, state.cutStart, it) }
-    } }
-  }
-}
-
-@Composable private fun TimeField(label: String, v: String, hint: String, m: Modifier, on: (String) -> Unit) {
+@Composable internal fun TimeField(label: String, v: String, hint: String, m: Modifier, on: (String) -> Unit) {
   val c = MaterialTheme.colorScheme
   OutlinedTextField(v, { t -> on(t.filter { it.isDigit() || it == ':' }.take(8)) }, m, singleLine = true, label = { Text(label) },
     placeholder = { Text(hint) }, shape = CircleShape,

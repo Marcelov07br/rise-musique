@@ -205,7 +205,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 @Composable private fun ToggleIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, on: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   val haptics = rememberHaptics()
-  Box(Modifier.size(44.dp).springPress(src).clip(CircleShape).background(if (on) Color.White.copy(.9f) else Color.White.copy(.08f))
+  Box(Modifier.size(48.dp).springPress(src).clip(CircleShape).background(if (on) Color.White.copy(.9f) else Color.White.copy(.08f))
       .alpha(if (enabled) 1f else .3f).clickable(src, null, enabled = enabled) { haptics.tick(); onClick() }, contentAlignment = Alignment.Center) {
     Icon(icon, desc, tint = if (on) Color.Black else Color.White.copy(.8f), modifier = Modifier.size(22.dp)) }
 }

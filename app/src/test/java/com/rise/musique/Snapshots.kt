@@ -59,3 +59,17 @@ class Round12 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
     Ranked("Artista Exemplo", "", 120, 0), listOf(Ranked("Música de exemplo", "Artista Exemplo", 31, 0), Ranked("Outra faixa", "Canal Exemplo", 22, 0), Ranked("Faixa ao vivo", "Artista Exemplo", 18, 0))) }
   @Test fun recapCard() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { RecapCard(recap, androidx.compose.ui.Modifier.padding(24.dp).aspectRatio(9f / 16f)) } } }
   @Test fun radio() = p.snapshot { RiseTheme(true) { RiseApp(UiState(page = "Buscar", results = sampleResults, isPlaylist = true, radioOf = "Música de exemplo", selected = setOf("a")), Actions()) } } }
+
+private val longAlbum = init.let { (1..20).map { i -> HistoryItem("Faixa número $i do disco", "M4A · 256k", "long:$i", artist = "Artista Exemplo", album = "Disco Longo", duration = 200_000L) } }
+class Polish { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  @Test fun albumTop() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo", now = np), Actions()) } }
+  @Test fun albumScrolled() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo", now = np), Actions(), initialCollectionItem = 6) } }
+  @Test fun searchCutRow() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(page = "Buscar", choices = DownloadChoices(media = true)), Actions()) } }
+  @Test fun cutSheetMusic() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { CutContent(found.copy(
+    cutVisual = CutVisual(false, peaks = (0 until 120).map { i -> (kotlin.math.abs(kotlin.math.sin(i / 7.0)) * .8 + (i % 5) * .04).toFloat() })), Actions(),
+    androidx.compose.ui.Modifier.padding(24.dp)) } } }
+  @Test fun cutSheetLoading() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { CutContent(found.copy(mode = Mode.Video, cutVisual = CutVisual(true)), Actions(),
+    androidx.compose.ui.Modifier.padding(24.dp)) } } } }
+class PolishLight { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6)
+  @Test fun albumTop() = p.snapshot { RiseTheme(false) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo"), Actions()) } }
+  @Test fun albumScrolled() = p.snapshot { RiseTheme(false) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo"), Actions(), initialCollectionItem = 6) } } }

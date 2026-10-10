@@ -31,7 +31,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   var sortMenu by remember { mutableStateOf(false) }
   var rename by remember { mutableStateOf<String?>(null) }
   var deletePlaylist by remember { mutableStateOf<String?>(null) }
-  LazyColumn(modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 24.dp, bottom = if (s.now != null) 100.dp else 20.dp)) {
+  LazyColumn(modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = if (s.now != null) 104.dp else 24.dp)) {
     item { Row(verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f)) {
         Text(when (s.historyView) { "Tudo" -> "Ouvir agora"; else -> s.historyView }, style = MaterialTheme.typography.headlineLarge)
@@ -130,16 +130,17 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       Spacer(Modifier.width(14.dp))
       Column(Modifier.weight(1f)) {
         Text(h.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(h.artist.ifBlank { h.meta.substringBefore(" ·") }, color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        val detail = listOf(durationLabel(h.duration), h.meta.substringBefore(" ·")).filter(String::isNotBlank).distinct().joinToString(" · ")
+        val second = h.artist.ifBlank { h.meta.substringBefore(" ·") }
+        Text(second, color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val detail = listOf(durationLabel(h.duration), h.meta.substringBefore(" ·")).filter { it.isNotBlank() && it != second }.distinct().joinToString(" · ")
         if (detail.isNotBlank()) Text(detail, color = c.onSurfaceVariant, fontSize = 11.sp)
       }
       if (h.uri in s.favorites) Icon(Icons.Rounded.Favorite, null, Modifier.size(14.dp), tint = c.onSurfaceVariant)
       if (s.historyView in s.playlists) {
         val order = s.playlists[s.historyView].orEmpty(); val index = order.indexOf(h.uri)
         Column {
-          IconButton({ a.movePlaylist(s.historyView, index, index - 1) }, Modifier.size(36.dp), enabled = index > 0) { Icon(Icons.Rounded.KeyboardArrowUp, "Subir na playlist") }
-          IconButton({ a.movePlaylist(s.historyView, index, index + 1) }, Modifier.size(36.dp), enabled = index in 0 until order.lastIndex) { Icon(Icons.Rounded.KeyboardArrowDown, "Descer na playlist") }
+          IconButton({ a.movePlaylist(s.historyView, index, index - 1) }, Modifier.size(48.dp), enabled = index > 0) { Icon(Icons.Rounded.KeyboardArrowUp, "Subir na playlist") }
+          IconButton({ a.movePlaylist(s.historyView, index, index + 1) }, Modifier.size(48.dp), enabled = index in 0 until order.lastIndex) { Icon(Icons.Rounded.KeyboardArrowDown, "Descer na playlist") }
         }
       }
       IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "Opções de ${h.title}", tint = c.onSurfaceVariant) }

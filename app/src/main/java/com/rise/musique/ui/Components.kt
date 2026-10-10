@@ -87,7 +87,7 @@ object StaticPreview { @JvmField var on = false }
   val c = MaterialTheme.colorScheme
   val haptics = rememberHaptics()
   val edge = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.onSurface.copy(alpha = .22f), c.onSurface.copy(alpha = .03f)))
-  Box(Modifier.size(44.dp).springPress(src).clip(CircleShape).background(if (filled) c.primary else (container ?: c.surfaceVariant).copy(alpha = .72f))
+  Box(Modifier.size(48.dp).springPress(src).clip(CircleShape).background(if (filled) c.primary else (container ?: c.surfaceVariant).copy(alpha = .72f))
       .then(if (filled) Modifier else Modifier.border(1.dp, edge, CircleShape))
       .clickable(src, null) { haptics.tick(); onClick() }, contentAlignment = Alignment.Center) {
     Icon(icon, desc, tint = if (filled) c.onPrimary else c.onSurface, modifier = Modifier.size(20.dp))

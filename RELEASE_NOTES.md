@@ -1,4 +1,11 @@
-# Rise Musique 0.12.0
+# Rise Musique 0.12.1
+
+## Acabamento (0.12.1)
+- Telas de álbum e playlist: o fundo vivo agora ocupa a tela inteira, por trás das barras do sistema, e se dissolve suavemente na cor de fundo, sem cortes nem blocos desalinhados.
+- Cabeçalho do álbum que recolhe ao rolar: o título aparece na barra de cima, com botões de voltar e tocar sempre à mão.
+- Corte de trecho redesenhado: o botão Cortar fica na mesma linha de Música/Vídeo e abre uma folha com forma de onda (música) ou quadros do vídeo, duas alças para escolher o trecho, campos de início/fim, botão para ouvir o trecho e confirmar ou limpar. O trecho escolhido aparece no próprio botão.
+- Botões com área de toque maior (48 dp), espaçamentos e margens padronizados, e a lista nunca fica escondida atrás do mini player.
+- Estados vazios mais claros e informações repetidas removidas das faixas.
 
 ## Novidades (0.12.0)
 - Automix: transições no ritmo entre músicas locais. O app analisa o andamento (BPM) e os tempos fortes de cada faixa (fica guardado), entra com a próxima no tempo forte, dura compassos inteiros e ajusta o andamento por alguns segundos. Se a análise não for confiável, usa o crossfade normal. Ative em Ajustes › Transições.

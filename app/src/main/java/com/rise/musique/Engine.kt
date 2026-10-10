@@ -68,6 +68,14 @@ object Engine {
     parseEntries(runInterruptible { YoutubeDL.getInstance().execute(req).out }).filter { videoId(it.url) != id }.take(count)
   }
 
+  /** One yt-dlp call for the cut sheet: audio stream (url + headers) and the storyboard. */
+  suspend fun cutInfo(url: String): Pair<Stream, Storyboard?> = withContext(Dispatchers.IO) {
+    val out = runInterruptible { YoutubeDL.getInstance().execute(YoutubeDLRequest(url).apply {
+      addOption("-f", "ba[ext=m4a]/ba[acodec^=mp4a]/ba/b"); addOption("-j"); addOption("--no-playlist"); addOption("--no-warnings") }) }.out
+    val stream = parseStream(out).also { streamHeaders[it.url] = it.headers }
+    stream to CutInfo.storyboard(JSONObject(out.lineSequence().first { it.trimStart().startsWith("{") }))
+  }
+
   suspend fun audioStream(url: String): Stream = withContext(Dispatchers.IO) {
     if (!updated) updateMutex.withLockSafe { }  // wait for an in-flight startup update
     val out = runInterruptible { YoutubeDL.getInstance().execute(YoutubeDLRequest(url).apply {

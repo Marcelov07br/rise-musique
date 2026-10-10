@@ -168,11 +168,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     lastPreview = r; previewRetried = null
     previewJob = viewModelScope.launch { startPreview(r) }
   }
-  private suspend fun startPreview(r: SearchResult) = coroutineScope {
+  /** Cut sheet: play exactly the chosen range of the selected result. */
+  fun previewRange(startMs: Long, endMs: Long) {
+    val r = state.results.firstOrNull { it.url in state.selected } ?: return
+    stopPreview(); state = state.copy(previewing = r.url, previewLoading = true,
+      now = NowPlaying(r.url, r.title, r.channel, r.thumb, loading = true, isPreview = true))
+    lastPreview = r; previewRetried = null
+    previewJob = viewModelScope.launch { startPreview(r, startMs, endMs) }
+  }
+  private var cutJob: Job? = null
+  fun openCut(open: Boolean) {
+    state = state.copy(cutOpen = open)
+    if (!open) { cutJob?.cancel(); return }
+    val r = state.results.firstOrNull { it.url in state.selected } ?: return
+    val video = state.mode == Mode.Video
+    state = state.copy(cutVisual = CutVisual(loading = true))
+    cutJob?.cancel(); cutJob = viewModelScope.launch {
+      runCatching { withContext(Dispatchers.IO) { val (stream, board) = Engine.cutInfo(r.url)
+          if (video) CutVisual(false, storyboard = board) else CutVisual(false, peaks = CutInfo.waveform(stream.url, stream.headers)) } }
+        .onSuccess { state = state.copy(cutVisual = it) }
+        .onFailure { if (it is CancellationException) throw it; state = state.copy(cutVisual = CutVisual(false, error = "Prévia visual indisponível")) }
+    }
+  }
+  private suspend fun startPreview(r: SearchResult, rangeStart: Long = -1, rangeEnd: Long = -1) = coroutineScope {
       runCatching { Engine.audioStream(r.url).url.also { ensureActive() } }.onSuccess { stream ->
-        val start = if (r.duration > 90) 30_000L else 0L
+        val start = if (rangeStart >= 0) rangeStart else if (r.duration > 90) 30_000L else 0L
+        val end = if (rangeEnd > start) rangeEnd else start + 30_000
         withPlayer { p -> p.setMediaItem(MediaItem.Builder().setMediaId("preview:" + r.url).setUri(stream).setMediaMetadata(meta(r.title, r.channel, r.thumb))
-          .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(start + 30_000).build()).build())
+          .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(end).build()).build())
           p.repeatMode = Player.REPEAT_MODE_OFF; p.prepare(); p.play() }
         state = state.copy(previewLoading = false)
       }.onFailure { if (it is CancellationException) throw it
