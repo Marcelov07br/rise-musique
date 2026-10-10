@@ -29,9 +29,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private var seenHistory = false
   private var previewJob: Job? = null
   private var lastLink: String? = null
+  private var searchTerm = ""
+  private var searchFetched = 0
   private val ctx get() = getApplication<Application>()
   var state by mutableStateOf(UiState(folder = prefs.getString("tree", null)?.let(Uri::parse), history = HistoryStore.load(app),
-    format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app)).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
+    theme = prefs.getString("theme", "Sistema")!!, sort = prefs.getString("sort", "Recentes")!!,
+    recentSearches = recentSearches(), format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app)).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
       st.copy(mode = m, quality = prefs.getString("quality_${m.name}", m.qualities.last())!!) })
     private set
 
@@ -53,16 +56,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
           val id = w.id.toString(); val data = Jobs.get(app, id) ?: return@mapNotNull null
           when {
             !w.state.isFinished -> QueueItem(id, data.getString("title").orEmpty(), w.progress.getFloat("p", 0f),
-              w.progress.getBoolean("running", false))
+              w.progress.getBoolean("running", false), stage = w.progress.getString("stage") ?: "Aguardando")
             w.state == WorkInfo.State.FAILED -> QueueItem(id, data.getString("title").orEmpty(), 0f, false,
               error = w.outputData.getString("err") ?: "Falhou")
+            w.state == WorkInfo.State.SUCCEEDED -> QueueItem(id, data.getString("title").orEmpty(), 1f, false, stage = "Concluído", completed = true)
             else -> null
           } }
-        val line = infos.firstOrNull { it.progress.getBoolean("running", false) }?.progress?.getString("line").orEmpty()
         val h = HistoryStore.load(app)
         val fresh = h.firstOrNull()?.takeIf { f -> state.history.isNotEmpty() && state.history.none { it.uri == f.uri && it.title == f.title } || (state.history.isEmpty() && h.isNotEmpty() && seenHistory) }
         seenHistory = true
-        state = state.copy(queue = q, history = h, status = line.take(80), fly = fresh?.let { FlyEvent(System.nanoTime(), it.art) } ?: state.fly)
+        state = state.copy(queue = q.sortedBy { if (it.running) 0 else if (it.completed) 3 else if (it.error != null) 2 else 1 }, history = h, fly = fresh?.let { FlyEvent(System.nanoTime(), it.art) } ?: state.fly)
       }
     }
   }
@@ -85,16 +88,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     lastLink = link; state = state.copy(query = link, page = "Buscar"); search()
   }
 
+  private fun recentSearches(): List<String> = runCatching {
+    val a = org.json.JSONArray(prefs.getString("searches", "[]")); List(a.length()) { a.getString(it) }
+  }.getOrDefault(emptyList())
+  fun clearSearches() { prefs.edit().remove("searches").apply(); state = state.copy(recentSearches = emptyList()) }
   fun search() {
-    if (state.query.isBlank() || state.searching) return
-    stopPreview(); state = state.copy(page = "Buscar", searching = true, results = emptyList(), selected = emptySet(), status = "")
-    val query = state.query
+    if (state.query.isBlank() || state.searching || state.loadingMore) return
+    stopPreview(); val query = state.query.trim(); searchTerm = query; searchFetched = 0
+    val recent = (listOf(query) + recentSearches()).distinct().take(12)
+    prefs.edit().putString("searches", org.json.JSONArray(recent).toString()).apply()
+    state = state.copy(page = "Buscar", searching = true, results = emptyList(), selected = emptySet(), moreResults = false, recentSearches = recent, status = "")
     viewModelScope.launch {
       runCatching { Engine.search(query).also { ensureActive() } }
-        .onSuccess { r -> state = state.copy(searching = false, results = r,
+        .onSuccess { r -> searchFetched = r.size; state = state.copy(searching = false, results = r,
           selected = if (r.size == 1) setOf(r[0].url) else emptySet(), isPlaylist = Engine.isPlaylist(query),
-          status = if (r.isEmpty()) "Nada encontrado" else "") }
-        .onFailure { state = state.copy(searching = false, status = "Erro na busca: ${it.message?.lineSequence()?.lastOrNull()?.take(100)}") }
+          moreResults = !Engine.isLink(query) && r.size == 10, status = if (r.isEmpty()) "Nada encontrado" else "") }
+        .onFailure { if (it is CancellationException) throw it
+          state = state.copy(searching = false, status = "Erro na busca: ${it.message?.lineSequence()?.lastOrNull()?.take(100)}") }
+    }
+  }
+  fun moreResults() {
+    if (!state.moreResults || state.loadingMore || state.searching) return
+    val query = searchTerm; val offset = searchFetched
+    state = state.copy(loadingMore = true)
+    viewModelScope.launch {
+      runCatching { Engine.search(query, offset).also { ensureActive() } }.onSuccess { r ->
+        searchFetched += r.size
+        state = state.copy(loadingMore = false, results = (state.results + r).distinctBy { it.url }, moreResults = r.size == 10 && searchFetched < 100)
+      }.onFailure { if (it is CancellationException) throw it
+        state = state.copy(loadingMore = false, status = "Não foi possível carregar mais resultados. Tente novamente.") }
     }
   }
 
@@ -130,7 +152,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   /** Toca o histórico como fila, começando pelo item tocado. */
   fun play(h: HistoryItem) {
     val list = visibleHistory(state).ifEmpty { state.history }.mapNotNull { item -> uriOf(item)?.let { u -> item to u } }
-    val start = list.indexOfFirst { it.first == h }.takeIf { it >= 0 } ?: return.also {
+    val start = list.indexOfFirst { it.first.uri == h.uri }.takeIf { it >= 0 } ?: return.also {
       state = state.copy(status = "Arquivo indisponível. Um backup de outra instalação não transfere os arquivos de música.") }
     stopPreview()
     val items = list.map { (item, u) -> MediaItem.Builder().setMediaId(item.uri).setUri(u)
@@ -229,6 +251,55 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       status = if (picked.size > 1) "${picked.size} itens adicionados à fila" else "")
   }
 
+  fun sort(value: String) { prefs.edit().putString("sort", value).apply(); state = state.copy(sort = value) }
+  fun mediaFilter(value: String) { state = state.copy(mediaFilter = value, albumFilter = "") }
+  fun albumFilter(value: String) { state = state.copy(albumFilter = value, historyView = "Tudo", historyFilter = "") }
+  fun theme(value: String) { prefs.edit().putString("theme", value).apply(); state = state.copy(theme = value) }
+  fun settings(open: Boolean) { state = state.copy(settingsOpen = open) }
+  fun importFiles(uris: List<Uri>) = importMedia { uris to false }
+  fun importFolder(uri: Uri?) { uri ?: return; importMedia {
+    ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    LocalMedia.scan(ctx, uri)
+  } }
+  private fun importMedia(source: suspend () -> Pair<List<Uri>, Boolean>) {
+    if (state.importing) return
+    state = state.copy(importing = true, page = "Biblioteca", status = "Lendo arquivos locais…")
+    viewModelScope.launch {
+      runCatching { withContext(Dispatchers.IO) {
+        val (uris, limited) = source()
+        // File picker grants are per document. Folder children use the tree's grant.
+        uris.forEach { uri -> runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+        LocalMedia.import(ctx, uris, limited)
+      } }.onSuccess { report ->
+        state = state.copy(importing = false, history = HistoryStore.load(ctx),
+          status = "${report.added} adicionados · ${report.repeated} já estavam na biblioteca · ${report.failed} indisponíveis" + if (report.limited) ". Limite da pasta atingido; importe as subpastas separadamente." else "")
+      }.onFailure { if (it is CancellationException) throw it
+        state = state.copy(importing = false, status = "Não foi possível importar: ${it.message}") }
+    }
+  }
+  fun refreshMetadata() {
+    if (state.importing) return
+    val tracks = state.history
+    state = state.copy(importing = true, status = "Lendo duração, artista e álbum…")
+    viewModelScope.launch {
+      runCatching { withContext(Dispatchers.IO) {
+        tracks.forEach { h -> ensureActive()
+          val uri = if (h.uri.startsWith("content://")) Uri.parse(h.uri) else Uri.fromFile(File(h.uri))
+          HistoryStore.replace(ctx, LocalMedia.metadata(ctx, uri, h))
+        }
+      } }.onSuccess { state = state.copy(importing = false, history = HistoryStore.load(ctx), status = "Informações da biblioteca atualizadas") }
+        .onFailure { if (it is CancellationException) throw it
+          state = state.copy(importing = false, status = "Falha ao ler informações: ${it.message}") }
+    }
+  }
+  fun removeLocal(h: HistoryItem) { HistoryStore.remove(ctx, h); Library.removeTrack(ctx, h.uri)
+    state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx), status = "Removida da biblioteca. O arquivo original foi preservado.") }
+  fun renamePlaylist(old: String, name: String) { runCatching { Library.renamePlaylist(ctx, old, name.trim()) }
+    .onSuccess { state = state.copy(playlists = Library.playlists(ctx), historyView = if (state.historyView == old) name.trim() else state.historyView) }
+    .onFailure { state = state.copy(status = it.message.orEmpty()) } }
+  fun movePlaylist(name: String, from: Int, to: Int) { runCatching { Library.moveTrack(ctx, name, from, to) }
+    .onSuccess { state = state.copy(playlists = Library.playlists(ctx)) }.onFailure { state = state.copy(status = it.message.orEmpty()) } }
+
   fun favorite(h: HistoryItem) { Library.toggleFavorite(ctx, h.uri); state = state.copy(favorites = Library.favorites(ctx)) }
   fun addToPlaylist(h: HistoryItem, name: String) { runCatching { Library.addToPlaylist(ctx, name.trim(), h.uri) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Adicionada a ${name.trim()}") }
@@ -236,7 +307,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun removeFromPlaylist(h: HistoryItem) { Library.removeFromPlaylist(ctx, state.historyView, h.uri); state = state.copy(playlists = Library.playlists(ctx)) }
   fun deletePlaylist(n: String) { Library.deletePlaylist(ctx, n); state = state.copy(playlists = Library.playlists(ctx), historyView = "Tudo") }
   fun historyFilter(q: String) { state = state.copy(historyFilter = q) }
-  fun historyView(v: String) { state = state.copy(historyView = v) }
+  fun historyView(v: String) { state = state.copy(historyView = v, albumFilter = "") }
   fun exportBackup(to: Uri?) { to ?: return; viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { Library.export(ctx, to) } }
     .onSuccess { state = state.copy(status = "Backup de biblioteca salvo. Os arquivos de música devem ser guardados separadamente.") }.onFailure { state = state.copy(status = "Falha no backup: ${it.message}") } } }
   fun importBackup(from: Uri?) { from ?: return; viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { Library.import(ctx, from) } }

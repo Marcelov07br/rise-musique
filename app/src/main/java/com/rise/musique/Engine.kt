@@ -12,9 +12,9 @@ object Engine {
   fun isLink(s: String) = s.trim().startsWith("http")
   fun isPlaylist(s: String) = isLink(s) && ("list=" in s || "/playlist" in s || "/album" in s)
 
-  /** Busca sem baixar: link vira 1 resultado, termo vira até 5. */
-  suspend fun search(input: String): List<SearchResult> = withContext(Dispatchers.IO) {
-    val target = if (isLink(input)) input.trim() else "ytsearch5:${input.trim()}"
+  /** More results request a larger bounded search, then take the next page. */
+  suspend fun search(input: String, offset: Int = 0, count: Int = 10): List<SearchResult> = withContext(Dispatchers.IO) {
+    val target = if (isLink(input)) input.trim() else "ytsearch${(offset + count).coerceIn(1, 100)}:${input.trim()}"
     val req = YoutubeDLRequest(target).apply { addOption("-J"); addOption("--flat-playlist")
       addOption(if (isPlaylist(input)) "--yes-playlist" else "--no-playlist") }
     val root = JSONObject(runInterruptible { YoutubeDL.getInstance().execute(req).out })
@@ -27,7 +27,7 @@ object Engine {
           ?.takeIf { it.isNotBlank() } ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg" }
       SearchResult(url, o.optString("title"), o.optString("channel").ifBlank { o.optString("uploader") },
         o.optDouble("duration", 0.0).toInt(), thumb)
-    }.distinctBy { it.url }
+    }.distinctBy { it.url }.let { if (isLink(input)) it else it.drop(offset).take(count) }
   }
 
   /** URL direta do áudio, pra prévia. */
@@ -63,8 +63,10 @@ object Engine {
     finally { YoutubeDL.getInstance().destroyProcessById(procId) }
     val f = tmp.listFiles()?.filter { it.extension in setOf("mp3", "mp4", "m4a", "opus", "flac", "webm", "mkv") }?.maxByOrNull { it.length() }
       ?: error("Nenhum arquivo gerado")
+    onProgress(1f, "[RiseSave] Salvando")
     val saved = save(ctx, f, tree)
-    HistoryItem(f.nameWithoutExtension, "${f.extension.uppercase()} · ${if (format == "FLAC" && mode == Mode.Musica) "FLAC" else quality} · ${"%.1f".format(f.length() / 1e6)} MB", saved)
+    val item = HistoryItem(f.nameWithoutExtension, "${f.extension.uppercase()} · ${if (format == "FLAC" && mode == Mode.Musica) "FLAC" else quality} · ${"%.1f".format(f.length() / 1e6)} MB", saved, video = mode == Mode.Video)
+    LocalMedia.metadata(ctx, if (saved.startsWith("content://")) Uri.parse(saved) else Uri.fromFile(File(saved)), item)
     } finally { tmp.deleteRecursively() }
   }
 
@@ -83,7 +85,7 @@ object Engine {
   }
 
   fun mime(ext: String) = when (ext.lowercase()) { "mp4" -> "video/mp4"; "m4a" -> "audio/mp4"; "opus" -> "audio/ogg"
-    "flac" -> "audio/flac"; "webm" -> "video/webm"; "mkv" -> "video/x-matroska"; else -> "audio/mpeg" }
+    "flac" -> "audio/flac"; "webm" -> "video/webm"; "mkv" -> "video/x-matroska"; "wav" -> "audio/wav"; "ogg" -> "audio/ogg"; "aac" -> "audio/aac"; else -> "audio/mpeg" }
 
   suspend fun update(ctx: Context) = withContext(Dispatchers.IO) {
     runCatching { YoutubeDL.getInstance().updateYoutubeDL(ctx, YoutubeDL.UpdateChannel.STABLE) } }
@@ -99,15 +101,20 @@ object HistoryStore {
   }
   @Synchronized fun load(ctx: Context): List<HistoryItem> = runCatching {
     val a = JSONArray(AtomicJson.read(file(ctx)) ?: "[]")
-    List(a.length()) { a.getJSONObject(it).run { HistoryItem(getString("t"), getString("m"), optString("u"), optString("a"), optString("r")) } }
+    List(a.length()) { TrackJson.decode(a.getJSONObject(it)) }
   }.getOrDefault(emptyList())
   @Synchronized fun add(ctx: Context, item: HistoryItem) {
     // Refuse to overwrite an unreadable library with an empty list.
     json(ctx)
     write(ctx, (listOf(item) + load(ctx)).distinctBy { it.uri })
   }
+  @Synchronized fun addAll(ctx: Context, items: List<HistoryItem>) {
+    json(ctx); write(ctx, (items + load(ctx)).distinctBy { it.uri })
+  }
+  @Synchronized fun replace(ctx: Context, item: HistoryItem) {
+    json(ctx); write(ctx, load(ctx).map { if (it.uri == item.uri) item else it })
+  }
   @Synchronized fun remove(ctx: Context, item: HistoryItem) = write(ctx, load(ctx).filterNot { it.uri == item.uri && it.title == item.title })
-  private fun write(ctx: Context, l: List<HistoryItem>) = AtomicJson.write(file(ctx), JSONArray(l
-    .map { JSONObject().put("t", it.title).put("m", it.meta).put("u", it.uri).put("a", it.art).put("r", it.artist) }).toString())
+  private fun write(ctx: Context, l: List<HistoryItem>) = AtomicJson.write(file(ctx), JSONArray(l.map(TrackJson::encode)).toString())
 }
 

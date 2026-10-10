@@ -54,7 +54,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
     val margin = with(density) { 12.dp.toPx() }
     val p = f.value.coerceIn(0f, 1f) // nunca sai de 0..1, nem em rebote
     val dragState = rememberDraggableState { d -> scope.launch { f.snapTo((f.value - d / (fullH - miniH)).coerceIn(0f, 1f)) } }
-    val sheetTop = lerp(fullH - miniH - margin - with(density) { WindowInsets.navigationBars.getBottom(this).toFloat() }, 0f, p)
+    val sheetTop = lerp(fullH - miniH - margin - with(density) { WindowInsets.navigationBars.getBottom(this).toFloat() + 82.dp.toPx() }, 0f, p)
     val corner = lerp(34f, 0f, p) + back * 36f
     val scale = 1f - back * 0.12f
 
@@ -62,7 +62,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         .offset { IntOffset(0, sheetTop.toInt()) }
         .padding(horizontal = with(density) { lerp(margin, 0f, p).toDp() })
         .graphicsLayer { scaleX = scale; scaleY = scale; shape = RoundedCornerShape(corner.dp); clip = true }
-        .background(c.surfaceVariant)
+        .background(c.surface).border(1.dp, c.outlineVariant, RoundedCornerShape(corner.dp))
         .draggable(dragState, Orientation.Vertical, onDragStopped = { v ->
           val target = when { v < -800 -> 1f; v > 800 -> 0f; else -> if (f.value > .5f) 1f else 0f }
           f.animateTo(target, bouncy) })
@@ -92,7 +92,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       // Capa arremessável: arrasta na horizontal; forte o bastante troca de faixa, fraco volta com mola.
       val throwX = remember { Animatable(0f) }
       val maxWpx = with(density) { maxW.toPx() }
-      val artColor = rememberArtColor(now.art)
+      val artColor = Color(0xFFBEBEC4)
       if (p > .5f && artAlpha > 0f) AudioRing(Modifier.offset(artX, artY).size(artSize)
         .graphicsLayer { translationX = throwX.value; val sc = breath; scaleX = sc; scaleY = sc }, artColor, now.playing)
       var tapHint by remember { mutableStateOf<Pair<Long, Int>?>(null) }
@@ -127,6 +127,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           Text(if (now.isPreview) "Prévia · ${now.artist}" else now.artist, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
         }
         PlayButton(now, a, 44.dp, c.primary, c.onPrimary)
+        if (!now.isPreview && now.hasNext) IconButton(a.next) { Icon(Icons.Rounded.SkipNext, "Próxima", tint = c.onSurface) }
         IconButton(a.closePlayer) { Icon(Icons.Rounded.Close, "Fechar", tint = c.onSurfaceVariant) }
       }
 

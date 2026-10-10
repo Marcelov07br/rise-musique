@@ -4,7 +4,8 @@ plugins {
 }
 android {
   namespace = "com.rise.musique"; compileSdk = 35
-  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 8; versionName = "0.8.0" }
+  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 9; versionName = "0.9.0"
+    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
   signingConfigs {
     create("stable") {
       System.getenv("RISE_KEYSTORE")?.let { storeFile = file(it) }
@@ -18,7 +19,7 @@ android {
   compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
   kotlinOptions { jvmTarget = "17" }
   packaging { jniLibs { useLegacyPackaging = true } }
-  defaultConfig { ndk { abiFilters += listOf("arm64-v8a") } }
+  defaultConfig { ndk { abiFilters += if (project.hasProperty("rise.emulator")) listOf("x86_64") else listOf("arm64-v8a") } }
 }
 dependencies {
   val bom = platform("androidx.compose:compose-bom:2024.12.01")
@@ -40,5 +41,7 @@ dependencies {
   implementation("androidx.core:core-splashscreen:1.0.1")
   testImplementation("junit:junit:4.13.2")
   testImplementation("org.json:json:20240303")
+  androidTestImplementation("androidx.test:runner:1.6.2")
+  androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 

@@ -11,7 +11,7 @@ if (Test-Path -LiteralPath $credentialsPath) {
 Push-Location $PSScriptRoot
 try {
     $tasks = @(':app:assembleRelease', ':app:lintRelease')
-    if ($Test) { $tasks += @(':app:testDebugUnitTest', '--tests', 'com.rise.musique.UpdateReleaseTest', '--tests', 'com.rise.musique.BackupMergeTest', '--tests', 'com.rise.musique.DownloadChoicesTest') }
+    if ($Test) { $tasks += @(':app:testDebugUnitTest', '--tests', 'com.rise.musique.UpdateReleaseTest', '--tests', 'com.rise.musique.BackupMergeTest', '--tests', 'com.rise.musique.DownloadChoicesTest', '--tests', 'com.rise.musique.PackFeaturesTest') }
     & .\gradlew.bat @tasks '-Pandroid.overridePathCheck=true' --no-daemon --console=plain
     if ($LASTEXITCODE -ne 0) { throw 'Gradle build failed' }
     python scripts\prepare-release.py

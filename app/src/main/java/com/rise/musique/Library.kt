@@ -24,6 +24,15 @@ object Library {
   @Synchronized fun removeFromPlaylist(c: Context, name: String, uri: String) { val o = load(c); val pl = o.optJSONObject("pl") ?: return
     val a = pl.optJSONArray(name) ?: return; pl.put(name, JSONArray((0 until a.length()).map(a::getString).filter { it != uri })); save(c, o) }
   @Synchronized fun deletePlaylist(c: Context, name: String) { val o = load(c); o.optJSONObject("pl")?.remove(name); save(c, o) }
+  @Synchronized fun renamePlaylist(c: Context, old: String, name: String) {
+    val o = load(c); val pl = o.optJSONObject("pl") ?: error("Playlist não encontrada")
+    PlaylistEdits.rename(pl, old, name); save(c, o)
+  }
+  @Synchronized fun moveTrack(c: Context, name: String, from: Int, to: Int) {
+    val o = load(c); val pl = o.optJSONObject("pl") ?: return
+    val tracks = playlists(c)[name] ?: return
+    pl.put(name, JSONArray(PlaylistEdits.move(tracks, from, to))); save(c, o)
+  }
   @Synchronized fun removeTrack(c: Context, uri: String) {
     val o = load(c); o.put("fav", JSONArray(favorites(c).filterNot { it == uri }))
     val pl = JSONObject(); playlists(c).forEach { (name, tracks) -> pl.put(name, JSONArray(tracks.filterNot { it == uri })) }

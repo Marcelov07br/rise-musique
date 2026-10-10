@@ -29,8 +29,13 @@ class MainActivity : ComponentActivity() {
     if (s == null) handle(intent)
     if (Build.VERSION.SDK_INT >= 33) registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
       .launch(Manifest.permission.POST_NOTIFICATIONS)
-    setContent { val sys = isSystemInDarkTheme(); var dark by remember { mutableStateOf(sys) }
+    setContent { val sys = isSystemInDarkTheme(); val dark = when (vm.state.theme) { "Escuro" -> true; "Claro" -> false; else -> sys }
+      SideEffect { val bars = if (dark) androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        else androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+        enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars) }
       val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree(), vm::onFolder)
+      val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), vm::importFiles)
+      val mediaFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree(), vm::importFolder)
       val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), vm::exportBackup)
       val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), vm::importBackup)
       var crash by remember { mutableStateOf(java.io.File(filesDir, "crash.txt").takeIf { it.exists() }?.readText()) }
@@ -43,7 +48,7 @@ class MainActivity : ComponentActivity() {
             java.io.File(filesDir, "crash.txt").delete(); crash = null }) { androidx.compose.material3.Text("Compartilhar") } },
           dismissButton = { androidx.compose.material3.TextButton({ java.io.File(filesDir, "crash.txt").delete(); crash = null }) { androidx.compose.material3.Text("Ignorar") } }) }
         RiseApp(vm.state, Actions(vm::onQuery, vm::onMode, vm::onQuality, { picker.launch(null) },
-        vm::enqueue, { dark = !dark }, vm::search, vm::select, vm::togglePreview,
+        vm::enqueue, { vm.theme(if (dark) "Claro" else "Escuro") }, vm::search, vm::select, vm::togglePreview,
         selectAll = vm::selectAll, format = vm::onFormat, cut = vm::onCut, cancel = vm::cancel, retry = vm::retry, dismiss = vm::dismiss,
         open = { h -> vm.openIntent(h, false)?.let(::startActivity) }, share = { h -> vm.openIntent(h, true)?.let(::startActivity) },
         delete = vm::delete, play = vm::play, playPause = vm::playPause, seek = vm::seek, closePlayer = vm::closePlayer, next = vm::next, prev = vm::prev, shuffle = vm::shuffle,
@@ -51,7 +56,11 @@ class MainActivity : ComponentActivity() {
         historyFilter = vm::historyFilter, historyView = vm::historyView, sleep = vm::sleep,
         exportBackup = { exporter.launch("rise-musique-backup.json") }, importBackup = { importer.launch(arrayOf("application/json", "*/*")) },
         updates = { updates.check(true) }, page = vm::page, repeat = vm::repeat, showQueue = vm::showQueue,
-        moveQueue = vm::moveQueue, removeQueue = vm::removeQueue, playQueue = vm::playQueue, playNext = vm::playNext, addQueue = vm::addQueue)) } }
+        moveQueue = vm::moveQueue, removeQueue = vm::removeQueue, playQueue = vm::playQueue, playNext = vm::playNext, addQueue = vm::addQueue,
+        importFiles = { mediaPicker.launch(arrayOf("audio/*", "video/*")) }, importFolder = { mediaFolder.launch(null) },
+        moreResults = vm::moreResults, clearSearches = vm::clearSearches, sort = vm::sort, mediaFilter = vm::mediaFilter, albumFilter = vm::albumFilter,
+        renamePlaylist = vm::renamePlaylist, movePlaylist = vm::movePlaylist, refreshMetadata = vm::refreshMetadata,
+        theme = vm::theme, settings = vm::settings, removeLocal = vm::removeLocal)) } }
   }
   override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }
   private fun handle(i: Intent?) { if (i?.action == Intent.ACTION_SEND) vm.onIncomingLink(i.getStringExtra(Intent.EXTRA_TEXT)) }

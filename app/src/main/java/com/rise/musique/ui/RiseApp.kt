@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 
 enum class Mode(val label: String, val qualities: List<String>) {
   Musica("Música", listOf("128k", "192k", "320k")), Video("Vídeo", listOf("480p", "720p", "1080p", "Máx")) }
-data class HistoryItem(val title: String, val meta: String, val uri: String = "", val art: String = "", val artist: String = "")
+data class HistoryItem(val title: String, val meta: String, val uri: String = "", val art: String = "", val artist: String = "", val duration: Long = 0, val album: String = "", val imported: Boolean = false, val video: Boolean = meta.startsWith("MP4"))
 data class NowPlaying(val key: String, val title: String, val artist: String, val art: String, val playing: Boolean = false,
   val loading: Boolean = false, val position: Long = 0, val duration: Long = 0, val isPreview: Boolean = false,
   val hasNext: Boolean = false, val hasPrev: Boolean = false, val shuffle: Boolean = false, val index: Int = 0, val count: Int = 1,
@@ -35,14 +35,15 @@ data class SearchResult(val url: String, val title: String, val channel: String,
 data class FlyEvent(val id: Long, val art: String)
 class FlyTargets { var history by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero); var source by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
   val bounce = androidx.compose.animation.core.Animatable(1f) }
-data class QueueItem(val id: String, val title: String, val progress: Float, val running: Boolean, val error: String? = null)
+data class QueueItem(val id: String, val title: String, val progress: Float, val running: Boolean, val error: String? = null, val stage: String = "Aguardando", val completed: Boolean = false)
 data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val quality: String = "320k",
   val folder: android.net.Uri? = null, val status: String = "", val history: List<HistoryItem> = emptyList(),
   val searching: Boolean = false, val results: List<SearchResult> = emptyList(), val selected: Set<String> = emptySet(),
   val isPlaylist: Boolean = false, val format: String = "MP3", val cutOn: Boolean = false, val cutStart: String = "", val cutEnd: String = "",
   val previewing: String? = null, val previewLoading: Boolean = false, val now: NowPlaying? = null, val fly: FlyEvent? = null,
   val favorites: Set<String> = emptySet(), val playlists: Map<String, List<String>> = emptyMap(), val historyFilter: String = "",
-  val page: String = "Biblioteca", val choices: com.rise.musique.DownloadChoices = com.rise.musique.DownloadChoices(),
+  val recentSearches: List<String> = emptyList(), val moreResults: Boolean = false, val loadingMore: Boolean = false,
+  val importing: Boolean = false, val sort: String = "Recentes", val mediaFilter: String = "Tudo", val albumFilter: String = "", val theme: String = "Sistema", val settingsOpen: Boolean = false, val page: String = "Biblioteca", val choices: com.rise.musique.DownloadChoices = com.rise.musique.DownloadChoices(),
   val playbackQueue: List<HistoryItem> = emptyList(), val queueOpen: Boolean = false, val historyView: String = "Tudo", val sleepAt: Long = 0, val queue: List<QueueItem> = emptyList())
 class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, val quality: (String) -> Unit = {},
   val pickFolder: () -> Unit = {}, val download: () -> Unit = {}, val toggleTheme: () -> Unit = {},
@@ -57,7 +58,11 @@ class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, v
   val open: (HistoryItem) -> Unit = {}, val share: (HistoryItem) -> Unit = {}, val delete: (HistoryItem) -> Unit = {}, val updates: () -> Unit = {},
   val page: (String) -> Unit = {}, val repeat: () -> Unit = {}, val showQueue: (Boolean) -> Unit = {},
   val moveQueue: (Int, Int) -> Unit = { _, _ -> }, val removeQueue: (Int) -> Unit = {}, val playQueue: (Int) -> Unit = {},
-  val playNext: (HistoryItem) -> Unit = {}, val addQueue: (HistoryItem) -> Unit = {})
+  val playNext: (HistoryItem) -> Unit = {}, val addQueue: (HistoryItem) -> Unit = {},
+  val importFiles: () -> Unit = {}, val importFolder: () -> Unit = {}, val moreResults: () -> Unit = {}, val clearSearches: () -> Unit = {},
+  val sort: (String) -> Unit = {}, val mediaFilter: (String) -> Unit = {}, val albumFilter: (String) -> Unit = {},
+  val renamePlaylist: (String, String) -> Unit = { _, _ -> }, val movePlaylist: (String, Int, Int) -> Unit = { _, _, _ -> },
+  val refreshMetadata: () -> Unit = {}, val theme: (String) -> Unit = {}, val settings: (Boolean) -> Unit = {}, val removeLocal: (HistoryItem) -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -73,33 +78,51 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
     state.fly?.let { FlyOverlay(it, targets) }
     state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics) } }
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
+    if (state.settingsOpen) SettingsSheet(state, actions)
   }
 }
 
 @Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets) {
-  Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-      Text("RISE MUSIQUE", Modifier.weight(1f), fontSize = 17.sp, letterSpacing = 3.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-      RoundIconButton(Icons.Rounded.Contrast, "Tema", actions.toggleTheme)
-      RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates)
+  val c = MaterialTheme.colorScheme
+  Column(Modifier.fillMaxSize().background(c.background).safeDrawingPadding()) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+      Text("rise", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
+      RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
+      Spacer(Modifier.width(8.dp))
+      RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
     }
-    PillSelector(listOf("Biblioteca", "Buscar", "Downloads"), state.page, { it }, actions.page,
-      Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)
-        .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
-        .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) })
-    if (state.page != "Buscar" && state.status.isNotBlank()) Text(state.status,
-      Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
+    if (state.status.isNotBlank()) Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
     when (state.page) {
       "Buscar" -> MainPane(state, actions, targets, null, Modifier.weight(1f).fillMaxWidth())
-      "Downloads" -> HistoryPanel(state, actions, Modifier.weight(1f).fillMaxWidth(), showLibrary = false)
-      else -> HistoryPanel(state, actions, Modifier.weight(1f).fillMaxWidth(), showDownloads = false)
+      "Downloads" -> DownloadHub(state, actions, Modifier.weight(1f).fillMaxWidth())
+      else -> LibraryHome(state, actions, Modifier.weight(1f).fillMaxWidth())
+    }
+    NavigationDock(state, actions, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
+      .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
+      .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) })
+  }
+}
+
+@Composable private fun NavigationDock(s: UiState, a: Actions, modifier: Modifier) {
+  val c = MaterialTheme.colorScheme
+  Row(modifier.clip(RoundedCornerShape(32.dp)).background(c.surface).border(1.dp, c.outlineVariant, RoundedCornerShape(32.dp)).padding(5.dp)) {
+    listOf("Biblioteca", "Buscar", "Downloads").forEach { page ->
+      val on = s.page == page
+      val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+      Column(Modifier.weight(1f).springPress(src).clip(RoundedCornerShape(28.dp)).background(if (on) c.surfaceVariant else c.surface)
+        .clickable(src, null) { a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(when (page) { "Biblioteca" -> Icons.Rounded.LibraryMusic; "Buscar" -> Icons.Rounded.Search; else -> Icons.Rounded.Download }, null,
+          tint = if (on) c.onSurface else c.onSurfaceVariant, modifier = Modifier.size(23.dp))
+        Text(if (page == "Biblioteca") "Ouvir" else page, color = if (on) c.onSurface else c.onSurfaceVariant, fontSize = 11.sp, maxLines = 1)
+      }
     }
   }
 }
 
 @Composable private fun MainPane(state: UiState, a: Actions, targets: FlyTargets, onHistory: (() -> Unit)?, modifier: Modifier) {
   val c = MaterialTheme.colorScheme
-  Column(modifier.background(c.background).padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+  Column(modifier.background(c.background).padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Text("Buscar", style = MaterialTheme.typography.headlineLarge)
     Row(Modifier.fillMaxWidth().clip(CircleShape).background(c.surfaceVariant).padding(start = 18.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
       verticalAlignment = Alignment.CenterVertically) {
       Icon(Icons.Rounded.Search, null, tint = c.onSurfaceVariant)
@@ -111,29 +134,37 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
       if (state.searching) CircularProgressIndicator(Modifier.size(44.dp).padding(10.dp), strokeWidth = 2.dp, color = c.onSurface)
       else RoundIconButton(Icons.Rounded.ArrowForward, "Buscar", a.search, filled = state.query.isNotBlank())
     }
-    DownloadOptions(state, a)
-    if (state.results.size > 1 && state.isPlaylist) Row(verticalAlignment = Alignment.CenterVertically) {
-      Text("${state.results.size} faixas · ${state.selected.size} marcadas", Modifier.weight(1f), color = c.onSurfaceVariant, fontSize = 13.sp)
-      PillButton(if (state.selected.size == state.results.size) "Desmarcar" else "Marcar todas", a.selectAll, filled = false)
-    }
-
-    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      if (state.selected.isNotEmpty()) item { DownloadOptions(state, a) }
+      if (state.results.size > 1 && state.isPlaylist) item { Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("${state.results.size} faixas · ${state.selected.size} marcadas", Modifier.weight(1f), color = c.onSurfaceVariant, fontSize = 13.sp)
+        TextButton(a.selectAll) { Text(if (state.selected.size == state.results.size) "Desmarcar" else "Marcar todas") }
+      } }
       itemsIndexed(state.results, key = { _, it -> it.url }) { i, r ->
         Box(Modifier.cascade(i)) {
         ResultCard(r, r.url in state.selected, state.isPlaylist, state.previewing == r.url, state.previewing == r.url && state.previewLoading,
           { a.select(r) }, { a.preview(r) }) }
       }
-      if (state.results.isEmpty() && !state.searching) item {
-        Text("Cole um link ou digite um nome e toque na seta.", color = c.onSurfaceVariant, fontSize = 13.sp,
-          modifier = Modifier.padding(top = 24.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+      if (state.moreResults) item { PillButton(if (state.loadingMore) "Carregando…" else "Carregar mais resultados", a.moreResults, Modifier.fillMaxWidth(), filled = false, enabled = !state.loadingMore) }
+      if (state.results.isEmpty() && !state.searching) {
+        item { Text("Um nome, artista ou link. Encontre o que quer ouvir.", color = c.onSurfaceVariant, modifier = Modifier.padding(vertical = 16.dp)) }
+        if (state.recentSearches.isNotEmpty()) {
+          item { Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Buscas recentes", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            TextButton(a.clearSearches) { Text("Limpar") }
+          } }
+          items(state.recentSearches) { query -> Row(Modifier.fillMaxWidth().clickable { a.query(query); a.search() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.History, null, tint = c.onSurfaceVariant); Spacer(Modifier.width(14.dp)); Text(query, maxLines = 2, overflow = TextOverflow.Ellipsis)
+          } }
+        }
+      }
+      if (state.selected.size == 1) item { CutPanel(state, a) }
     }
-    if (state.selected.size == 1) CutPanel(state, a)
-    if (state.status.isNotBlank()) Text(state.status, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
-    val active = state.queue.count { it.error == null }
-    PillButton(modifier = Modifier.fillMaxWidth().onGloballyPositioned { targets.source = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 2f, it.size.height / 2f) },
+    val active = state.queue.count { it.error == null && !it.completed }
+    if (state.selected.isNotEmpty()) PillButton(modifier = Modifier.fillMaxWidth().onGloballyPositioned { targets.source = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 2f, it.size.height / 2f) },
       text = when { state.selected.size > 1 -> "Baixar ${state.selected.size} faixas"; active == 0 -> "Baixar"
         else -> "Adicionar à fila ($active)" }, onClick = a.download, icon = Icons.Rounded.Download, enabled = state.selected.isNotEmpty() && state.choices.ready(state.mode, state.format))
-    if (state.now != null) Spacer(Modifier.height(76.dp))
+    if (state.now != null) Spacer(Modifier.height(88.dp))
   }
 }
 
@@ -168,7 +199,7 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   Row(Modifier.fillMaxWidth().springPress(src).clip(RoundedCornerShape(22.dp))
-      .background(c.surfaceVariant).border(1.5.dp, if (selected) c.primary else c.surfaceVariant, RoundedCornerShape(22.dp))
+      .background(if (selected) c.surfaceVariant else c.background).border(1.dp, if (selected) c.outline else c.background, RoundedCornerShape(22.dp))
       .clickable(src, null, onClick = onSelect).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
     if (multi) { Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
       tint = if (selected) c.primary else c.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, end = 10.dp).size(22.dp)) }
@@ -192,100 +223,8 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
 @Composable private fun Label(t: String) = Text(t.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant,
   fontSize = 11.sp, letterSpacing = 2.sp)
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable fun HistoryPanel(state: UiState, a: Actions, modifier: Modifier, showLibrary: Boolean = true, showDownloads: Boolean = true) {
-  val c = MaterialTheme.colorScheme
-  LazyColumn(modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    if (showDownloads && state.queue.isNotEmpty()) {
-      item { Label("Na fila") }
-      items(state.queue, key = { it.id }) { q ->
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceVariant).padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-          verticalAlignment = Alignment.CenterVertically) {
-          Column(Modifier.weight(1f)) {
-            Text(q.title, color = c.onSurface, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(when { q.error != null -> q.error; q.running -> "Baixando ${(q.progress * 100).toInt()}%"; else -> "Aguardando" },
-              color = if (q.error != null) androidx.compose.ui.graphics.Color(0xFFD08770) else c.onSurfaceVariant, fontSize = 11.sp, maxLines = 2)
-            if (q.error == null) { Spacer(Modifier.height(6.dp))
-              LinearProgressIndicator({ if (q.running) q.progress else 0f }, Modifier.fillMaxWidth().clip(CircleShape), color = c.primary, trackColor = c.outline) }
-          }
-          Spacer(Modifier.width(6.dp))
-          if (q.error != null) { RoundIconButton(Icons.Rounded.Refresh, "Tentar de novo", { a.retry(q) }, container = c.background)
-            Spacer(Modifier.width(4.dp)); RoundIconButton(Icons.Rounded.Close, "Remover", { a.dismiss(q) }, container = c.background) }
-          else RoundIconButton(Icons.Rounded.Close, "Cancelar", { a.cancel(q) }, container = c.background)
-        }
-      }
-      item { Spacer(Modifier.height(8.dp)) }
-    }
-    if (showDownloads && !showLibrary && state.queue.isEmpty()) item {
-      Text("Nenhum download pendente. Escolha uma mídia em Buscar.", color = c.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
-    }
-    if (showLibrary) {
-    item { Label(if (state.historyView == "Tudo") "Adicionadas recentemente" else state.historyView) }
-    item { Row(Modifier.fillMaxWidth().clip(CircleShape).background(c.surfaceVariant).padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-      Icon(Icons.Rounded.Search, null, tint = c.onSurfaceVariant, modifier = Modifier.size(18.dp))
-      TextField(state.historyFilter, a.historyFilter, Modifier.weight(1f), singleLine = true, textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
-        placeholder = { Text("Buscar na biblioteca", color = c.onSurfaceVariant, fontSize = 14.sp) },
-        colors = TextFieldDefaults.colors(focusedContainerColor = c.surfaceVariant, unfocusedContainerColor = c.surfaceVariant,
-          focusedIndicatorColor = c.surfaceVariant, unfocusedIndicatorColor = c.surfaceVariant))
-      if (state.historyFilter.isNotEmpty()) IconButton({ a.historyFilter("") }) { Icon(Icons.Rounded.Close, "Limpar", tint = c.onSurfaceVariant) }
-    } }
-    item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      items(listOf("Tudo", "Favoritos") + state.playlists.keys.sorted()) { v -> var plMenu by remember { mutableStateOf(false) }
-        Box { val on = v == state.historyView
-          Row(Modifier.clip(CircleShape).background(if (on) c.primary else c.surfaceVariant)
-              .combinedClickable(onClick = { a.historyView(v) }, onLongClick = { if (v != "Tudo" && v != "Favoritos") plMenu = true })
-              .padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (v == "Favoritos") { Icon(Icons.Rounded.Favorite, null, tint = if (on) c.onPrimary else c.onSurfaceVariant, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp)) }
-            Text(v, color = if (on) c.onPrimary else c.onSurface, fontSize = 13.sp) }
-          DropdownMenu(plMenu, { plMenu = false }, shape = RoundedCornerShape(18.dp), containerColor = c.surface) {
-            DropdownMenuItem({ Text("Apagar playlist") }, { plMenu = false; a.deletePlaylist(v) }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }) }
-        } } } }
-    val shown = visibleHistory(state)
-    if (shown.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-      Icon(when (state.historyView) { "Favoritos" -> Icons.Rounded.FavoriteBorder; "Tudo" -> Icons.Rounded.LibraryMusic; else -> Icons.Rounded.QueueMusic }, null,
-        tint = c.onSurfaceVariant, modifier = Modifier.size(36.dp)); Spacer(Modifier.height(10.dp))
-      Text(when { state.historyFilter.isNotBlank() -> "Nada com esse nome"; state.historyView == "Favoritos" -> "Toque no coração de uma música pra favoritar"
-        state.historyView == "Tudo" -> "Nada baixado ainda"; else -> "Playlist vazia" }, color = c.onSurfaceVariant, fontSize = 13.sp) } }
-    itemsIndexed(shown, key = { _, h -> h.uri + h.title }) { i, h ->
-      var menu by remember { mutableStateOf(false) }
-      var pick by remember { mutableStateOf(false) }
-      val fav = h.uri in state.favorites
-      Box(Modifier.cascade(i)) {
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceVariant)
-            .combinedClickable(onClick = { a.play(h) }, onLongClick = { menu = true }).padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
-          verticalAlignment = Alignment.CenterVertically) {
-          Box(Modifier.size(40.dp).clip(CircleShape).background(c.background), contentAlignment = Alignment.Center) {
-            if (h.art.isNotBlank()) AsyncImage(h.art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            else Icon(if (h.meta.startsWith("MP4")) Icons.Rounded.Movie else Icons.Rounded.MusicNote, null, tint = c.onSurface) }
-          Spacer(Modifier.width(12.dp))
-          Column(Modifier.weight(1f)) { Text(h.title, color = c.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(h.artist.ifBlank { h.meta }, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1) }
-          val heart by androidx.compose.animation.core.animateFloatAsState(if (fav) 1f else 0f,
-            androidx.compose.animation.core.spring(dampingRatio = 0.35f, stiffness = 500f), label = "fav")
-          IconButton({ a.favorite(h) }) { Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "Favoritar",
-            tint = if (fav) c.primary else c.onSurfaceVariant, modifier = Modifier.graphicsLayer { val s = 1f + heart * .25f - (heart - 1f).let { it * it } * .25f; scaleX = s; scaleY = s }) }
-        }
-        DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(18.dp), containerColor = c.surface) {
-          DropdownMenuItem({ Text("Tocar aqui") }, { menu = false; a.play(h) }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) })
-          DropdownMenuItem({ Text("Tocar a seguir") }, { menu = false; a.playNext(h) }, leadingIcon = { Icon(Icons.Rounded.QueuePlayNext, null) })
-          DropdownMenuItem({ Text("Adicionar à fila de reprodução") }, { menu = false; a.addQueue(h) }, leadingIcon = { Icon(Icons.Rounded.QueueMusic, null) })
-          DropdownMenuItem({ Text("Adicionar à playlist") }, { menu = false; pick = true }, leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, null) })
-          if (state.historyView in state.playlists) DropdownMenuItem({ Text("Tirar desta playlist") }, { menu = false; a.removeFromPlaylist(h) },
-            leadingIcon = { Icon(Icons.Rounded.PlaylistRemove, null) })
-          DropdownMenuItem({ Text("Abrir em outro app") }, { menu = false; a.open(h) }, leadingIcon = { Icon(Icons.Rounded.OpenInNew, null) })
-          DropdownMenuItem({ Text("Compartilhar") }, { menu = false; a.share(h) }, leadingIcon = { Icon(Icons.Rounded.Share, null) })
-          DropdownMenuItem({ Text("Apagar arquivo") }, { menu = false; a.delete(h) }, leadingIcon = { Icon(Icons.Rounded.Delete, null) })
-        }
-        if (pick) PlaylistPicker(state.playlists.keys.sorted(), { pick = false }) { name -> pick = false; a.addToPlaylist(h, name) }
-      }
-    }
-    item { Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      PillButton("Exportar", a.exportBackup, Modifier.weight(1f), Icons.Rounded.Upload, filled = false)
-      PillButton("Importar", a.importBackup, Modifier.weight(1f), Icons.Rounded.Download, filled = false) } }
-    }
-    if (state.now != null) item { Spacer(Modifier.height(88.dp)) }
-  }
+  if (showLibrary) LibraryHome(state, a, modifier) else DownloadHub(state, a, modifier)
 }
 
 /** A capa do download concluído sai do botão Baixar num arco até o botão de histórico, que dá um quique ao receber. */
@@ -318,13 +257,23 @@ fun visibleHistory(state: UiState): List<HistoryItem> {
   val base = when (state.historyView) { "Tudo" -> state.history; "Favoritos" -> state.history.filter { it.uri in state.favorites }
     else -> state.playlists[state.historyView].orEmpty().mapNotNull { u -> state.history.firstOrNull { it.uri == u } } }
   val q = state.historyFilter.trim()
-  return if (q.isEmpty()) base else base.filter { it.title.contains(q, true) || it.artist.contains(q, true) }
+  val filtered = base.filter { h ->
+    (state.mediaFilter == "Tudo" || (state.mediaFilter == "Vídeos") == h.video) &&
+    (state.albumFilter.isEmpty() || h.album == state.albumFilter) &&
+    (q.isEmpty() || h.title.contains(q, true) || h.artist.contains(q, true) || h.album.contains(q, true))
+  }
+  if (state.historyView in state.playlists) return filtered
+  return when (state.sort) {
+    "Título" -> filtered.sortedBy { it.title.lowercase() }
+    "Artista" -> filtered.sortedWith(compareBy<HistoryItem> { it.artist.lowercase() }.thenBy { it.title.lowercase() })
+    else -> filtered
+  }
 }
 
-@Composable private fun PlaylistPicker(names: List<String>, dismiss: () -> Unit, pick: (String) -> Unit) {
+@Composable internal fun PlaylistPicker(names: List<String>, dismiss: () -> Unit, pick: (String) -> Unit) {
   var new by remember { mutableStateOf("") }
   AlertDialog(dismiss, shape = RoundedCornerShape(28.dp), title = { Text("Adicionar à playlist") }, text = {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
       names.forEach { n -> PillButton(n, { pick(n) }, Modifier.fillMaxWidth(), Icons.Rounded.QueueMusic, filled = false) }
       OutlinedTextField(new, { new = it }, Modifier.fillMaxWidth(), singleLine = true, shape = CircleShape, placeholder = { Text("Nova playlist") })
     } }, confirmButton = { TextButton({ if (new.isNotBlank()) pick(new.trim()) }, enabled = new.isNotBlank()) { Text("Criar e adicionar") } },

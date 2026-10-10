@@ -35,6 +35,17 @@ Não é necessário desinstalar entre versões GPT.
 
 ## Validação no celular
 
+Para testes locais em emulador x86_64, compilar `:app:assembleDebug` e
+`:app:assembleDebugAndroidTest` com `-Prise.emulator=true`. Essa propriedade é
+somente para a variante de teste; a release pública usa o build normal ARM64.
+Os testes instrumentados `LocalPlaybackTest` verificam leitura de metadados,
+importação repetida, preservação do original e restauração pausada do serviço.
+
+- Importar uma pasta, verificar duração/capas e remover um importado preservando o original.
+- Encerrar e reabrir: verificar fila, faixa e posição restauradas sem começar a tocar.
+- Renomear e reorganizar playlist; conferir a ordem de reprodução.
+- Alternar tema claro/escuro/sistema e verificar a escolha após reabrir.
+
 - Instalar o APK inicial e manter a versão do Grok ao lado.
 - Baixar e tocar uma música; fechar/reabrir a tela e conferir controles.
 - Testar favoritos e playlist após novos downloads, inclusive acima de 50 itens.

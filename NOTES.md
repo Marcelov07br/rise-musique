@@ -1,6 +1,6 @@
 # Rise Musique — notas do projeto
 
-## Versão GPT (0.7.0)
+## Versão GPT (0.9.0)
 
 A branch `gpt` agora usa `com.rise.musique.gpt`, assinatura local própria e releases
 em `Marcelov07br/rise-musique-releases`. Consultar `UPDATES.md` e `RELEASE_NOTES.md`

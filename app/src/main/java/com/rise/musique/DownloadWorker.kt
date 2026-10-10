@@ -24,18 +24,19 @@ class DownloadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
     if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel(CH, "Downloads", NotificationManager.IMPORTANCE_LOW))
     val d = inputData; val title = d.getString("title") ?: "Download"
     var last = 0L
+    var lastStage = "Preparando"
     runCatching {
       setForeground(info(title, 0f))
-      setProgress(workDataOf("p" to 0f, "running" to true))
+      setProgress(workDataOf("p" to 0f, "running" to true, "stage" to "Preparando"))
       val item = Engine.download(applicationContext, d.getString("url")!!, Mode.valueOf(d.getString("mode")!!), d.getString("quality")!!,
         d.getString("format") ?: "MP3", d.getString("cut"), d.getString("tree")?.let(Uri::parse), id.toString()) { p, line ->
         val now = System.currentTimeMillis()
-        if (now - last > 500) { last = now
-          setProgressAsync(workDataOf("p" to p, "line" to line, "running" to true)); nm.notify(id.hashCode(), notif(title, p)) }
+        val stage = if (line.startsWith("[RiseSave]")) "Salvando" else DownloadStage.fromLine(line, lastStage)
+        if (now - last > 500 || stage != lastStage) { last = now; lastStage = stage
+          setProgressAsync(workDataOf("p" to p, "line" to line, "running" to true, "stage" to stage)); nm.notify(id.hashCode(), notif("$title · $stage", p)) }
       }
-      HistoryStore.add(applicationContext, item.copy(art = d.getString("art").orEmpty(), artist = d.getString("artist").orEmpty()))
-      Jobs.forget(applicationContext, id.toString())
-    }.fold({ Result.success() },
+      HistoryStore.add(applicationContext, item.copy(art = item.art.ifBlank { d.getString("art").orEmpty() }, artist = item.artist.ifBlank { d.getString("artist").orEmpty() }))
+    }.fold({ Result.success(workDataOf("stage" to "Concluído")) },
       { if (it is CancellationException) { YoutubeDL.getInstance().destroyProcessById(id.toString()); throw it }
         Result.failure(workDataOf("err" to (it.message?.lineSequence()?.lastOrNull { l -> l.isNotBlank() }?.take(140) ?: "erro"))) })
   }

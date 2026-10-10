@@ -19,6 +19,37 @@ import com.google.common.util.concurrent.ListenableFuture
 class PlaybackService : MediaSessionService() {
   private var session: MediaSession? = null
   private var sleepJob: kotlinx.coroutines.Job? = null
+  private var previewActive = false
+  private fun savePlayback() {
+    val p = session?.player ?: return
+    if (p.currentMediaItem?.mediaId?.startsWith("preview:") == true) { previewActive = true; return }
+    val prefs = getSharedPreferences("playback", 0)
+    if (p.mediaItemCount == 0) { if (!previewActive) prefs.edit().remove("snapshot").apply(); return }
+    previewActive = false
+    val tracks = (0 until p.mediaItemCount).map { i ->
+      val item = p.getMediaItemAt(i); val m = item.mediaMetadata
+      com.rise.musique.ui.HistoryItem(m.title?.toString().orEmpty(), "", item.mediaId,
+        m.artworkUri?.toString().orEmpty(), m.artist?.toString().orEmpty())
+    }
+    val snapshot = PlaybackSnapshot(tracks, p.currentMediaItemIndex.coerceAtLeast(0), p.currentPosition.coerceAtLeast(0), p.repeatMode, p.shuffleModeEnabled)
+    prefs.edit().putString("snapshot", snapshot.json()).apply()
+  }
+  private fun restorePlayback(player: ExoPlayer) {
+    val prefs = getSharedPreferences("playback", 0)
+    val text = prefs.getString("snapshot", null) ?: return
+    runCatching {
+      val saved = PlaybackSnapshot.parse(text)
+      val tracks = saved.tracks.map { h ->
+        val uri = if (h.uri.startsWith("content://")) android.net.Uri.parse(h.uri) else android.net.Uri.fromFile(java.io.File(h.uri))
+        androidx.media3.common.MediaItem.Builder().setMediaId(h.uri).setUri(uri).setMediaMetadata(
+          androidx.media3.common.MediaMetadata.Builder().setTitle(h.title).setArtist(h.artist)
+            .apply { if (h.art.isNotBlank()) setArtworkUri(android.net.Uri.parse(h.art)) }.build()).build()
+      }
+      player.setMediaItems(tracks, saved.index, saved.position)
+      player.repeatMode = saved.repeat; player.shuffleModeEnabled = saved.shuffle
+      player.playWhenReady = false; player.prepare()
+    }.onFailure { prefs.edit().remove("snapshot").apply() }
+  }
   companion object { const val SLEEP = "rise.sleep"; const val SLEEP_AT = "sleepAt" }
   private fun setSleep(at: Long) {
     sleepJob?.cancel()
@@ -64,10 +95,13 @@ class PlaybackService : MediaSessionService() {
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
       }
     }).build()
+    restorePlayback(player)
     setSleep(getSharedPreferences("playback", 0).getLong(SLEEP_AT, 0))
+    scope.launch { while (true) { delay(5_000); savePlayback() } }
     player.addListener(object : androidx.media3.common.Player.Listener {
       private var lastArt: String? = "none"
       override fun onEvents(p: androidx.media3.common.Player, e: androidx.media3.common.Player.Events) {
+        savePlayback()
         if (!e.containsAny(androidx.media3.common.Player.EVENT_IS_PLAYING_CHANGED, androidx.media3.common.Player.EVENT_MEDIA_METADATA_CHANGED,
             androidx.media3.common.Player.EVENT_MEDIA_ITEM_TRANSITION)) return
         if (!p.isPlaying) AudioLevels.silence()
@@ -79,7 +113,7 @@ class PlaybackService : MediaSessionService() {
   }
   override fun onGetSession(info: MediaSession.ControllerInfo) = session
   override fun onTaskRemoved(i: Intent?) { session?.player?.let { if (!it.playWhenReady || it.mediaItemCount == 0) stopSelf() } }
-  override fun onDestroy() { scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+  override fun onDestroy() { savePlayback(); scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     session?.run { player.release(); release() }; session = null; super.onDestroy() }
 }
 
