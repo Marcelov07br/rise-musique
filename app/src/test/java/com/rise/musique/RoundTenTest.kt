@@ -64,3 +64,12 @@ class AutoLibraryTest {
     org.junit.Assert.assertEquals(listOf("/a"), AutoLibrary.search(h, " ana").map { it.uri }); org.junit.Assert.assertEquals(2, AutoLibrary.search(h, "").size) }
 
 }
+
+class AudioQualityTest {
+  @Test fun labels() {
+    assertEquals("FLAC · 1411 kbps · 44.1 kHz · Estéreo", AudioQuality.label("audio/flac", 1_411_200, 44_100, 2))
+    assertEquals("AAC · 256 kbps · 48 kHz · Estéreo", AudioQuality.label("audio/mp4a-latm", 256_000, 48_000, 2))
+    assertEquals("Opus · Mono", AudioQuality.label("audio/opus", -1, -1, 1))
+    assertEquals("MP3", AudioQuality.label("audio/mpeg", 0, 0, 0))
+  }
+}

@@ -118,14 +118,16 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
 }
 
 @OptIn(ExperimentalFoundationApi::class)
-@Composable private fun TrackRow(h: HistoryItem, s: UiState, a: Actions) {
+@Composable internal fun TrackRow(h: HistoryItem, s: UiState, a: Actions, number: Int? = null) {
   val c = MaterialTheme.colorScheme
   var menu by remember(h.uri) { mutableStateOf(false) }
   var pick by remember(h.uri) { mutableStateOf(false) }
   var delete by remember(h.uri) { mutableStateOf(false) }
   Box {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = { a.play(h) }, onLongClick = { menu = true }).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-      Cover(h, Modifier.size(60.dp)); Spacer(Modifier.width(14.dp))
+      if (number != null) Text("$number", Modifier.width(36.dp), color = c.onSurfaceVariant, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+      else Cover(h, Modifier.size(60.dp))
+      Spacer(Modifier.width(14.dp))
       Column(Modifier.weight(1f)) {
         Text(h.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(h.artist.ifBlank { h.meta.substringBefore(" ·") }, color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

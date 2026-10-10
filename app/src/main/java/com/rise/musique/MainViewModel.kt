@@ -189,7 +189,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       art = m.artworkUri?.toString() ?: "", playing = p.isPlaying, position = p.currentPosition.coerceAtLeast(0),
       duration = p.duration.takeIf { it > 0 } ?: n.duration, isPreview = preview,
       loading = p.playbackState == Player.STATE_BUFFERING, hasNext = p.hasNextMediaItem(), hasPrev = p.hasPreviousMediaItem(),
-      repeat = p.repeatMode, shuffle = p.shuffleModeEnabled, index = p.currentMediaItemIndex, count = p.mediaItemCount)
+      repeat = p.repeatMode, shuffle = p.shuffleModeEnabled, index = p.currentMediaItemIndex, count = p.mediaItemCount,
+      quality = p.sessionExtras.getString(PlaybackService.QUALITY).orEmpty())
     if (key != n.key) now = now.copy(lyrics = null, lyricsState = "")
     if (preview && p.playbackState == Player.STATE_ENDED) { stopPreview(); return }
     val queue = if (preview) emptyList() else (0 until p.mediaItemCount).map { i ->
@@ -210,6 +211,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun seek(ms: Long) = withPlayer { it.seekTo(ms) }
   fun next() = withPlayer { it.seekToNextMediaItem() }
   fun prev() = withPlayer { p -> if (p.currentPosition > 3000 || !p.hasPreviousMediaItem()) p.seekTo(0) else p.seekToPreviousMediaItem() }
+  /** Album/playlist screen: start the visible list in shuffle mode. */
+  fun playShuffled(h: HistoryItem) { play(h); withPlayer { it.shuffleModeEnabled = true } }
+  fun queueAll(list: List<HistoryItem>) { list.forEach { addQueue(it) } }
   fun shuffle() = withPlayer { it.shuffleModeEnabled = !it.shuffleModeEnabled }
   fun closePlayer() { sleep(0); previewJob?.cancel(); controller?.stop(); controller?.clearMediaItems(); lyricsFor = null
     state = state.copy(now = null, playbackQueue = emptyList(), queueOpen = false, previewing = null, previewLoading = false) }

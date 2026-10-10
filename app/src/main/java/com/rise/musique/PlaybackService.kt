@@ -21,6 +21,7 @@ class PlaybackService : MediaLibraryService() {
   private var crossfader: Crossfader? = null
   private var playSession: PlaySession? = null
   private var lastTick = 0L
+  private val extras = Bundle()
   private var sleepJob: kotlinx.coroutines.Job? = null
   private var previewActive = false
   private fun savePlayback() {
@@ -53,13 +54,13 @@ class PlaybackService : MediaLibraryService() {
       player.playWhenReady = false; player.prepare()
     }.onFailure { prefs.edit().remove("snapshot").apply() }
   }
-  companion object { const val SLEEP = "rise.sleep"; const val SLEEP_AT = "sleepAt" }
+  companion object { const val SLEEP = "rise.sleep"; const val SLEEP_AT = "sleepAt"; const val QUALITY = "quality" }
   private fun setSleep(at: Long) {
     sleepJob?.cancel()
     val player = session?.player ?: return
     player.volume = 1f
     getSharedPreferences("playback", 0).edit().putLong(SLEEP_AT, at).apply()
-    session?.setSessionExtras(Bundle().apply { putLong(SLEEP_AT, at) })
+    extras.putLong(SLEEP_AT, at); session?.setSessionExtras(Bundle(extras))
     if (at <= 0) return
     sleepJob = scope.launch {
       delay((at - System.currentTimeMillis() - 8_000).coerceAtLeast(0))
@@ -70,7 +71,7 @@ class PlaybackService : MediaLibraryService() {
       }
       player.pause(); player.volume = initialVolume
       getSharedPreferences("playback", 0).edit().putLong(SLEEP_AT, 0).apply()
-      session?.setSessionExtras(Bundle().apply { putLong(SLEEP_AT, 0) })
+      extras.putLong(SLEEP_AT, 0); session?.setSessionExtras(Bundle(extras))
     }
   }
   private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
@@ -145,6 +146,11 @@ class PlaybackService : MediaLibraryService() {
     scope.launch { while (true) { delay(200); fader.tick(); trackPlay(player) } }
     player.addListener(object : androidx.media3.common.Player.Listener {
       private var lastArt: String? = "none"
+      override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+        val f = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }?.let { g -> (0 until g.length).firstOrNull(g::isTrackSelected)?.let(g::getTrackFormat) }
+        extras.putString(QUALITY, f?.let { AudioQuality.label(it.sampleMimeType ?: it.codecs, it.bitrate.takeIf { b -> b > 0 } ?: it.averageBitrate, it.sampleRate, it.channelCount) } ?: "")
+        session?.setSessionExtras(Bundle(extras))
+      }
       override fun onMediaItemTransition(item: androidx.media3.common.MediaItem?, reason: Int) { fader.onTransition(reason); finishPlay() }
       override fun onPositionDiscontinuity(o: androidx.media3.common.Player.PositionInfo, n: androidx.media3.common.Player.PositionInfo, reason: Int) {
         if (reason == androidx.media3.common.Player.DISCONTINUITY_REASON_SEEK && o.mediaItemIndex == n.mediaItemIndex) fader.abort() }

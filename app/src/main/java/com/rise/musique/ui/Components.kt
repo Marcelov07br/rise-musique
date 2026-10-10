@@ -50,6 +50,7 @@ object StaticPreview { @JvmField var on = false }
 @Composable fun <T> PillSelector(options: List<T>, selected: T, label: (T) -> String,
   onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
   val c = MaterialTheme.colorScheme
+  val haptics = rememberHaptics()
   val idx = options.indexOf(selected).coerceAtLeast(0).toFloat()
   // As duas bordas do destaque andam com molas diferentes: a da frente chega rápido, a de trás atrasa,
   // então a pílula estica no caminho e assenta com quique.
@@ -73,7 +74,7 @@ object StaticPreview { @JvmField var on = false }
         val on = o == selected
         val fg by animateColorAsState(if (on) c.onPrimary else c.onSurfaceVariant, label = "fg")
         Box(Modifier.weight(1f).springPress(src).clip(CircleShape)
-            .clickable(src, null) { onSelect(o) }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+            .clickable(src, null) { if (o != selected) haptics.tick(); onSelect(o) }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
           Text(label(o), color = fg, style = MaterialTheme.typography.labelLarge)
         }
       }
@@ -84,8 +85,11 @@ object StaticPreview { @JvmField var on = false }
 @Composable fun RoundIconButton(icon: ImageVector, desc: String, onClick: () -> Unit, filled: Boolean = false, container: androidx.compose.ui.graphics.Color? = null) {
   val src = remember { MutableInteractionSource() }
   val c = MaterialTheme.colorScheme
-  Box(Modifier.size(44.dp).springPress(src).clip(CircleShape).background(if (filled) c.primary else container ?: c.surfaceVariant)
-      .clickable(src, null, onClick = onClick), contentAlignment = Alignment.Center) {
+  val haptics = rememberHaptics()
+  val edge = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.onSurface.copy(alpha = .22f), c.onSurface.copy(alpha = .03f)))
+  Box(Modifier.size(44.dp).springPress(src).clip(CircleShape).background(if (filled) c.primary else (container ?: c.surfaceVariant).copy(alpha = .72f))
+      .then(if (filled) Modifier else Modifier.border(1.dp, edge, CircleShape))
+      .clickable(src, null) { haptics.tick(); onClick() }, contentAlignment = Alignment.Center) {
     Icon(icon, desc, tint = if (filled) c.onPrimary else c.onSurface, modifier = Modifier.size(20.dp))
   }
 }

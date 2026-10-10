@@ -41,6 +41,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   val f = remember { Animatable(if (initialExpanded) 1f else 0f) }
   var back by remember { mutableFloatStateOf(0f) }
   val density = LocalDensity.current
+  val haptics = rememberHaptics()
   var showLyrics by remember { mutableStateOf(initialLyrics) }
 
   PredictiveBackHandler(enabled = f.value > 0.5f) { progress ->
@@ -54,9 +55,11 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
     val margin = with(density) { 12.dp.toPx() }
     val p = f.value.coerceIn(0f, 1f) // nunca sai de 0..1, nem em rebote
     val dragState = rememberDraggableState { d -> scope.launch { f.snapTo((f.value - d / (fullH - miniH)).coerceIn(0f, 1f)) } }
-    // Mini: cartão compacto (miniH) logo acima da barra de navegação, com a mesma margem dos lados e embaixo.
+    // Mini: cartão compacto (miniH) com margens iguais dos lados.
     val navBottom = WindowInsets.navigationBars.getBottom(density).toFloat()
-    val sheetTop = lerp(fullH - miniH - margin - navBottom, 0f, p)
+    // Fica logo acima da barra de navegação do app (dock ~82dp), que por sua vez fica acima da barra de gestos.
+    val dockH = with(density) { 82.dp.toPx() }
+    val sheetTop = lerp(fullH - miniH - margin - navBottom - dockH, 0f, p)
     val sheetH = lerp(miniH, fullH, p).coerceIn(miniH, fullH)
     val corner = lerp(34f, 0f, p) + back * 36f
     val scale = 1f - back * 0.12f
@@ -65,20 +68,20 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         .offset { IntOffset(0, sheetTop.toInt()) }
         .padding(horizontal = with(density) { lerp(margin, 0f, p).toDp() })
         .graphicsLayer { scaleX = scale; scaleY = scale; shape = RoundedCornerShape(corner.dp); clip = true }
-        .background(c.surface).border(1.dp, c.outlineVariant, RoundedCornerShape(corner.dp))
-        .draggable(dragState, Orientation.Vertical, onDragStopped = { v ->
+        .background(c.surface.copy(alpha = (.62f + .38f * p).coerceIn(0f, 1f)))
+        .draggable(dragState, Orientation.Vertical, onDragStarted = { haptics.tick() }, onDragStopped = { v ->
           val target = when { v < -800 -> 1f; v > 800 -> 0f; else -> if (f.value > .5f) 1f else 0f }
           f.animateTo(target, bouncy) })
         .clickable(enabled = p < .05f, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
           scope.launch { f.animateTo(1f, bouncy) } }) {
 
-      // Fundo imersivo: a própria capa, gigante e desfocada, com véu escuro por cima.
-      if (p > 0.01f) Box(Modifier.fillMaxSize().alpha(p)) {
-        val req = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current).data(now.art)
-          .apply { if (Build.VERSION.SDK_INT < 31) size(24) }.crossfade(true).build()
-        AsyncImage(req, null, Modifier.fillMaxSize().scale(1.4f).then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(70.dp) else Modifier),
-          contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(.25f), Color.Black.copy(.55f), Color.Black.copy(.85f)))))
+      // Mini player de vidro: cópia desfocada da capa + véu translúcido + borda de luz.
+      if (p < .99f) GlassBox(Modifier.matchParentSize().alpha((1f - p).coerceIn(0f, 1f)), RoundedCornerShape(corner.dp), now.art,
+        dark = c.background.luminance() < .5f) {}
+      // Fundo vivo: degradê em malha com as cores da capa, se movendo devagar.
+      if (p > 0.01f) Box(Modifier.fillMaxSize().alpha(p.coerceIn(0f, 1f))) {
+        LivingArtwork(now.art, Modifier.fillMaxSize(), dim = .2f)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(.15f), Color.Black.copy(.55f)))))
       }
 
       val maxW = this@BoxWithConstraints.maxWidth
@@ -110,7 +113,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
               val go = if (throwX.value < -maxWpx / 3 || v < -1800f) 1 else if (throwX.value > maxWpx / 3 || v > 1800f) -1 else 0
               val canGo = (go == 1 && now.hasNext) || (go == -1 && now.hasPrev)
               if (go != 0 && canGo) {
-                throwX.animateTo(-go * maxWpx * 1.3f, spring(stiffness = 500f))
+                haptics.press(); throwX.animateTo(-go * maxWpx * 1.3f, spring(stiffness = 500f))
                 if (go == 1) a.next() else a.prev()
                 throwX.snapTo(go * maxWpx * 1.1f)
               }
@@ -146,15 +149,19 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         Box(Modifier.fillMaxWidth().height(artFull + 64.dp)) {
           if (showLyrics) LyricsView(now, a, Modifier.fillMaxSize().padding(top = 40.dp, bottom = 16.dp))
         }
-        Text(now.title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(if (now.isPreview) "Prévia de 30 s · ${now.artist}" else now.artist, color = Color.White.copy(.65f), fontSize = 16.sp, maxLines = 1)
-        Spacer(Modifier.height(20.dp))
+        Text(now.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 32.sp, letterSpacing = (-.5f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(if (now.isPreview) "Prévia de 30 s · ${now.artist}" else now.artist, color = Color.White.copy(.62f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(18.dp))
         var drag by remember { mutableStateOf<Float?>(null) }
         val dur = now.duration.coerceAtLeast(1)
-        Slider(drag ?: (now.position.toFloat() / dur), { drag = it }, onValueChangeFinished = { drag?.let { a.seek((it * dur).toLong()) }; drag = null },
-          colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(.2f)))
-        Row { Text(fmtMs(now.position), color = Color.White.copy(.6f), fontSize = 12.sp); Spacer(Modifier.weight(1f))
-          Text("-" + fmtMs((now.duration - now.position).coerceAtLeast(0)), color = Color.White.copy(.6f), fontSize = 12.sp) }
+        ThinSlider(drag ?: (now.position.toFloat() / dur), { drag = it }, { drag?.let { a.seek((it * dur).toLong()) }; drag = null })
+        val shownPos = drag?.let { (it * dur).toLong() } ?: now.position
+        Row(verticalAlignment = Alignment.CenterVertically) { Text(fmtMs(shownPos), color = Color.White.copy(.6f), fontSize = 12.sp)
+          Spacer(Modifier.weight(1f))
+          if (now.quality.isNotBlank()) Text(now.quality, color = Color.White.copy(.55f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 8.dp))
+          Spacer(Modifier.weight(1f))
+          Text("-" + fmtMs((now.duration - shownPos).coerceAtLeast(0)), color = Color.White.copy(.6f), fontSize = 12.sp) }
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
           SideButton(Icons.Rounded.SkipPrevious, "Anterior", Modifier.weight(1f), a.prev)
@@ -179,8 +186,9 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 
 @Composable private fun PlayButton(now: NowPlaying, a: Actions, h: Dp, bg: Color, fg: Color, m: Modifier = Modifier, pill: Boolean = false) {
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+  val haptics = rememberHaptics()
   Box(m.then(if (pill) Modifier.height(h) else Modifier.size(h)).springPress(src).clip(CircleShape).background(bg)
-      .clickable(src, null, onClick = a.playPause), contentAlignment = Alignment.Center) {
+      .clickable(src, null) { haptics.press(); a.playPause() }, contentAlignment = Alignment.Center) {
     if (now.loading) CircularProgressIndicator(Modifier.size(h * .4f), color = fg, strokeWidth = 2.dp)
     else AnimatedContent(now.playing, label = "pp") { pl ->
       Icon(if (pl) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (pl) "Pausar" else "Tocar", tint = fg, modifier = Modifier.size(h * .45f)) }
@@ -189,8 +197,9 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 
 @Composable private fun ToggleIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, on: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-  Box(Modifier.size(44.dp).springPress(src).clip(CircleShape).background(if (on) Color.White.copy(.9f) else Color.Transparent)
-      .alpha(if (enabled) 1f else .3f).clickable(src, null, enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
+  val haptics = rememberHaptics()
+  Box(Modifier.size(44.dp).springPress(src).clip(CircleShape).background(if (on) Color.White.copy(.9f) else Color.White.copy(.08f))
+      .alpha(if (enabled) 1f else .3f).clickable(src, null, enabled = enabled) { haptics.tick(); onClick() }, contentAlignment = Alignment.Center) {
     Icon(icon, desc, tint = if (on) Color.Black else Color.White.copy(.8f), modifier = Modifier.size(22.dp)) }
 }
 
@@ -203,12 +212,19 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   val cur = lines.indexOfLast { it.ms <= now.position + 250 }.coerceAtLeast(0)
   val list = androidx.compose.foundation.lazy.rememberLazyListState()
   LaunchedEffect(cur) { list.animateScrollToItem((cur - 2).coerceAtLeast(0)) }
-  androidx.compose.foundation.lazy.LazyColumn(m, state = list, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+  androidx.compose.foundation.lazy.LazyColumn(m, state = list, verticalArrangement = Arrangement.spacedBy(18.dp)) {
     items(lines.size) { i -> val l = lines[i]
-      val alpha by animateFloatAsState(if (i == cur) 1f else .35f, tween(250), label = "l")
-      Text(l.text.ifBlank { "♪" }, Modifier.alpha(alpha).clickable(indication = null,
-        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { a.seek(l.ms) },
-        color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 30.sp)
+      val dist = kotlin.math.abs(i - cur).coerceAtMost(4)
+      // Linha ativa: maior e nítida; as outras menores, apagadas e desfocadas conforme a distância.
+      val focus by animateFloatAsState(if (i == cur) 1f else 0f, spring(dampingRatio = .7f, stiffness = 260f), label = "focus")
+      val fz = focus.coerceIn(0f, 1f)
+      val blurDp = if (Build.VERSION.SDK_INT >= 31) (dist * 1.6f * (1f - fz)).dp else 0.dp
+      Text(l.text.ifBlank { "♪" }, Modifier.fillMaxWidth()
+        .graphicsLayer { val sc = .86f + .14f * fz; scaleX = sc; scaleY = sc; alpha = .32f + .68f * fz
+          transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
+        .then(if (blurDp > 0.dp) Modifier.blur(blurDp, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier)
+        .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { a.seek(l.ms) },
+        color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 34.sp)
     }
   }
 }
@@ -217,8 +233,10 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   SideButton(icon, desc, m, true, on)
 @Composable private fun SideButton(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, m: Modifier, enabled: Boolean, on: () -> Unit) {
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-  Box(m.height(84.dp).alpha(if (enabled) 1f else .35f).springPress(src).clip(CircleShape).background(Color.White.copy(.12f)).clickable(src, null, enabled = enabled, onClick = on),
-    contentAlignment = Alignment.Center) { Icon(icon, desc, tint = Color.White, modifier = Modifier.size(30.dp)) }
+  val haptics = rememberHaptics()
+  GlassBox(m.height(84.dp).alpha(if (enabled) 1f else .35f).springPress(src), CircleShape) {
+    Box(Modifier.matchParentSize().clickable(src, null, enabled = enabled) { haptics.press(); on() }, contentAlignment = Alignment.Center) {
+      Icon(icon, desc, tint = Color.White, modifier = Modifier.size(32.dp)) } }
 }
 
 /** Cor de destaque da capa, extraída com Palette. */

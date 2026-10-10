@@ -30,7 +30,7 @@ data class HistoryItem(val title: String, val meta: String, val uri: String = ""
 data class NowPlaying(val key: String, val title: String, val artist: String, val art: String, val playing: Boolean = false,
   val loading: Boolean = false, val position: Long = 0, val duration: Long = 0, val isPreview: Boolean = false,
   val hasNext: Boolean = false, val hasPrev: Boolean = false, val shuffle: Boolean = false, val index: Int = 0, val count: Int = 1,
-  val repeat: Int = 0, val lyrics: List<com.rise.musique.Lyrics.Line>? = null, val lyricsState: String = "")
+  val repeat: Int = 0, val lyrics: List<com.rise.musique.Lyrics.Line>? = null, val lyricsState: String = "", val quality: String = "")
 data class SearchResult(val url: String, val title: String, val channel: String, val duration: Int, val thumb: String)
 data class FlyEvent(val id: Long, val art: String)
 class FlyTargets { var history by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero); var source by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
@@ -64,7 +64,8 @@ class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, v
   val sort: (String) -> Unit = {}, val mediaFilter: (String) -> Unit = {}, val albumFilter: (String) -> Unit = {},
   val renamePlaylist: (String, String) -> Unit = { _, _ -> }, val movePlaylist: (String, Int, Int) -> Unit = { _, _, _ -> },
   val refreshMetadata: () -> Unit = {}, val theme: (String) -> Unit = {}, val settings: (Boolean) -> Unit = {}, val removeLocal: (HistoryItem) -> Unit = {},
-  val crossfade: (Int) -> Unit = {}, val stats: (Boolean) -> Unit = {})
+  val crossfade: (Int) -> Unit = {}, val stats: (Boolean) -> Unit = {},
+  val playShuffled: (HistoryItem) -> Unit = {}, val queueAll: (List<HistoryItem>) -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -98,7 +99,8 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
     when (state.page) {
       "Buscar" -> MainPane(state, actions, targets, null, Modifier.weight(1f).fillMaxWidth())
       "Downloads" -> DownloadHub(state, actions, Modifier.weight(1f).fillMaxWidth())
-      else -> LibraryHome(state, actions, Modifier.weight(1f).fillMaxWidth())
+      else -> if (state.albumFilter.isNotBlank() || state.historyView in state.playlists) CollectionScreen(state, actions, Modifier.weight(1f).fillMaxWidth())
+        else LibraryHome(state, actions, Modifier.weight(1f).fillMaxWidth())
     }
     NavigationDock(state, actions, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
       .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
@@ -108,12 +110,15 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
 
 @Composable private fun NavigationDock(s: UiState, a: Actions, modifier: Modifier) {
   val c = MaterialTheme.colorScheme
-  Row(modifier.clip(RoundedCornerShape(32.dp)).background(c.surface).border(1.dp, c.outlineVariant, RoundedCornerShape(32.dp)).padding(5.dp)) {
+  val haptics = rememberHaptics()
+  // Barra de vidro: translúcida, com borda de luz em cima.
+  val edge = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.onSurface.copy(alpha = .22f), c.onSurface.copy(alpha = .04f)))
+  Row(modifier.clip(RoundedCornerShape(32.dp)).background(c.surface.copy(alpha = .78f)).border(1.dp, edge, RoundedCornerShape(32.dp)).padding(5.dp)) {
     listOf("Biblioteca", "Buscar", "Downloads").forEach { page ->
       val on = s.page == page
       val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
       Column(Modifier.weight(1f).springPress(src).clip(RoundedCornerShape(28.dp)).background(if (on) c.surfaceVariant else c.surface)
-        .clickable(src, null) { a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        .clickable(src, null) { if (!on) haptics.tick(); a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(when (page) { "Biblioteca" -> Icons.Rounded.LibraryMusic; "Buscar" -> Icons.Rounded.Search; else -> Icons.Rounded.Download }, null,
           tint = if (on) c.onSurface else c.onSurfaceVariant, modifier = Modifier.size(23.dp))
         Text(if (page == "Biblioteca") "Ouvir" else page, color = if (on) c.onSurface else c.onSurfaceVariant, fontSize = 11.sp, maxLines = 1)
