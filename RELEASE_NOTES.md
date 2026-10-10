@@ -6,6 +6,7 @@
 - Rádio da música: a partir de uma busca ou de uma faixa da biblioteca, encontra músicas parecidas, com prévia e download de todas ou das escolhidas.
 - Retrospectiva: cartão animado do mês ou do ano (minutos, artista e faixas mais tocadas), com imagem 9:16 para compartilhar nos stories.
 - Player em paisagem e tablet: capa de um lado, letra ou fila do outro.
+- Discord: não há integração direta (o Discord não oferece presença oficial para apps de celular). Para mostrar o que você ouve no perfil do Discord, conecte o Last.fm em Discord › Configurações › Conexões.
 
 ## Novo visual (0.11.0)
 - Fundo vivo: degradê em malha com as cores da capa, se movendo devagar atrás do player e das telas de álbum/playlist.
