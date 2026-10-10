@@ -92,7 +92,54 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun onIncomingLink(text: String?) {
     val link = text?.let { Regex("https?://\\S+").find(it)?.value } ?: return
     if (link == lastLink) return
-    lastLink = link; state = state.copy(query = link, page = "Buscar"); search()
+    lastLink = link; dlLink(link); state = state.copy(dlRequest = state.dlRequest + 1)
+  }
+
+  /** Share a 9:16 card (any track) or a 15 s MP4 with audio (local files only) of the range starting at [startMs]. */
+  fun shareSnippet(video: Boolean, startMs: Long, open: (Intent) -> Unit) {
+    val n = state.now ?: return
+    if (state.snippetBusy) return
+    state = state.copy(snippetBusy = true)
+    viewModelScope.launch {
+      runCatching {
+        val start = Snippet.clampStart(startMs, n.duration)
+        val lines = Snippet.linesIn(n.lyrics, start)
+        val cover = runCatching { val res = coil.ImageLoader(ctx).execute(coil.request.ImageRequest.Builder(ctx).data(if (n.art.startsWith("/")) File(n.art) else n.art)
+          .size(720).allowHardware(false).build()); (res.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap }.getOrNull()
+        val local = state.history.firstOrNull { it.uri == n.key }?.takeIf { !n.streaming && !n.isPreview }
+        val file = if (video && local != null) Snippet.video(ctx, uriOf(local) ?: error("arquivo não encontrado"), start, n.title, n.artist, cover, lines)
+          else Snippet.saveCard(ctx, withContext(Dispatchers.Default) { Snippet.card(n.title, n.artist, cover, lines.map { it.text }) })
+        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+        open(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(if (file.extension == "mp4") "video/mp4" else "image/png")
+          .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Compartilhar trecho"))
+      }.onFailure { if (it is CancellationException) throw it; state = state.copy(status = "Não deu pra criar o trecho: ${it.message?.take(80)}") }
+      state = state.copy(snippetBusy = false)
+    }
+  }
+
+  /** Launcher shortcut "Tocar aleatório": the whole local library, shuffled. */
+  fun shuffleAll() {
+    val pool = state.history.filter { !it.video && it.uri !in state.hidden }.shuffled().take(300)
+    val items = pool.mapNotNull { e -> uriOf(e)?.let { u -> MediaItem.Builder().setMediaId(e.uri).setUri(u).setMediaMetadata(meta(e.title, e.artist.ifBlank { e.meta }, e.art, e.album)).build() } }
+    if (items.isEmpty()) { state = state.copy(status = "Sua biblioteca está vazia"); return }
+    stopPreview(); withPlayer { p -> p.setMediaItems(items, 0, 0); p.prepare(); p.play() }
+  }
+  fun openDownloads() { state = state.copy(dlRequest = state.dlRequest + 1) }
+
+  /** Download page: preselect one search result (per-item button / action menu). */
+  fun downloadItem(r: SearchResult) { state = state.copy(dlItems = listOf(r), dlRequest = state.dlRequest + 1, cutOn = false, cutStart = "", cutEnd = "") }
+  fun dlRemove(r: SearchResult) { state = state.copy(dlItems = state.dlItems - r) }
+  fun dlQuery(t: String) { state = state.copy(dlQuery = t) }
+  private var dlJob: Job? = null
+  /** Download page link field: resolves a video/playlist link into the items to download. */
+  fun dlLink(text: String) {
+    val link = Regex("https?://\\S+").find(text)?.value ?: text.trim().takeIf { it.isNotBlank() } ?: return
+    state = state.copy(dlQuery = link, dlLoading = true)
+    dlJob?.cancel(); dlJob = viewModelScope.launch {
+      runCatching { Engine.search(link) }.onSuccess { r -> state = state.copy(dlLoading = false, dlItems = r.filter { it.playable }.ifEmpty { state.dlItems },
+          status = if (r.none { it.playable }) "Nada para baixar nesse link" else "") }
+        .onFailure { if (it is CancellationException) throw it; state = state.copy(dlLoading = false, status = "Não deu pra abrir o link: ${it.message?.lineSequence()?.lastOrNull()?.take(80)}") }
+    }
   }
 
   private fun recentSearches(): List<String> = runCatching {
@@ -311,7 +358,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   }
   /** Cut sheet: play exactly the chosen range of the selected result. */
   fun previewRange(startMs: Long, endMs: Long) {
-    val r = state.results.firstOrNull { it.url in state.selected } ?: return
+    val r = state.dlItems.firstOrNull() ?: return
     stopPreview(); state = state.copy(previewing = r.url, previewLoading = true,
       now = NowPlaying(r.url, r.title, r.channel, r.thumb, loading = true, isPreview = true))
     lastPreview = r; previewRetried = null
@@ -321,7 +368,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun openCut(open: Boolean) {
     state = state.copy(cutOpen = open)
     if (!open) { cutJob?.cancel(); return }
-    val r = state.results.firstOrNull { it.url in state.selected } ?: return
+    val r = state.dlItems.firstOrNull() ?: return
     val video = state.mode == Mode.Video
     state = state.copy(cutVisual = CutVisual(loading = true))
     cutJob?.cancel(); cutJob = viewModelScope.launch {
@@ -440,7 +487,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   fun enqueue() {
     if (!state.choices.ready(state.mode, state.format)) { state = state.copy(status = "Escolha mídia, formato e qualidade antes de baixar"); return }
-    val picked = state.results.filter { it.url in state.selected }; if (picked.isEmpty()) return
+    val picked = state.dlItems; if (picked.isEmpty()) return
     var cut: String? = null
     if (state.cutOn && picked.size == 1) {
       val a = secs(state.cutStart) ?: 0; val b = secs(state.cutEnd)
@@ -449,7 +496,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     picked.forEach { r -> DownloadWorker.enqueue(ctx, DownloadWorker.data(r.url, r.title, r.thumb, r.channel, state.mode, state.quality,
       if (state.mode == Mode.Musica) state.format else "MP4", cut, state.folder)) }
-    stopPreview(); state = state.copy(query = "", results = emptyList(), selected = emptySet(), cutOn = false, cutStart = "", cutEnd = "",
+    state = state.copy(dlItems = emptyList(), dlQuery = "", cutOn = false, cutStart = "", cutEnd = "",
       status = if (picked.size > 1) "${picked.size} itens adicionados à fila" else "")
   }
 

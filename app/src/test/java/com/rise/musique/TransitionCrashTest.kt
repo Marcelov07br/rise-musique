@@ -37,6 +37,11 @@ class TransitionCrashTest {
       rule.onAllNodesWithText("Disco")[0].performClick(); rule.waitForIdle()               // artist → album
       rule.onAllNodesWithText("Biblioteca")[0].performClick(); rule.waitForIdle()          // tab switch keeps stacks
       rule.onAllNodesWithText("Buscar")[0].performClick(); rule.waitForIdle()
+      rule.onAllNodesWithContentDescription("Downloads")[0].performClick(); rule.mainClock.advanceTimeBy(120) // 0.18: Download page, interrupted
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithContentDescription("Downloads")[0].performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Nada selecionado").assertCountEquals(1)
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
       rule.onAllNodesWithText("Início")[0].performClick(); rule.waitForIdle()              // back to the stacked album
       rule.onAllNodesWithText("Início")[0].performClick(); rule.waitForIdle()              // reselect: pop to root
       rule.onAllNodesWithText("Ouvir agora").assertCountEquals(1)
@@ -79,6 +84,21 @@ class TransitionCrashTest {
       rule.onAllNodesWithContentDescription("Sair da tela cheia")[0].performClick(); rule.waitForIdle()
       rule.onNodeWithContentDescription("Fechar vídeo").performClick(); rule.waitForIdle()
       rule.onAllNodesWithText("Ouvir agora").assertCountEquals(1)   // recreated UI starts at the Início root
+    }
+  }
+
+  /** 0.18: a search result's download button opens the Download page with that item preselected; back returns to the results. */
+  @Test fun downloadFromResult() {
+    val r = SearchResult("u", "Da Funk", "Daft Punk", 329, "", "song")
+    var state by mutableStateOf(UiState(page = "Buscar", query = "daft", results = listOf(r)))
+    rule.setContent { RiseTheme(true) { RiseApp(state, Actions(page = { state = state.copy(page = it) },
+      downloadItem = { state = state.copy(dlItems = listOf(it), dlRequest = state.dlRequest + 1) })) } }
+    rule.waitForIdle()
+    repeat(2) {
+      rule.onNodeWithContentDescription("Baixar Da Funk").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Tipo de mídia").assertCountEquals(1)
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Da Funk").assertCountEquals(1)
     }
   }
 }

@@ -1,4 +1,5 @@
 package com.rise.musique
+import androidx.compose.ui.graphics.asImageBitmap
 import app.cash.paparazzi.*
 import com.android.resources.*
 import com.rise.musique.ui.*
@@ -157,3 +158,20 @@ class Round17Small { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIX
   @Test fun player360x640() = p.snapshot { RiseTheme(true) { RiseApp(homeState.copy(now = streamNp), Actions(), initialExpanded = true) } } }
 class Round17Long { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 2640, nightMode = NightMode.NIGHT))
   @Test fun playerTall() = p.snapshot { RiseTheme(true) { RiseApp(homeState.copy(now = streamNp), Actions(), initialExpanded = true) } } }
+
+private val dlQueue = listOf(QueueItem("q1", "Get Lucky (feat. Pharrell Williams & Nile Rodgers)", .42f, true, stage = "Baixando"),
+  QueueItem("q2", "One More Time", 0f, false), QueueItem("q3", "Around the World", 1f, false, completed = true, stage = "Concluído"))
+private val npLyrics = streamNp.copy(streaming = false, key = "h:1", lyrics = listOf(com.rise.musique.Lyrics.Line(90_000, "She's up all night 'til the sun"),
+  com.rise.musique.Lyrics.Line(95_000, "I'm up all night to get some"), com.rise.musique.Lyrics.Line(100_000, "She's up all night for good fun"), com.rise.musique.Lyrics.Line(105_000, "I'm up all night to get lucky")))
+class Round18 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  @Test fun searchEmpty() = p.snapshot { RiseTheme(true) { RiseApp(UiState(page = "Buscar", recentSearches = listOf("daft punk", "marina lima", "lofi")), Actions()) } }
+  @Test fun searchResults() = p.snapshot { RiseTheme(true) { RiseApp(UiState(page = "Buscar", query = "daft punk", results = songs + songs.map { it.copy(url = it.url + "v", kind = "video") } + albumsR), Actions()) } }
+  @Test fun searchScrolled() = p.snapshot { RiseTheme(true) { RiseApp(UiState(page = "Buscar", query = "daft punk", results = songs + songs.map { it.copy(url = it.url + "v", kind = "video") } + albumsR, now = streamNp), Actions(), initialRootItem = 3) } }
+  @Test fun downloadPage() = p.snapshot { RiseTheme(true) { RiseApp(UiState(page = "Buscar", dlItems = listOf(songs[0]), queue = dlQueue, history = homeLib.take(3)), Actions(), initialRoute = Route.Downloads) } }
+  @Test fun shareCard() = p.snapshot { RiseTheme(true) { androidx.compose.foundation.Image(com.rise.musique.Snippet.card(npLyrics.title, npLyrics.artist, null,
+    com.rise.musique.Snippet.linesIn(npLyrics.lyrics, 94_000).map { it.text }, 1).let(::bmpToImage), null, androidx.compose.ui.Modifier.fillMaxSize()) } }
+  @Test fun shareSheet() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(top = 24.dp)) { ShareContent(npLyrics, true, false, Actions(), null, 94_000) {} } } } }
+}
+class Round18Light { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6)
+  @Test fun downloadPage() = p.snapshot { RiseTheme(false) { RiseApp(UiState(page = "Buscar", dlItems = listOf(songs[1]), queue = dlQueue), Actions(), initialRoute = Route.Downloads) } } }
+private fun bmpToImage(b: android.graphics.Bitmap): androidx.compose.ui.graphics.ImageBitmap = b.asImageBitmap()

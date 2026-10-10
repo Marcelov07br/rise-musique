@@ -37,8 +37,10 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
  * soltar assenta com mola. O voltar com prévia (Android 14+) encolhe a tela seguindo o gesto.
  */
 @Composable fun PlayerSheet(now: NowPlaying, a: Actions, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
-                            queue: List<HistoryItem> = emptyList()) {
+                            queue: List<HistoryItem> = emptyList(), local: Boolean = false, snippetBusy: Boolean = false, initialShare: Boolean = false) {
   val c = MaterialTheme.colorScheme
+  var share by remember { mutableStateOf(initialShare) }
+  if (share) ShareSheet(now, local, snippetBusy, a) { share = false }
   val scope = rememberCoroutineScope()
   val f = remember { Animatable(if (initialExpanded) 1f else 0f) }
   var back by remember { mutableFloatStateOf(0f) }
@@ -130,7 +132,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
               throwX.animateTo(0f, Motion.settle(208f))
             }) else Modifier).shadow(lerp(0.dp, 24.dp, p), RoundedCornerShape(lerp(12.dp, 28.dp, p)))
           .clip(RoundedCornerShape(lerp(12.dp, 28.dp, p))).background(c.outline), contentAlignment = Alignment.Center) {
-        if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize().kenBurns(now.playing && p > .9f && !showLyrics), contentScale = ContentScale.Crop)
         else Icon(Icons.Rounded.MusicNote, null, tint = c.onSurfaceVariant, modifier = Modifier.fillMaxSize(.4f))
         tapHint?.let { (id, dir) -> SeekRipple(id, dir) }
       }
@@ -154,7 +156,9 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           IconButton({ scope.launch { f.animateTo(0f, bouncy) } }) { Icon(Icons.Rounded.KeyboardArrowDown, "Recolher", tint = Color.White) }
           Spacer(Modifier.weight(1f))
           Box(Modifier.size(width = 36.dp, height = 5.dp).clip(CircleShape).background(Color.White.copy(.35f)))
-          Spacer(Modifier.weight(1f)); SleepButton(now, a)
+          Spacer(Modifier.weight(1f))
+          IconButton({ share = true }, enabled = !now.isPreview) { Icon(Icons.Rounded.IosShare, "Compartilhar trecho", tint = Color.White) }
+          SleepButton(now, a)
         }
         if (wide) Box(Modifier.fillMaxWidth().weight(1f)) {
           if (showLyrics || now.isPreview) LyricsView(now, a, Modifier.fillMaxSize().padding(vertical = 8.dp))

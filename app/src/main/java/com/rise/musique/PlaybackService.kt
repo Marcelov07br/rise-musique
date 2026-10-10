@@ -177,6 +177,7 @@ class PlaybackService : MediaLibraryService() {
         if (!p.isPlaying) AudioLevels.silence()
         val m = p.mediaMetadata; val art = m.artworkUri?.toString()
         val changed = art != lastArt; lastArt = art
+        TileState.push(this@PlaybackService, m.title?.toString().orEmpty(), m.artist?.toString().orEmpty(), p.isPlaying)
         scope.launch { RiseWidget.push(this@PlaybackService, m.title?.toString() ?: "Rise Musique", m.artist?.toString() ?: "", p.isPlaying, art, changed,
           p.currentPosition, p.duration.takeIf { it != C.TIME_UNSET } ?: 0, lyricPlayer?.line) }
       }

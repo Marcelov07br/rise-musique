@@ -62,7 +62,7 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val searchKind: com.rise.musique.SearchKind = com.rise.musique.SearchKind.Songs, val durationFilter: com.rise.musique.DurationFilter = com.rise.musique.DurationFilter.Any,
   val dateFilter: com.rise.musique.DateFilter = com.rise.musique.DateFilter.Any, val video: VideoUi? = null, val pip: Boolean = false,
   val voice: VoiceUi? = null,
-  val stationLoading: String? = null,
+  val stationLoading: String? = null, val dlItems: List<SearchResult> = emptyList(), val dlQuery: String = "", val dlLoading: Boolean = false, val dlRequest: Int = 0, val snippetBusy: Boolean = false,
   val undo: UndoInfo? = null, val popular: Map<String, List<SearchResult>> = emptyMap(), val popularLoading: Set<String> = emptySet(), val hidden: Set<String> = emptySet())
 
 /** Snackbar with Desfazer; the real action runs only after the timeout. */
@@ -99,7 +99,8 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val follow: (String) -> Unit = {}, val openSmart: (String, String) -> Unit = { _, _ -> },
   val searchKind: (com.rise.musique.SearchKind) -> Unit = {}, val durationFilter: (com.rise.musique.DurationFilter) -> Unit = {}, val dateFilter: (com.rise.musique.DateFilter) -> Unit = {},
   val openResult: (SearchResult) -> Unit = {}, val saveStream: () -> Unit = {}, val playVideo: (SearchResult) -> Unit = {}, val playLocalVideo: (HistoryItem) -> Unit = {},
-  val video: VideoActions = VideoActions(), val playStation: (com.rise.musique.Station) -> Unit = {}, val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {})
+  val video: VideoActions = VideoActions(), val playStation: (com.rise.musique.Station) -> Unit = {}, val downloadItem: (SearchResult) -> Unit = {}, val dlRemove: (SearchResult) -> Unit = {},
+  val dlQuery: (String) -> Unit = {}, val dlLink: (String) -> Unit = {}, val shareSnippet: (Boolean, Long) -> Unit = { _, _ -> }, val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -109,13 +110,14 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   SearchResult("c", "Música de exemplo · versão acústica", "Outro Canal", 189, ""))
 
 @Composable fun RiseApp(state: UiState, actions: Actions, initialHistoryOpen: Boolean = false, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
-                       initialCollectionItem: Int = 0, initialRoute: Route? = null, initialRootItem: Int = 0) {
+                       initialCollectionItem: Int = 0, initialRoute: Route? = null, initialRootItem: Int = 0, initialShare: Boolean = false) {
   val targets = remember { FlyTargets() }
   Box(Modifier.fillMaxSize()) {
     RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute, initialRootItem)
     UndoBar(state, actions, Modifier.align(Alignment.BottomCenter))
     state.fly?.let { FlyOverlay(it, targets) }
-    state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue) } }
+    state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue,
+      local = !it.streaming && !it.isPreview && state.history.any { h -> h.uri == it.key }, snippetBusy = state.snippetBusy, initialShare = initialShare) } }
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
     if (state.settingsOpen) SettingsSheet(state, actions)
     if (state.statsOpen) StatsSheet(state, actions)
@@ -165,14 +167,17 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val rootKey = "root:$tab"
   val navActions = remember(actions, tab, state.playlists.keys) { actions.copy(
     openAlbum = { nav.push(tab, Route.Album(it)) }, openPlaylist = { nav.push(tab, Route.Playlist(it)) }, openArtist = { nav.push(tab, Route.Artist(it)) },
-    openDownloads = { nav.push("Buscar", Route.Downloads); actions.page("Buscar") },
+    openDownloads = { if (nav.stack(tab).lastOrNull() != Route.Downloads) nav.push(tab, Route.Downloads) },
     openSmart = { k, v -> nav.push(tab, Route.Smart(k, v)) },
     albumFilter = { if (it.isBlank()) nav.pop(tab) else nav.push(tab, Route.Album(it)) },
     historyView = { if (it in state.playlists) nav.push(tab, Route.Playlist(it)) else actions.historyView(it) },
-    page = { t -> val target = if (t == "Downloads") "Buscar" else t
+    page = { t -> if (t == "Downloads") { if (nav.stack(tab).lastOrNull() != Route.Downloads) nav.push(tab, Route.Downloads); return@copy }
+      val target = t
       // Tocar de novo na aba: volta à raiz; se já está na raiz, rola para o topo.
       if (target == tab) { if (nav.stack(tab).isNotEmpty()) nav.popToRoot(tab) else scope.launch { nav.list("root:$tab").animateScrollToItem(0) } }
       else actions.page(target) }) }
+  // Link compartilhado / botão de download de um item: abre a página Downloads na aba atual.
+  LaunchedEffect(state.dlRequest) { if (state.dlRequest > 0) navActions.openDownloads() }
   var lastDetail by remember { mutableStateOf<Route?>(initialRoute?.takeIf { it.isDetail }) }
   if (screen.route.isDetail && lastDetail != screen.route) lastDetail = screen.route
   val backdropAlpha = transition.animateFloat({ Motion.enter(Motion.Long) }, label = "backdrop") { if (it.route.isDetail) 1f else 0f }
@@ -202,12 +207,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
                 is Route.Smart -> smartFolder(clean, r.kind, r.value).let { f -> if (f != null) CollectionScreen(clean, navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss, f)
                   else Box(Modifier.fillMaxSize()) { EmptyState(androidx.compose.material.icons.Icons.Rounded.AutoAwesome, "Coleção vazia", "As faixas mudaram desde a última análise.") } }
                 is Route.Artist -> ArtistScreen(clean, navActions, r.name, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
-                Route.Downloads -> Column(Modifier.fillMaxSize()) {
-                  Row(Modifier.fillMaxWidth().height(TopBarHeight).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(pop) { Icon(Icons.Rounded.ArrowBack, "Voltar") }
-                    Text("Downloads", style = MaterialTheme.typography.titleLarge) }
-                  DownloadHub(state, navActions, Modifier.weight(1f).fillMaxWidth())
-                }
+                Route.Downloads -> DownloadPage(state, navActions, nav.list(r.key), pop, Modifier.fillMaxSize().background(c.background))
                 null -> Column(Modifier.fillMaxSize()) {
                   val rootList = nav.list("root:${sc.tab}", initialRootItem)
                   val collapse = rememberTitleCollapse(rootList)
@@ -215,7 +215,9 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                       Text("rise", Modifier.weight(1f).graphicsLayer { alpha = (1f - collapse.value * 1.4f).coerceIn(0f, 1f) },
                         style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
-                      RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
+                      val active = state.queue.count { it.error == null && !it.completed }
+                      BadgedBox({ if (active > 0) Badge(containerColor = accentColor(), contentColor = androidx.compose.ui.graphics.Color.White) { Text("$active") } }) {
+                        RoundIconButton(Icons.Rounded.Download, "Downloads", navActions.openDownloads, container = c.background) }
                       Spacer(Modifier.width(8.dp))
                       RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
                     }
@@ -287,66 +289,56 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
     override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
       if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && kotlin.math.abs(available.y) > 2f) { keyboard?.hide(); focus.clearFocus() }
       return androidx.compose.ui.geometry.Offset.Zero } } }
-  Column(modifier.background(c.background).padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Row(Modifier.collapsingHeight(collapse), verticalAlignment = Alignment.CenterVertically) {
-      LargeTitle("Buscar", collapse, Modifier.weight(1f))
-      val active = state.queue.count { it.error == null && !it.completed }
-      BadgedBox({ if (active > 0) Badge(containerColor = c.onSurface, contentColor = c.surface) { Text("$active") } }) {
-        RoundIconButton(Icons.Rounded.Download, "Downloads", a.openDownloads) }
-    }
-    Row(Modifier.fillMaxWidth().clip(CircleShape).background(c.surfaceVariant).padding(start = 18.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+  // Busca = descoberta pura: cabeçalho compacto, um campo, uma fileira de filtros; o resto da tela é dos resultados.
+  Column(modifier.background(c.background).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Box(Modifier.collapsingHeight(collapse)) { LargeTitle("Buscar", collapse, Modifier.padding(start = 4.dp)) }
+    Row(Modifier.fillMaxWidth().height(52.dp).clip(CircleShape).background(c.surfaceVariant).padding(start = 16.dp, end = 4.dp),
       verticalAlignment = Alignment.CenterVertically) {
       Icon(Icons.Rounded.Search, null, tint = c.onSurfaceVariant)
       TextField(state.query, { typed = true; a.query(it) }, Modifier.weight(1f), singleLine = true,
-        placeholder = { Text("Músicas, artistas ou um link", color = c.onSurfaceVariant) },
-        trailingIcon = { if (state.query.isNotEmpty()) IconButton({ typed = false; a.query("") }) { Icon(Icons.Rounded.Close, "Limpar busca") } },
+        placeholder = { Text("Artistas, músicas ou um link", color = c.onSurfaceVariant, maxLines = 1) },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { typed = false; keyboard?.hide(); a.search() }),
         colors = TextFieldDefaults.colors(focusedContainerColor = c.surfaceVariant, unfocusedContainerColor = c.surfaceVariant,
           focusedIndicatorColor = c.surfaceVariant, unfocusedIndicatorColor = c.surfaceVariant))
-      RoundIconButton(if (state.voice?.listening == true) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (state.voice?.listening == true) "Parar de ouvir" else "Buscar por voz",
-        { keyboard?.hide(); if (state.voice?.listening == true) a.voiceStop() else a.voiceStart() }, container = c.surfaceVariant)
-      if (state.searching) CircularProgressIndicator(Modifier.size(44.dp).padding(10.dp), strokeWidth = 2.dp, color = c.onSurface)
-      else RoundIconButton(Icons.Rounded.ArrowForward, "Buscar", a.search, filled = state.query.isNotBlank())
+      if (state.searching) CircularProgressIndicator(Modifier.size(44.dp).padding(12.dp), strokeWidth = 2.dp, color = c.onSurface)
+      else if (state.query.isNotEmpty()) IconButton({ typed = false; a.query("") }) { Icon(Icons.Rounded.Close, "Limpar busca", tint = c.onSurfaceVariant) }
+      IconButton({ keyboard?.hide(); if (state.voice?.listening == true) a.voiceStop() else a.voiceStart() }) {
+        Icon(if (state.voice?.listening == true) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (state.voice?.listening == true) "Parar de ouvir" else "Buscar por voz", tint = c.onSurface) }
     }
     if (!isLink) SearchFilters(state, a)
     val nearEnd by remember { derivedStateOf { val li = resultsList.layoutInfo; li.totalItemsCount > 0 && (li.visibleItemsInfo.lastOrNull()?.index ?: 0) >= li.totalItemsCount - 4 } }
     LaunchedEffect(nearEnd, state.moreResults, state.loadingMore, state.results.size) { if (nearEnd && state.moreResults && !state.loadingMore && !state.searching) a.moreResults() }
-    LazyColumn(Modifier.weight(1f).nestedScroll(hideKeyboard), state = resultsList, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.weight(1f).nestedScroll(hideKeyboard), state = resultsList, verticalArrangement = Arrangement.spacedBy(4.dp),
+      contentPadding = PaddingValues(top = 2.dp, bottom = bottomSpace(state))) {
       state.voice?.let { v -> item(key = "voice") { VoicePanel(v, a) } }
       if (isLink && state.results.isEmpty()) item(key = "link") { Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceVariant)
           .clickable { keyboard?.hide(); a.search() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Link, null); Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) { Text("Link detectado", style = MaterialTheme.typography.titleMedium)
-          Text(if (state.searching) "Abrindo…" else "Toque para abrir este link", color = c.onSurfaceVariant, fontSize = 13.sp) }
+          Text(if (state.searching) "Abrindo…" else "Toque para abrir e ouvir", color = c.onSurfaceVariant, fontSize = 13.sp) }
         if (state.searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onSurface) else Icon(Icons.Rounded.ArrowForward, null)
       } }
       if (q.isNotBlank() && !isLink && !local.isEmpty) {
-        item(key = "local-title") { Text("Na sua biblioteca", style = MaterialTheme.typography.titleLarge) }
+        item(key = "local-title") { SearchSection("Na sua biblioteca") }
         items(local.tracks, key = { "lt:" + it.uri }) { h -> TrackRow(h, state, a) }
         items(local.albums, key = { "la:" + it.first }) { (name, h) -> LocalRow(h, name, "Álbum", false) { a.openAlbum(name) } }
         items(local.artists, key = { "lr:" + it.first }) { (name, h) -> LocalRow(h, name, "Artista", true) { a.openArtist(name) } }
         items(local.playlists, key = { "lp:" + it.first }) { (name, h) -> LocalRow(h, name, "Playlist", false) { a.openPlaylist(name) } }
       }
-      if (q.isNotBlank() && !isLink && (state.searching || state.results.isNotEmpty()) && state.radioOf == null) item(key = "yt-title") {
-        Row(verticalAlignment = Alignment.CenterVertically) { Text("No YouTube", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-          if (state.searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onSurface) } }
-      state.radioOf?.let { seed -> item { Row(verticalAlignment = Alignment.CenterVertically) {
+      if (q.isNotBlank() && !isLink && (state.searching || state.results.isNotEmpty()) && state.radioOf == null && !local.isEmpty) item(key = "yt-title") { SearchSection("No YouTube") }
+      state.radioOf?.let { seed -> item(key = "radio") { Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Radio, null, tint = c.onSurface); Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) { Text("Rádio", style = MaterialTheme.typography.titleLarge)
           Text("Parecidas com $seed", color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-        if (state.results.isNotEmpty()) PillButton(if (state.selected.size == state.results.size) "Desmarcar" else "Baixar todas", a.selectAll, filled = false)
       } } }
-      if (state.selected.isNotEmpty()) item { DownloadOptions(state, a) }
-      if (state.results.size > 1 && state.isPlaylist) item { Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("${state.results.size} faixas · ${state.selected.size} marcadas", Modifier.weight(1f), color = c.onSurfaceVariant, fontSize = 13.sp)
-        TextButton(a.selectAll) { Text(if (state.selected.size == state.results.size) "Desmarcar" else "Marcar todas") }
-      } }
       if (state.searching && state.results.isEmpty() && !isLink) items(6, key = { "sk$it" }) { SkeletonRow(state.searchKind) }
       itemsIndexed(state.results, key = { _, it -> it.url }) { i, r ->
         Box(Modifier.cascade(i)) {
         if (!r.playable) CollectionResult(r) { keyboard?.hide(); if (r.kind == "artist") a.openArtist(r.title) else a.openResult(r) }
-        else ResultCard(r, r.url in state.selected, state.isPlaylist, state.previewing == r.url, state.previewing == r.url && state.previewLoading,
-          { a.select(r) }, { a.preview(r) }, { a.radio(r) }, if (r.kind == "video" || state.searchKind == com.rise.musique.SearchKind.Videos) ({ a.playVideo(r) }) else null) }
+        else { val video = r.kind == "video" || state.searchKind == com.rise.musique.SearchKind.Videos
+          ResultCard(r, state.previewing == r.url, state.previewing == r.url && state.previewLoading, video,
+            play = { keyboard?.hide(); if (video) a.playVideo(r) else a.preview(r) }, radio = { a.radio(r) }, download = { a.downloadItem(r) },
+            watch = { a.playVideo(r) }) } }
       }
       if (state.moreResults) item(key = "more") { Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
         if (state.loadingMore) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = c.onSurface)
@@ -354,10 +346,11 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       if (state.results.isEmpty() && !state.searching) {
         if (q.isNotBlank() && state.status == "Nada encontrado" && local.isEmpty) item(key = "none") {
           EmptyState(Icons.Rounded.SearchOff, "Nada encontrado para “$q”", "Confira a grafia, tente o nome do artista ou cole um link.") }
-        else if (q.isBlank()) item(key = "hint") { Text("Um nome, artista ou link. Encontre o que quer ouvir.", color = c.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp)) }
+        else if (q.isBlank()) item(key = "hint") { Text("Toque num resultado para ouvir na hora. Para guardar, use o botão de download de cada item.",
+          color = c.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) }
         if (q.isBlank() && state.recentSearches.isNotEmpty()) {
           item(key = "recent-title") { Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Buscas recentes", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Text("Buscas recentes", Modifier.weight(1f).padding(start = 4.dp), style = MaterialTheme.typography.titleMedium)
             TextButton(a.clearSearches) { Text("Limpar tudo") }
           } }
           item(key = "recent") { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -370,13 +363,10 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
         }
       }
     }
-    val activeJobs = state.queue.count { it.error == null && !it.completed }
-    if (state.selected.isNotEmpty()) PillButton(modifier = Modifier.fillMaxWidth().onGloballyPositioned { targets.source = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 2f, it.size.height / 2f) },
-      text = when { state.selected.size > 1 -> "Baixar ${state.selected.size} faixas"; activeJobs == 0 -> "Baixar"
-        else -> "Adicionar à fila ($activeJobs)" }, onClick = a.download, icon = Icons.Rounded.Download, enabled = state.selected.isNotEmpty() && state.choices.ready(state.mode, state.format))
-    Spacer(Modifier.height(bottomSpace(state) - 16.dp))
   }
 }
+
+@Composable private fun SearchSection(t: String) = Text(t, Modifier.padding(start = 4.dp, top = 10.dp, bottom = 4.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
 private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
 
@@ -388,32 +378,40 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.primary, unfocusedBorderColor = c.outline, focusedLabelColor = c.onSurface))
 }
 
-@Composable private fun ResultCard(r: SearchResult, selected: Boolean, multi: Boolean, playing: Boolean, loading: Boolean,
-                                   onSelect: () -> Unit, onPreview: () -> Unit, onRadio: () -> Unit = {}, onVideo: (() -> Unit)? = null) {
+/** Search result: tap plays at once (stream or video player); trailing download button opens the Download page; long press = more. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable private fun ResultCard(r: SearchResult, playing: Boolean, loading: Boolean, video: Boolean,
+                                   play: () -> Unit, radio: () -> Unit, download: () -> Unit, watch: () -> Unit) {
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-  Row(Modifier.fillMaxWidth().weightedPress(src, 22.dp).clip(RoundedCornerShape(22.dp))
-      .background(if (selected) c.surfaceVariant else c.background).border(1.dp, if (selected) c.outline else c.background, RoundedCornerShape(22.dp))
-      .clickable(src, null, onClick = onSelect).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-    if (multi) { Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
-      tint = if (selected) c.primary else c.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, end = 10.dp).size(22.dp)) }
-    Box(Modifier.size(width = if (r.kind == "song") 63.dp else 112.dp, height = 63.dp).clip(RoundedCornerShape(14.dp)).background(c.outline)) {
+  val haptics = rememberHaptics()
+  var menu by remember { mutableStateOf(false) }
+  Box {
+  Row(Modifier.fillMaxWidth().weightedPress(src, 18.dp).clip(RoundedCornerShape(18.dp)).background(if (playing) c.surfaceVariant else c.background)
+      .combinedClickable(src, null, onLongClick = { haptics.press(); menu = true }) { haptics.tick(); play() }.padding(horizontal = 4.dp, vertical = 6.dp),
+      verticalAlignment = Alignment.CenterVertically) {
+    Box(Modifier.size(width = if (video) 96.dp else 54.dp, height = 54.dp).clip(RoundedCornerShape(10.dp)).background(c.outline)) {
       AsyncImage(r.thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-      if (r.duration > 0) Text(fmt(r.duration), Modifier.align(Alignment.BottomEnd).padding(4.dp).clip(CircleShape)
-        .background(androidx.compose.ui.graphics.Color(0xAA000000)).padding(horizontal = 6.dp, vertical = 1.dp),
+      if (video && r.duration > 0) Text(fmt(r.duration), Modifier.align(Alignment.BottomEnd).padding(3.dp).clip(CircleShape)
+        .background(androidx.compose.ui.graphics.Color(0xAA000000)).padding(horizontal = 5.dp, vertical = 1.dp),
         color = androidx.compose.ui.graphics.Color.White, fontSize = 10.sp)
+      if (loading) CircularProgressIndicator(Modifier.align(Alignment.Center).size(22.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color.White)
+      else if (playing) Icon(Icons.Rounded.GraphicEq, null, Modifier.align(Alignment.Center), tint = androidx.compose.ui.graphics.Color.White)
     }
     Spacer(Modifier.width(12.dp))
     Column(Modifier.weight(1f)) {
-      Text(r.title, color = c.onSurface, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-      Text(r.subtitle.ifBlank { r.channel }, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(r.title, color = c.onSurface, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(listOf(if (video) "Vídeo" else "Música", r.subtitle.ifBlank { r.channel }, if (!video && r.duration > 0) fmt(r.duration) else "").filter { it.isNotBlank() }.joinToString(" · "),
+        color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
-    Spacer(Modifier.width(8.dp))
-    if (onVideo != null) RoundIconButton(Icons.Rounded.SmartDisplay, "Assistir vídeo", onVideo, container = c.background)
-    else RoundIconButton(Icons.Rounded.Radio, "Rádio desta música", onRadio, container = c.background)
-    Spacer(Modifier.width(4.dp))
-    if (loading) CircularProgressIndicator(Modifier.size(44.dp).padding(11.dp), strokeWidth = 2.dp, color = c.onSurface)
-    else RoundIconButton(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, if (playing) "Parar" else "Tocar", onPreview, container = c.background)
+    IconButton(download) { Icon(Icons.Rounded.Download, "Baixar ${r.title}", tint = c.onSurfaceVariant) }
+  }
+  DropdownMenu(menu, { menu = false }) {
+    DropdownMenuItem({ Text(if (video) "Assistir" else "Tocar") }, { menu = false; play() }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) })
+    if (!video) DropdownMenuItem({ Text("Assistir vídeo") }, { menu = false; watch() }, leadingIcon = { Icon(Icons.Rounded.SmartDisplay, null) })
+    DropdownMenuItem({ Text("Rádio desta música") }, { menu = false; radio() }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
+    DropdownMenuItem({ Text("Baixar…") }, { menu = false; download() }, leadingIcon = { Icon(Icons.Rounded.Download, null) })
+  }
   }
 }
 
@@ -421,7 +419,7 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
   fontSize = 11.sp, letterSpacing = 2.sp)
 
 @Composable fun HistoryPanel(state: UiState, a: Actions, modifier: Modifier, showLibrary: Boolean = true, showDownloads: Boolean = true) {
-  if (showLibrary) LibraryHome(state, a, modifier) else DownloadHub(state, a, modifier)
+  if (showLibrary) LibraryHome(state, a, modifier) else DownloadPage(state, a, androidx.compose.foundation.lazy.rememberLazyListState(), {}, modifier)
 }
 
 /** A capa do download concluído sai do botão Baixar num arco até o botão de histórico, que dá um quique ao receber. */

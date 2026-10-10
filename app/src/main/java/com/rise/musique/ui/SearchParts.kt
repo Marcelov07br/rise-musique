@@ -26,27 +26,35 @@ import com.rise.musique.DateFilter
 import com.rise.musique.DurationFilter
 import com.rise.musique.SearchKind
 
-/** Type chips (Músicas / Vídeos / Álbuns / Artistas / Playlists) + duration and upload-date chips (tap again clears). */
+/** One scrolling row: type chips + a "Filtros" chip that opens duration / upload date in a sheet (keeps the top compact). */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun SearchFilters(s: UiState, a: Actions) {
   val haptics = rememberHaptics()
-  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      SearchKind.entries.forEach { k -> Chip(k.label, s.searchKind == k) { haptics.tick(); a.searchKind(k) } }
-    }
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-      Icon(Icons.Rounded.Schedule, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-      listOf(DurationFilter.Short to "Curta <4 min", DurationFilter.Medium to "Média", DurationFilter.Long to "Longa >20 min").forEach { (d, l) ->
-        Chip(l, s.durationFilter == d, small = true) { haptics.tick(); a.durationFilter(if (s.durationFilter == d) DurationFilter.Any else d) } }
-      Spacer(Modifier.width(4.dp))
-      Icon(Icons.Rounded.Event, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-      DateFilter.entries.drop(1).forEach { d -> Chip(d.label, s.dateFilter == d, small = true) { haptics.tick(); a.dateFilter(if (s.dateFilter == d) DateFilter.Any else d) } }
+  var sheet by remember { mutableStateOf(false) }
+  val active = (if (s.durationFilter != DurationFilter.Any) 1 else 0) + (if (s.dateFilter != DateFilter.Any) 1 else 0)
+  Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Chip(if (active > 0) "Filtros · $active" else "Filtros", active > 0, small = true, icon = Icons.Rounded.Tune) { haptics.tick(); sheet = true }
+    SearchKind.entries.forEach { k -> Chip(k.label, s.searchKind == k, small = true) { haptics.tick(); a.searchKind(k) } }
+  }
+  if (sheet) ModalBottomSheet({ sheet = false }) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      Text("Filtros", style = MaterialTheme.typography.titleLarge)
+      Text("Duração", style = MaterialTheme.typography.titleSmall)
+      Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(DurationFilter.Any to "Qualquer", DurationFilter.Short to "Curta <4 min", DurationFilter.Medium to "Média", DurationFilter.Long to "Longa >20 min").forEach { (d, l) ->
+          Chip(l, s.durationFilter == d, small = true) { haptics.tick(); a.durationFilter(d) } } }
+      Text("Data de envio", style = MaterialTheme.typography.titleSmall)
+      Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DateFilter.entries.forEach { d -> Chip(if (d == DateFilter.Any) "Qualquer" else d.label, s.dateFilter == d, small = true) { haptics.tick(); a.dateFilter(d) } } }
+      if (active > 0) TextButton({ a.durationFilter(DurationFilter.Any); a.dateFilter(DateFilter.Any) }) { Text("Limpar filtros") }
     }
   }
 }
 
-@Composable private fun Chip(label: String, on: Boolean, small: Boolean = false, click: () -> Unit) {
+@Composable private fun Chip(label: String, on: Boolean, small: Boolean = false, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, click: () -> Unit) {
   val c = MaterialTheme.colorScheme
   FilterChip(on, click, label = { Text(label, fontSize = if (small) 13.sp else 14.sp) }, shape = CircleShape, border = null,
+    leadingIcon = icon?.let { { Icon(it, null, Modifier.size(16.dp)) } },
     colors = FilterChipDefaults.filterChipColors(containerColor = c.surfaceVariant, labelColor = c.onSurfaceVariant, selectedContainerColor = c.onSurface, selectedLabelColor = c.surface),
     modifier = Modifier.heightIn(min = if (small) 36.dp else 40.dp))
 }
@@ -56,9 +64,9 @@ import com.rise.musique.SearchKind
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   val circle = r.kind == "artist"
-  Row(Modifier.fillMaxWidth().weightedPress(src, 22.dp).clip(RoundedCornerShape(22.dp)).clickable(src, null, onClick = open).padding(10.dp),
+  Row(Modifier.fillMaxWidth().weightedPress(src, 18.dp).clip(RoundedCornerShape(18.dp)).clickable(src, null, onClick = open).padding(horizontal = 4.dp, vertical = 6.dp),
     verticalAlignment = Alignment.CenterVertically) {
-    AsyncImage(r.thumb, null, Modifier.size(63.dp).clip(if (circle) CircleShape else RoundedCornerShape(12.dp)).background(c.outline), contentScale = ContentScale.Crop)
+    AsyncImage(r.thumb, null, Modifier.size(54.dp).clip(if (circle) CircleShape else RoundedCornerShape(10.dp)).background(c.outline), contentScale = ContentScale.Crop)
     Spacer(Modifier.width(12.dp))
     Column(Modifier.weight(1f)) {
       Text(r.title, color = c.onSurface, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)

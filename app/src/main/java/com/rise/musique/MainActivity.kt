@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
   override fun onResume() { super.onResume(); updates.check() }
   override fun onCreate(s: Bundle?) { installSplashScreen(); enableEdgeToEdge(); super.onCreate(s)
     if (s == null) handle(intent)
+    Shortcuts.publish(this)
     if (Build.VERSION.SDK_INT >= 33) registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
       .launch(Manifest.permission.POST_NOTIFICATIONS)
     setContent { val sys = isSystemInDarkTheme(); val dark = when (vm.state.theme) { "Escuro" -> true; "Claro" -> false; else -> sys }
@@ -66,7 +67,7 @@ class MainActivity : ComponentActivity() {
         lastfmToggle = vm::lastfmToggle, openCut = vm::openCut, eqOpen = vm::eqOpen, eqChange = vm::eqChange, normalize = vm::normalize, normalizeAlbum = vm::normalizeAlbum,
         lockLyrics = vm::lockLyrics, wifiOnly = vm::wifiOnly, follow = vm::follow, undo = vm::undo, removeSearch = vm::removeSearch, searchLive = vm::searchLive, clearQueue = vm::clearQueue,
         searchKind = vm::searchKind, durationFilter = vm::durationFilter, dateFilter = vm::dateFilter, openResult = vm::openResult, saveStream = vm::saveStream,
-        playVideo = vm::playVideo, playStation = vm::playStation, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
+        playVideo = vm::playVideo, playStation = vm::playStation, shareSnippet = { v, ms -> vm.shareSnippet(v, ms) { startActivity(it) } }, downloadItem = vm::downloadItem, dlRemove = vm::dlRemove, dlQuery = vm::dlQuery, dlLink = vm::dlLink, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
         video = com.rise.musique.ui.VideoActions(close = { vm.video.close(); exitFullscreen() }, playPause = vm.video::playPause, seek = vm.video::seek, seekBy = vm.video::seekBy,
           quality = vm.video::quality, subtitle = vm.video::subtitle, fullscreen = { on -> vm.video.fullscreen(on); if (on) enterFullscreen() else exitFullscreen() },
           next = vm.video::next, pip = { enterPip() }),
@@ -114,7 +115,13 @@ class MainActivity : ComponentActivity() {
   override fun onDestroy() { if (pipRegistered) runCatching { unregisterReceiver(pipReceiver) }; super.onDestroy() }
 
   override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }
-  private fun handle(i: Intent?) { if (i?.action == Intent.ACTION_SEND) vm.onIncomingLink(i.getStringExtra(Intent.EXTRA_TEXT)) }
+  private fun handle(i: Intent?) { when (i?.action) {
+    Intent.ACTION_SEND -> vm.onIncomingLink(i.getStringExtra(Intent.EXTRA_TEXT))
+    Shortcuts.SHUFFLE -> { vm.page("Início"); vm.shuffleAll() }
+    Shortcuts.STATIONS -> vm.page("Início")
+    Shortcuts.SEARCH -> vm.page("Buscar")
+    Shortcuts.DOWNLOADS -> vm.openDownloads()
+  } }
   override fun onWindowFocusChanged(f: Boolean) { super.onWindowFocusChanged(f)
     if (!f || vm.state.query.isNotBlank()) return
     val t = getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString() ?: return

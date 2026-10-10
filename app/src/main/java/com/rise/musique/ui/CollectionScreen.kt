@@ -78,7 +78,7 @@ internal val TopBarHeight = 64.dp
           val corner = morphCorner(14.dp, 8.dp)?.value ?: 8.dp
           Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
             .sharedCover(smart?.key ?: if (isAlbum) "cover-al-$title" else "cover-pl-$title")) {
-            if (hero != null) Cover(hero, Modifier.fillMaxSize(), corner)
+            if (hero != null) Cover(hero, Modifier.fillMaxSize().kenBurns(hero.art.isNotBlank()), corner)
             else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(.12f)), contentAlignment = Alignment.Center) {
               Icon(if (isAlbum) Icons.Rounded.Album else if (smart != null) Icons.Rounded.AutoAwesome else Icons.Rounded.QueueMusic, null, tint = Color.White.copy(.75f), modifier = Modifier.size(64.dp)) }
           }
