@@ -1,0 +1,105 @@
+package com.rise.musique.ui
+
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.rise.musique.DateFilter
+import com.rise.musique.DurationFilter
+import com.rise.musique.SearchKind
+
+/** Type chips (Músicas / Vídeos / Álbuns / Artistas / Playlists) + duration and upload-date chips (tap again clears). */
+@Composable fun SearchFilters(s: UiState, a: Actions) {
+  val haptics = rememberHaptics()
+  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      SearchKind.entries.forEach { k -> Chip(k.label, s.searchKind == k) { haptics.tick(); a.searchKind(k) } }
+    }
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+      Icon(Icons.Rounded.Schedule, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+      listOf(DurationFilter.Short to "Curta <4 min", DurationFilter.Medium to "Média", DurationFilter.Long to "Longa >20 min").forEach { (d, l) ->
+        Chip(l, s.durationFilter == d, small = true) { haptics.tick(); a.durationFilter(if (s.durationFilter == d) DurationFilter.Any else d) } }
+      Spacer(Modifier.width(4.dp))
+      Icon(Icons.Rounded.Event, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+      DateFilter.entries.drop(1).forEach { d -> Chip(d.label, s.dateFilter == d, small = true) { haptics.tick(); a.dateFilter(if (s.dateFilter == d) DateFilter.Any else d) } }
+    }
+  }
+}
+
+@Composable private fun Chip(label: String, on: Boolean, small: Boolean = false, click: () -> Unit) {
+  val c = MaterialTheme.colorScheme
+  FilterChip(on, click, label = { Text(label, fontSize = if (small) 13.sp else 14.sp) }, shape = CircleShape, border = null,
+    colors = FilterChipDefaults.filterChipColors(containerColor = c.surfaceVariant, labelColor = c.onSurfaceVariant, selectedContainerColor = c.onSurface, selectedLabelColor = c.surface),
+    modifier = Modifier.heightIn(min = if (small) 36.dp else 40.dp))
+}
+
+/** Album / playlist / artist from the search. */
+@Composable fun CollectionResult(r: SearchResult, open: () -> Unit) {
+  val c = MaterialTheme.colorScheme
+  val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+  val circle = r.kind == "artist"
+  Row(Modifier.fillMaxWidth().weightedPress(src, 22.dp).clip(RoundedCornerShape(22.dp)).clickable(src, null, onClick = open).padding(10.dp),
+    verticalAlignment = Alignment.CenterVertically) {
+    AsyncImage(r.thumb, null, Modifier.size(63.dp).clip(if (circle) CircleShape else RoundedCornerShape(12.dp)).background(c.outline), contentScale = ContentScale.Crop)
+    Spacer(Modifier.width(12.dp))
+    Column(Modifier.weight(1f)) {
+      Text(r.title, color = c.onSurface, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+      Text(r.subtitle.ifBlank { when (r.kind) { "album" -> "Álbum"; "artist" -> "Artista"; else -> "Playlist" } }, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    Icon(Icons.Rounded.ChevronRight, null, tint = c.onSurfaceVariant)
+  }
+}
+
+/** Loading placeholder shaped like the result rows; the shimmer is read in the draw phase only. */
+@Composable fun SkeletonRow(kind: SearchKind) {
+  val c = MaterialTheme.colorScheme
+  val t = rememberInfiniteTransition(label = "sk")
+  val pulse = t.animateFloat(0f, 1f, infiniteRepeatable(tween(Motion.ExtraLong, easing = Motion.Standard), RepeatMode.Reverse), label = "p")
+  val shade = Modifier.graphicsLayer { alpha = .45f + .35f * pulse.value.coerceIn(0f, 1f) }
+  Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Box(shade.size(width = if (kind == SearchKind.Videos) 112.dp else 63.dp, height = 63.dp)
+      .clip(if (kind == SearchKind.Artists) CircleShape else RoundedCornerShape(14.dp)).background(c.surfaceVariant))
+    Spacer(Modifier.width(12.dp))
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Box(shade.fillMaxWidth(.8f).height(14.dp).clip(CircleShape).background(c.surfaceVariant))
+      Box(shade.fillMaxWidth(.5f).height(12.dp).clip(CircleShape).background(c.surfaceVariant))
+    }
+  }
+}
+
+/** Listening card: mic disc that grows with the voice level, live transcript, cancel. */
+@Composable fun VoicePanel(v: VoiceUi, a: Actions) {
+  val c = MaterialTheme.colorScheme
+  val level by animateFloatAsState(v.level.coerceIn(0f, 1f), Motion.settle(), label = "lvl")
+  Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceVariant).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+      Box(Modifier.matchParentSize().graphicsLayer { val k = .7f + .3f * level.coerceIn(0f, 1f); scaleX = k; scaleY = k }.clip(CircleShape)
+        .background(c.onSurface.copy(alpha = if (v.listening) .18f else .08f)))
+      Icon(if (v.error != null) Icons.Rounded.MicOff else Icons.Rounded.Mic, null, tint = c.onSurface)
+    }
+    Spacer(Modifier.width(14.dp))
+    Column(Modifier.weight(1f)) {
+      Text(when { v.error != null -> "Busca por voz"; v.listening -> "Ouvindo…"; else -> "Reconhecendo…" }, style = MaterialTheme.typography.titleMedium)
+      Text(v.error ?: v.partial.ifBlank { "Fale o nome da música ou do artista" }, color = c.onSurfaceVariant, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    IconButton(a.voiceStop, Modifier.size(48.dp)) { Icon(Icons.Rounded.Close, "Fechar busca por voz") }
+  }
+}

@@ -2,12 +2,16 @@
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+  <queries><intent><action android:name="android.speech.RecognitionService"/></intent></queries>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
   <application android:name=".RiseApplication" android:extractNativeLibs="true" android:label="Rise Musique" android:theme="@style/Theme.Rise.Splash" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher">
     <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc"/>
-    <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">
+    <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
+      android:supportsPictureInPicture="true" android:resizeableActivity="true"
+      android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|density">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
       <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
     </activity>

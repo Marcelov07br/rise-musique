@@ -55,7 +55,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } })
         pending.forEach { it(c) }; pending.clear() }
       .onFailure { state = state.copy(status = "Player indisponível: ${it.message}") } }, ContextCompat.getMainExecutor(app))
-    viewModelScope.launch { while (true) { delay(250); poll() } }
+    viewModelScope.launch { while (true) { delay(250); poll(); video.poll() } }
     viewModelScope.launch {
       WorkManager.getInstance(app).getWorkInfosByTagFlow(DownloadWorker.TAG).collect { infos ->
         val q = infos.mapNotNull { w ->
@@ -172,6 +172,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   }
   private var moreRadio = false
 
+  private var searchNext: String? = null
+  private var searchQ: SearchQuery? = null
+  fun searchKind(k: SearchKind) { state = state.copy(searchKind = k); if (state.query.isNotBlank() && !Engine.isLink(state.query)) search(false) }
+  fun durationFilter(d: DurationFilter) { state = state.copy(durationFilter = d); if (state.query.isNotBlank() && !Engine.isLink(state.query)) search(false) }
+  fun dateFilter(d: DateFilter) { state = state.copy(dateFilter = d, searchKind = if (d != DateFilter.Any) SearchKind.Videos else state.searchKind)
+    if (state.query.isNotBlank() && !Engine.isLink(state.query)) search(false) }
   fun search() = search(true)
   private var searchJob: Job? = null
   fun search(record: Boolean) {
@@ -181,11 +187,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val recent = if (record) (listOf(query) + recentSearches()).distinct().take(12) else recentSearches()
     if (record) prefs.edit().putString("searches", org.json.JSONArray(recent).toString()).apply()
     state = state.copy(page = "Buscar", searching = true, results = emptyList(), selected = emptySet(), moreResults = false, recentSearches = recent, status = "", radioOf = null)
+    val link = Engine.isLink(query)
+    val q = SearchQuery(query, state.searchKind, state.durationFilter, state.dateFilter)
     searchJob = viewModelScope.launch {
-      runCatching { Engine.search(query).also { ensureActive() } }
-        .onSuccess { r -> searchFetched = r.size; state = state.copy(searching = false, results = r,
-          selected = if (r.size == 1) setOf(r[0].url) else emptySet(), isPlaylist = Engine.isPlaylist(query),
-          moreResults = !Engine.isLink(query) && r.size == 10, status = if (r.isEmpty()) "Nada encontrado" else "") }
+      runCatching { if (link) SearchPage(Engine.search(query), null)
+          else runCatching { MusicSearch.search(q) }.getOrElse { if (it is CancellationException) throw it; SearchPage(Engine.search(query), null) } }
+        .onSuccess { page -> val r = page.items.also { ensureActive() }; searchFetched = r.size; searchNext = page.next; searchQ = q.takeIf { !link }
+          state = state.copy(searching = false, results = r,
+          selected = if (r.size == 1 && r[0].playable) setOf(r[0].url) else emptySet(), isPlaylist = Engine.isPlaylist(query) || query.contains("/browse/"),
+          moreResults = page.next != null || (link.not() && r.size == 10 && searchQ == null), status = if (r.isEmpty()) "Nada encontrado" else "") }
         .onFailure { if (it is CancellationException) throw it
           state = state.copy(searching = false, status = "Erro na busca: ${it.message?.lineSequence()?.lastOrNull()?.take(100)}") }
     }
@@ -195,9 +205,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val query = searchTerm; val offset = searchFetched
     state = state.copy(loadingMore = true)
     viewModelScope.launch {
-      runCatching { Engine.search(query, offset).also { ensureActive() } }.onSuccess { r ->
-        searchFetched += r.size
-        state = state.copy(loadingMore = false, results = (state.results + r).distinctBy { it.url }, moreResults = r.size == 10 && searchFetched < 100)
+      val q = searchQ; val token = searchNext
+      runCatching { if (q != null && token != null) MusicSearch.search(q, token) else SearchPage(Engine.search(query, offset), null) }.onSuccess { page -> val r = page.items
+        searchFetched += r.size; searchNext = page.next
+        state = state.copy(loadingMore = false, results = (state.results + r).distinctBy { it.url },
+          moreResults = if (q != null) page.next != null && searchFetched < 300 else r.size == 10 && searchFetched < 100)
       }.onFailure { if (it is CancellationException) throw it
         state = state.copy(loadingMore = false, status = "Não foi possível carregar mais resultados. Tente novamente.") }
     }
@@ -222,12 +234,53 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     previewJob = viewModelScope.launch { Engine.update(getApplication(), force = true); startPreview(r) }
   }
 
+  /** Plays the whole track from YouTube (not a clip): the visible playable results become the queue, starting at [r]. */
   fun togglePreview(r: SearchResult) {
     if (state.previewing == r.url) { stopPreview(); return }
-    stopPreview(); state = state.copy(previewing = r.url, previewLoading = true,
-      now = NowPlaying(r.url, r.title, r.channel, r.thumb, loading = true, isPreview = true))
-    lastPreview = r; previewRetried = null
-    previewJob = viewModelScope.launch { startPreview(r) }
+    if (!r.playable) { openResult(r); return }
+    stopPreview()
+    val pool = (listOf(state.results) + state.popular.values).firstOrNull { l -> l.any { it.url == r.url } } ?: listOf(r)
+    val list = pool.filter { it.playable && Streams.uriFor(it.url) != null }.ifEmpty { listOf(r) }
+    val start = list.indexOfFirst { it.url == r.url }.coerceAtLeast(0)
+    val items = list.mapNotNull { streamItem(it) }
+    if (items.isEmpty()) { state = state.copy(status = "Não dá pra tocar este link"); return }
+    state = state.copy(previewing = r.url, previewLoading = false, now = NowPlaying("stream:" + r.url, r.title, r.channel, r.thumb, loading = true, streaming = true))
+    withPlayer { p -> p.setMediaItems(items, start, 0); p.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF); p.prepare(); p.play() }
+  }
+  private fun streamItem(r: SearchResult) = Streams.uriFor(r.url)?.let { u -> MediaItem.Builder().setMediaId("stream:" + r.url).setUri(u)
+    .setMediaMetadata(meta(r.title, r.channel, r.thumb, r.album)).build() }
+  fun playNextStream(r: SearchResult) = streamItem(r)?.let { item -> withPlayer { p -> if (p.mediaItemCount == 0) { p.setMediaItem(item); p.prepare(); p.play() }
+    else p.addMediaItem((p.currentMediaItemIndex + 1).coerceAtMost(p.mediaItemCount), item) } }
+  /** Albums / playlists / artists from the search: albums & playlists list their tracks, artists open the artist screen. */
+  fun openResult(r: SearchResult) {
+    state = state.copy(query = r.url); search(false)
+  }
+
+  /** "Guardar": the bytes already played are in the stream cache → saved with tags/cover; otherwise a normal download. */
+  val video by lazy { VideoController(ctx, viewModelScope) { v -> state = state.copy(video = v, pip = if (v == null) false else state.pip) } }
+  /** Video: the music pauses (its queue stays), the visible videos become the "next" list. */
+  fun playVideo(r: SearchResult) { withPlayer { it.pause() }
+    val pool = (listOf(state.results) + state.popular.values).firstOrNull { l -> l.any { it.url == r.url } } ?: listOf(r)
+    video.open(r, pool) }
+  fun playLocalVideo(h: HistoryItem) { val u = uriOf(h) ?: return; withPlayer { it.pause() }; video.openLocal(h, u) }
+  fun voiceDenied() { state = state.copy(voice = VoiceUi(false, error = "Sem permissão do microfone. Libere em Ajustes do Android para buscar por voz.")) }
+  fun pip(on: Boolean) { state = state.copy(pip = on) }
+
+  val voice by lazy { VoiceSearch(ctx, { v -> state = state.copy(voice = v) }) { text -> state = state.copy(query = text, page = "Buscar"); search(true) } }
+
+  fun saveStream() {
+    val n = state.now ?: return; if (!n.streaming) return
+    val url = n.key.removePrefix("stream:"); val id = Engine.videoId(url) ?: return
+    state = state.copy(now = n.copy(saveState = "saving"))
+    viewModelScope.launch {
+      val prefill = withContext(Dispatchers.IO) { val k = Streams.known(id)
+        val f = File(ctx.filesDir, "prefill/$id.${k?.ext ?: "m4a"}").apply { parentFile?.mkdirs() }
+        if (k != null && Streams.copyCached(ctx, id, f)) f to k.formatId else { f.delete(); null } }
+      DownloadWorker.enqueue(ctx, DownloadWorker.data(url, n.title, n.art, n.artist, Mode.Musica, prefs.getString("quality_${Mode.Musica.name}", Mode.Musica.qualities.last())!!,
+        state.format, null, state.folder).let { d -> if (prefill == null) d else androidx.work.Data.Builder().putAll(d).putString("prefill", prefill.first.path).putString("formatId", prefill.second).build() })
+      state = state.copy(now = state.now?.copy(saveState = if (prefill != null) "cached" else "download"),
+        status = if (prefill != null) "Guardando o que já tocou na biblioteca" else "Ainda não tocou inteira: baixando normalmente")
+    }
   }
   /** Cut sheet: play exactly the chosen range of the selected result. */
   fun previewRange(startMs: Long, endMs: Long) {
@@ -283,7 +336,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     if (deadline != state.sleepAt) state = state.copy(sleepAt = deadline)
     val n = state.now ?: p.currentMediaItem?.let { item ->
       NowPlaying(item.mediaId, item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(),
-        item.mediaMetadata.artworkUri?.toString().orEmpty(), isPreview = item.mediaId.startsWith("preview:"))
+        item.mediaMetadata.artworkUri?.toString().orEmpty(), isPreview = item.mediaId.startsWith("preview:"), streaming = item.mediaId.startsWith("stream:"))
     } ?: return
     val item = p.currentMediaItem
     if (item == null) { if (!n.loading && !n.isPreview) state = state.copy(now = null); return }
@@ -291,11 +344,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val key = item.mediaId.removePrefix("preview:")
     var now = n.copy(key = key, title = m.title?.toString() ?: n.title, artist = m.artist?.toString() ?: n.artist,
       art = m.artworkUri?.toString() ?: "", playing = p.isPlaying, position = p.currentPosition.coerceAtLeast(0),
-      duration = p.duration.takeIf { it > 0 } ?: n.duration, isPreview = preview,
+      duration = p.duration.takeIf { it > 0 } ?: n.duration, isPreview = preview, streaming = item.mediaId.startsWith("stream:"),
       loading = p.playbackState == Player.STATE_BUFFERING, hasNext = p.hasNextMediaItem(), hasPrev = p.hasPreviousMediaItem(),
       repeat = p.repeatMode, shuffle = p.shuffleModeEnabled, index = p.currentMediaItemIndex, count = p.mediaItemCount,
       quality = p.sessionExtras.getString(PlaybackService.QUALITY).orEmpty())
-    if (key != n.key) now = now.copy(lyrics = null, lyricsState = "")
+    if (key != n.key) now = now.copy(lyrics = null, lyricsState = "", saveState = "")
+    if (now.streaming && state.previewing != key.removePrefix("stream:")) state = state.copy(previewing = key.removePrefix("stream:"))
     if (preview && p.playbackState == Player.STATE_ENDED) { stopPreview(); return }
     val queue = if (preview) emptyList() else (0 until p.mediaItemCount).map { i ->
       val track = p.getMediaItemAt(i); val md = track.mediaMetadata
@@ -495,6 +549,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  override fun onCleared() { runBlocking { undoJob?.cancel(); undoCommit?.invoke() }; cleared = true; pending.clear(); controllerFuture?.let(MediaController::releaseFuture); super.onCleared() }
+  override fun onCleared() { video.close(); voice.stop(false); runBlocking { undoJob?.cancel(); undoCommit?.invoke() }; cleared = true; pending.clear(); controllerFuture?.let(MediaController::releaseFuture); super.onCleared() }
 }
 

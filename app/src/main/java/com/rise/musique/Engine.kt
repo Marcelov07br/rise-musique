@@ -45,7 +45,7 @@ object Engine {
   private val updateMutex = kotlinx.coroutines.sync.Mutex()
   @Volatile private var updated = false
 
-  data class Stream(val url: String, val headers: Map<String, String>)
+  data class Stream(val url: String, val headers: Map<String, String>, val formatId: String = "", val ext: String = "m4a")
 
   /** Parses the `-j` output of yt-dlp into the direct URL and headers. Visible for tests. */
   fun parseStream(json: String): Stream {
@@ -55,7 +55,7 @@ object Engine {
     require(url.startsWith("http")) { "sem URL de áudio" }
     val h = o.optJSONObject("http_headers")
     val headers = buildMap { h?.keys()?.forEach { k -> put(k, h.getString(k)) } }
-    return Stream(url, headers)
+    return Stream(url, headers, o.optString("format_id"), o.optString("ext", "m4a"))
   }
 
   /** YouTube video id from a watch/short/music link. */
@@ -86,16 +86,53 @@ object Engine {
     parseStream(out).also { streamHeaders[it.url] = it.headers }
   }
 
+  /** Video playback: every separate video-only https format (by height) + best m4a audio + subtitles (vtt). */
+  data class VideoFormat(val height: Int, val url: String, val codec: String, val ext: String)
+  data class VideoInfo(val title: String, val channel: String, val thumb: String, val formats: List<VideoFormat>, val audio: Stream?,
+                       val muxed: VideoFormat?, val subtitles: Map<String, String>, val durationSec: Int)
+  suspend fun videoInfo(url: String): VideoInfo = withContext(Dispatchers.IO) {
+    if (!updated) updateMutex.withLockSafe { }
+    val out = runInterruptible { YoutubeDL.getInstance().execute(YoutubeDLRequest(url).apply {
+      addOption("-j"); addOption("--no-playlist"); addOption("--no-warnings") }) }.out
+    parseVideo(out)
+  }
+  /** Visible for tests. Prefers H.264 per height (widest hardware support), then VP9, then AV1. */
+  fun parseVideo(json: String): VideoInfo {
+    val o = JSONObject(json.lineSequence().first { it.trimStart().startsWith("{") })
+    val fs = o.optJSONArray("formats")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty().filter { it.optString("protocol") == "https" }
+    fun headers(f: JSONObject) = (f.optJSONObject("http_headers") ?: o.optJSONObject("http_headers"))?.let { h -> buildMap { h.keys().forEach { k -> put(k, h.getString(k)) } } }.orEmpty()
+    fun rank(c: String) = when { c.startsWith("avc1") -> 0; c.startsWith("vp9") || c.startsWith("vp09") -> 1; else -> 2 }
+    val video = fs.filter { it.optString("vcodec", "none") != "none" && it.optString("acodec", "none") == "none" && it.optInt("height") > 0 }
+      .groupBy { it.optInt("height") }.map { (h, l) -> l.minBy { rank(it.optString("vcodec")) }.let { f ->
+        streamHeaders[f.getString("url")] = headers(f); VideoFormat(h, f.getString("url"), f.optString("vcodec"), f.optString("ext")) } }.sortedBy { it.height }
+    val audio = fs.filter { it.optString("vcodec", "none") == "none" && it.optString("acodec", "none") != "none" }
+      .maxByOrNull { (if (it.optString("ext") == "m4a") 10_000 else 0) + it.optDouble("abr", 0.0) }
+      ?.let { f -> Stream(f.getString("url"), headers(f), f.optString("format_id"), f.optString("ext")).also { streamHeaders[it.url] = it.headers } }
+    val muxed = fs.filter { it.optString("vcodec", "none") != "none" && it.optString("acodec", "none") != "none" }.maxByOrNull { it.optInt("height") }
+      ?.let { f -> streamHeaders[f.getString("url")] = headers(f); VideoFormat(f.optInt("height"), f.getString("url"), f.optString("vcodec"), f.optString("ext")) }
+    val subs = LinkedHashMap<String, String>()
+    listOf("subtitles", "automatic_captions").forEach { key -> o.optJSONObject(key)?.let { m ->
+      listOf("pt-BR", "pt", "en").forEach { lang -> m.optJSONArray(lang)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }
+        .firstOrNull { it.optString("ext") == "vtt" }?.let { if (lang !in subs) subs[if (key == "subtitles") lang else "$lang (auto)"] = it.getString("url") } } } } }
+    return VideoInfo(o.optString("title"), o.optString("channel").ifBlank { o.optString("uploader") }, o.optString("thumbnail"), video, audio, muxed, subs, o.optInt("duration"))
+  }
+
   private suspend inline fun kotlinx.coroutines.sync.Mutex.withLockSafe(block: () -> Unit) { lock(); try { block() } finally { unlock() } }
 
   suspend fun download(ctx: Context, url: String, mode: Mode, quality: String, format: String, cut: String?, tree: Uri?, procId: String,
+                       prefill: File? = null, formatId: String? = null, title: String? = null,
                        onProgress: (Float, String) -> Unit): HistoryItem = withContext(Dispatchers.IO) {
     // Pasta persistente por trabalho: se o app morrer ou a rede cair, a nova tentativa continua o .part de onde parou.
     val tmp = File(ctx.filesDir, "dl/$procId").apply { mkdirs() }
     try {
     val req = YoutubeDLRequest(url).apply {
       addOption("--no-playlist"); addOption("--continue"); addOption("--retries", "10"); addOption("--fragment-retries", "10")
-      addOption("-o", "${tmp.absolutePath}/%(title)s.%(ext)s")
+      // "Guardar": the streamed bytes are already the file yt-dlp would fetch (same format id); placed at its output name,
+      // yt-dlp sees it as downloaded and only runs the tagging/cover/convert steps.
+      val pre = prefill?.takeIf { it.exists() && formatId != null && mode == Mode.Musica && cut == null }
+      if (pre != null) { val id = videoId(url) ?: "rise"; pre.copyTo(File(tmp, "$id.${pre.extension}"), true); pre.delete()
+        addOption("-f", formatId!!); addOption("-o", "${tmp.absolutePath}/%(id)s.%(ext)s") }
+      else addOption("-o", "${tmp.absolutePath}/%(title)s.%(ext)s")
       addOption("--embed-metadata")
       if (cut != null) { addOption("--download-sections", "*$cut"); addOption("--force-keyframes-at-cuts") }
       if (mode == Mode.Musica) {
@@ -115,8 +152,9 @@ object Engine {
     val job = currentCoroutineContext()
     try { runInterruptible { YoutubeDL.getInstance().execute(req, procId) { p, _, line -> job.ensureActive(); onProgress(p / 100f, line) } } }
     finally { YoutubeDL.getInstance().destroyProcessById(procId) }
-    val f = tmp.listFiles()?.filter { it.extension in setOf("mp3", "mp4", "m4a", "opus", "flac", "webm", "mkv") }?.maxByOrNull { it.length() }
+    val f0 = tmp.listFiles()?.filter { it.extension in setOf("mp3", "mp4", "m4a", "opus", "flac", "webm", "mkv") }?.maxByOrNull { it.length() }
       ?: error("Nenhum arquivo gerado")
+    val f = if (prefill != null && title != null && f0.nameWithoutExtension == videoId(url)) File(tmp, PrefillName.of(title) + "." + f0.extension).also { f0.renameTo(it) } else f0
     onProgress(1f, "[RiseSave] Salvando")
     val saved = save(ctx, f, tree)
     val item = HistoryItem(f.nameWithoutExtension, "${f.extension.uppercase()} · ${if (format == "FLAC" && mode == Mode.Musica) "FLAC" else quality} · ${"%.1f".format(f.length() / 1e6)} MB", saved, video = mode == Mode.Video)
@@ -175,3 +213,6 @@ object HistoryStore {
   private fun write(ctx: Context, l: List<HistoryItem>) = AtomicJson.write(file(ctx), JSONArray(l.map(TrackJson::encode)).toString())
 }
 
+
+object PrefillName { /** File-system-safe title. Visible for tests. */
+  fun of(t: String) = t.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").trim().take(120).ifBlank { "Faixa" } }

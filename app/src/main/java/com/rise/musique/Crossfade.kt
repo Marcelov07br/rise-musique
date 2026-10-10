@@ -72,7 +72,7 @@ class Crossfader(private val ctx: Context, private val main: ExoPlayer, private 
       val pair = cur.mediaId + ">" + nxt.mediaId
       if (planFor != pair) { planFor = pair; plan = null; planJob?.cancel()
         val curUri = cur.localConfiguration?.uri; val nxtUri = nxt.localConfiguration!!.uri
-        if (curUri != null) planJob = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        if (curUri != null && curUri.scheme != Streams.SCHEME && nxtUri.scheme != Streams.SCHEME) planJob = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
           val outG = BeatStore.grid(ctx, cur.mediaId, curUri, tailOfMs = dur); val inG = BeatStore.grid(ctx, nxt.mediaId, nxtUri)
           if (outG != null && inG != null) plan = plan(outG, inG, secs * 1000L, dur)
         } }
@@ -102,7 +102,7 @@ class Crossfader(private val ctx: Context, private val main: ExoPlayer, private 
       override fun buildAudioSink(c: android.content.Context, floatOut: Boolean, params: Boolean): androidx.media3.exoplayer.audio.AudioSink =
         androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(c).setAudioProcessors(arrayOf(fx)).build() }
     (ctx as? PlaybackService)?.let { svc -> fx.normGainDb = 0.0; svc.applyGain(main, fx, item, null) }
-    aux = ExoPlayer.Builder(ctx, renderers).setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(streamDataSource(ctx)))
+    aux = ExoPlayer.Builder(ctx, renderers).setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playerDataSource(ctx)))
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
       .build().apply { volume = 0f; setMediaItem(item, fromMs.coerceAtLeast(0)); if (speed != 1f) setPlaybackSpeed(speed); prepare(); play() }
     target = index; fade = f; startedAt = SystemClock.elapsedRealtime()

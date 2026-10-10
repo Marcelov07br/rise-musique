@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
       val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), vm::exportBackup)
       val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), vm::importBackup)
       var crash by remember { mutableStateOf(java.io.File(filesDir, "crash.txt").takeIf { it.exists() }?.readText()) }
+      SideEffect { updatePip() }
       RiseTheme(dark) {
         UpdateDialog(updates, ::installUpdate)
         crash?.let { log -> androidx.compose.material3.AlertDialog(onDismissRequest = { java.io.File(filesDir, "crash.txt").delete(); crash = null },
@@ -64,8 +65,54 @@ class MainActivity : ComponentActivity() {
         radio = vm::radio, radioFor = vm::radioFor, automix = vm::automix, lastfmLogin = vm::lastfmLogin, lastfmLogout = vm::lastfmLogout,
         lastfmToggle = vm::lastfmToggle, openCut = vm::openCut, eqOpen = vm::eqOpen, eqChange = vm::eqChange, normalize = vm::normalize, normalizeAlbum = vm::normalizeAlbum,
         lockLyrics = vm::lockLyrics, wifiOnly = vm::wifiOnly, follow = vm::follow, undo = vm::undo, removeSearch = vm::removeSearch, searchLive = vm::searchLive, clearQueue = vm::clearQueue,
+        searchKind = vm::searchKind, durationFilter = vm::durationFilter, dateFilter = vm::dateFilter, openResult = vm::openResult, saveStream = vm::saveStream,
+        playVideo = vm::playVideo, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
+        video = com.rise.musique.ui.VideoActions(close = { vm.video.close(); exitFullscreen() }, playPause = vm.video::playPause, seek = vm.video::seek, seekBy = vm.video::seekBy,
+          quality = vm.video::quality, subtitle = vm.video::subtitle, fullscreen = { on -> vm.video.fullscreen(on); if (on) enterFullscreen() else exitFullscreen() },
+          next = vm.video::next, pip = { enterPip() }),
         artistPopular = vm::artistPopular, prepareDownload = vm::prepareDownload, removeFromList = vm::removeFromList, previewRange = vm::previewRange, recap = vm::recap, shareRecap = { p -> vm.recapIntent(p)?.let(::startActivity) })) } }
   }
+  // ---- voice ----
+  private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+    if (ok) vm.voice.start() else vm.voiceDenied() }
+  private fun voice() { if (androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+    vm.voice.start() else micPermission.launch(Manifest.permission.RECORD_AUDIO) }
+
+  // ---- video: full screen + picture-in-picture ----
+  private fun bars(show: Boolean) = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).run {
+    systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    if (show) show(androidx.core.view.WindowInsetsCompat.Type.systemBars()) else hide(androidx.core.view.WindowInsetsCompat.Type.systemBars()) }
+  private fun enterFullscreen() { requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE; bars(false) }
+  private fun exitFullscreen() { requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED; bars(true)
+    window.attributes = window.attributes.apply { screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE } }
+  private val pipReceiver = object : android.content.BroadcastReceiver() {
+    override fun onReceive(c: android.content.Context, i: Intent) { when (i.getStringExtra("cmd")) { "toggle" -> vm.video.playPause(); "next" -> vm.video.next() } } }
+  private var pipRegistered = false
+  private fun pipParams(): android.app.PictureInPictureParams? {
+    if (Build.VERSION.SDK_INT < 26) return null
+    val v = vm.state.video
+    val b = android.app.PictureInPictureParams.Builder()
+    val r = PipMath.ratio(v?.aspect ?: (16f / 9f)); b.setAspectRatio(android.util.Rational(r.first, r.second))
+    fun act(cmd: String, icon: Int, title: String, code: Int) = android.app.RemoteAction(android.graphics.drawable.Icon.createWithResource(this, icon), title, title,
+      android.app.PendingIntent.getBroadcast(this, code, Intent(PIP_ACTION).setPackage(packageName).putExtra("cmd", cmd), android.app.PendingIntent.FLAG_IMMUTABLE))
+    if (v != null) b.setActions(listOfNotNull(act("toggle", if (v.playing) R.drawable.ic_w_pause else R.drawable.ic_w_play, if (v.playing) "Pausar" else "Tocar", 1),
+      if (v.hasNext) act("next", R.drawable.ic_w_next, "Próximo", 2) else null))
+    if (Build.VERSION.SDK_INT >= 31) b.setAutoEnterEnabled(v != null && v.playing).setSeamlessResizeEnabled(true)
+    return b.build()
+  }
+  private var lastPip: Triple<Boolean, Boolean, Float>? = null
+  private fun updatePip() { if (Build.VERSION.SDK_INT < 26) return
+    val v = vm.state.video; val key = Triple(v != null, v?.playing == true, v?.aspect ?: 0f); if (key == lastPip) return; lastPip = key
+    if (v != null && !pipRegistered) { androidx.core.content.ContextCompat.registerReceiver(this, pipReceiver, android.content.IntentFilter(PIP_ACTION),
+      androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED); pipRegistered = true }
+    runCatching { pipParams()?.let(::setPictureInPictureParams) } }
+  private fun enterPip() { if (Build.VERSION.SDK_INT >= 26 && vm.state.video != null) runCatching { pipParams()?.let(::enterPictureInPictureMode) } }
+  override fun onUserLeaveHint() { super.onUserLeaveHint(); if (Build.VERSION.SDK_INT in 26..30 && vm.state.video?.playing == true) enterPip() }
+  override fun onPictureInPictureModeChanged(inPip: Boolean, cfg: android.content.res.Configuration) { super.onPictureInPictureModeChanged(inPip, cfg)
+    vm.pip(inPip); if (!inPip && !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) vm.video.pause() }
+  override fun onStop() { super.onStop(); if (!isInPictureInPictureMode) vm.video.pause() }
+  override fun onDestroy() { if (pipRegistered) runCatching { unregisterReceiver(pipReceiver) }; super.onDestroy() }
+
   override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }
   private fun handle(i: Intent?) { if (i?.action == Intent.ACTION_SEND) vm.onIncomingLink(i.getStringExtra(Intent.EXTRA_TEXT)) }
   override fun onWindowFocusChanged(f: Boolean) { super.onWindowFocusChanged(f)
@@ -75,3 +122,10 @@ class MainActivity : ComponentActivity() {
   }
 }
 
+
+const val PIP_ACTION = "com.rise.musique.PIP"
+object PipMath {
+  /** Android only accepts 1:2.39 .. 2.39:1. Visible for tests. */
+  fun ratio(aspect: Float): Pair<Int, Int> { val a = aspect.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+    val c = a.coerceIn(1f / 2.39f + .001f, 2.39f - .001f); return (c * 1000).toInt() to 1000 }
+}

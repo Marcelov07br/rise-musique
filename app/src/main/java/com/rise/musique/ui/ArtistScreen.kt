@@ -127,7 +127,7 @@ fun artistArt(s: UiState, name: String): String =
         color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
     }
     IconButton(preview) { if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onSurface)
-      else Icon(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, if (playing) "Parar prévia" else "Ouvir prévia") }
+      else Icon(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, if (playing) "Parar" else "Tocar") }
     IconButton(download) { Icon(Icons.Rounded.Download, "Baixar") }
   }
 }

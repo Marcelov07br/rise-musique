@@ -134,7 +134,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
           Text(now.title, color = c.onSurface, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-          Text(if (now.isPreview) "Prévia · ${now.artist}" else now.artist, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+          Text(if (now.isPreview) "Prévia · ${now.artist}" else if (now.streaming) "${now.artist} · streaming" else now.artist, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
         }
         PlayButton(now, a, 44.dp, c.primary, c.onPrimary)
         if (!now.isPreview && now.hasNext) IconButton(a.next) { Icon(Icons.Rounded.SkipNext, "Próxima", tint = c.onSurface) }
@@ -157,7 +157,8 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           if (showLyrics) LyricsView(now, a, Modifier.fillMaxSize().padding(top = 40.dp, bottom = 16.dp))
         }
         Text(now.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 32.sp, letterSpacing = (-.5f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(if (now.isPreview) "Prévia de 30 s · ${now.artist}" else now.artist, color = Color.White.copy(.62f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(if (now.isPreview) "Trecho · ${now.artist}" else now.artist, color = Color.White.copy(.62f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (now.streaming) { Spacer(Modifier.height(10.dp)); StreamBar(now, a) }
         Spacer(Modifier.height(18.dp))
         var drag by remember { mutableStateOf<Float?>(null) }
         val dur = now.duration.coerceAtLeast(1)
@@ -339,6 +340,22 @@ val LocalSleep = androidx.compose.runtime.compositionLocalOf { 0L }
             Text(h.artist, color = Color.White.copy(.6f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
       }
+    }
+  }
+}
+
+/** Streaming items: where it's coming from + "Guardar" (keeps what already played, else downloads). */
+@Composable fun StreamBar(now: NowPlaying, a: Actions) {
+  val haptics = rememberHaptics()
+  Row(verticalAlignment = Alignment.CenterVertically) {
+    Icon(Icons.Rounded.Podcasts, null, tint = Color.White.copy(.55f), modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+    Text("STREAMING · YOUTUBE", color = Color.White.copy(.55f), fontSize = 11.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+    val (label, icon) = when (now.saveState) { "saving" -> "Guardando…" to Icons.Rounded.Downloading; "cached", "download" -> "Na biblioteca em breve" to Icons.Rounded.DownloadDone
+      else -> "Guardar" to Icons.Rounded.Download }
+    GlassBox(Modifier.height(40.dp), CircleShape) {
+      Row(Modifier.clickable(enabled = now.saveState.isEmpty()) { haptics.press(); a.saveStream() }.padding(horizontal = 14.dp).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+        Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
     }
   }
 }

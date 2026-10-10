@@ -88,7 +88,7 @@ class PlaybackService : MediaLibraryService() {
     val player = ExoPlayer.Builder(this, renderers)
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
       .setHandleAudioBecomingNoisy(true)
-      .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(streamDataSource(this))).build()
+      .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playerDataSource(this))).build()
     val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
     val shown = LyricPlayer(player).also { lyricPlayer = it }
     session = MediaLibrarySession.Builder(this, shown, object : MediaLibrarySession.Callback {
@@ -167,7 +167,7 @@ class PlaybackService : MediaLibraryService() {
         applyGain(player, mainFx, player.currentMediaItem, f)
       }
       override fun onMediaItemTransition(item: androidx.media3.common.MediaItem?, reason: Int) { fader.onTransition(reason); finishPlay()
-        applyGain(player, mainFx, item, null); loadLyrics(player) }
+        applyGain(player, mainFx, item, null); loadLyrics(player); prefetchNext(player) }
       override fun onPositionDiscontinuity(o: androidx.media3.common.Player.PositionInfo, n: androidx.media3.common.Player.PositionInfo, reason: Int) {
         if (reason == androidx.media3.common.Player.DISCONTINUITY_REASON_SEEK && o.mediaItemIndex == n.mediaItemIndex) fader.abort() }
       override fun onEvents(p: androidx.media3.common.Player, e: androidx.media3.common.Player.Events) {
@@ -184,6 +184,12 @@ class PlaybackService : MediaLibraryService() {
   }
   override fun onGetSession(info: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
+  /** Resolve the next streaming item's URL ahead of time (yt-dlp takes a few seconds). */
+  private fun prefetchNext(p: ExoPlayer) {
+    val i = p.nextMediaItemIndex; if (i == C.INDEX_UNSET) return
+    val id = Streams.idOf(p.getMediaItemAt(i).localConfiguration?.uri) ?: return
+    scope.launch(kotlinx.coroutines.Dispatchers.IO) { Streams.prefetch(id) }
+  }
   private val eqListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> EqStore.applyCurrent(this) }
 
   /** Volume normalization: tag (ReplayGain) > cached EBU R128 measurement > 0 dB. Previews and streams are left alone. */

@@ -61,4 +61,24 @@ class TransitionCrashTest {
       rule.onAllNodesWithText("Biblioteca")[0].performClick(); rule.waitForIdle()   // reselect pops to root
     }
   }
+
+  /** 0.16: video player over the tabs, PiP-like config flip, recreation while a video is open. */
+  @Test fun videoAndPip() {
+    var state by mutableStateOf(UiState(history = album, playlists = mapOf("Treino" to listOf("u:1"))))
+    var alive by mutableStateOf(true)
+    rule.setContent { if (alive) RiseTheme(true) { RiseApp(state, Actions(page = { state = state.copy(page = it) },
+      video = VideoActions(close = { state = state.copy(video = null) }, fullscreen = { state = state.copy(video = state.video?.copy(fullscreen = it)) }))) } }
+    rule.waitForIdle()
+    repeat(2) {
+      rule.onAllNodesWithText("Disco")[0].performClick(); rule.mainClock.advanceTimeBy(150)
+      state = state.copy(video = VideoUi("Clipe", "Canal", "", playing = false)); rule.waitForIdle()
+      rule.onNodeWithContentDescription("Tela cheia").performClick(); rule.waitForIdle()
+      state = state.copy(pip = true); rule.waitForIdle()
+      state = state.copy(pip = false); rule.waitForIdle()
+      alive = false; rule.waitForIdle(); alive = true; rule.waitForIdle()
+      rule.onAllNodesWithContentDescription("Sair da tela cheia")[0].performClick(); rule.waitForIdle()
+      rule.onNodeWithContentDescription("Fechar vídeo").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Ouvir agora").assertCountEquals(1)   // recreated UI starts at the Início root
+    }
+  }
 }

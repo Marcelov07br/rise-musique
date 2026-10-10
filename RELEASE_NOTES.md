@@ -1,3 +1,14 @@
+# Rise Musique 0.16.0
+
+## Novidades (0.16.0)
+- Busca nova, no estilo YouTube Music: separa Músicas, Vídeos, Álbuns, Artistas e Playlists, com capas em alta resolução, carregamento com esqueleto, rolagem infinita e resultados guardados por alguns minutos. As gravações oficiais aparecem primeiro; ao vivo, cover, remix e "slowed" descem, a não ser que você peça.
+- Filtros de duração (curta, média, longa) e de data de envio (hoje, semana, mês, ano).
+- Streaming completo: tocar um resultado toca a música inteira, com fila (os outros resultados vêm em seguida), letra, estatísticas e scrobble no Last.fm. Equalizador, limitador e crossfade valem também para o streaming. Se o link do YouTube expira, o app pega outro sozinho, e a próxima faixa é preparada antes.
+- Guardar: no player, salva na biblioteca o que já tocou (com tags e capa), sem baixar de novo. Se a música ainda não tocou inteira, faz o download normal.
+- Player de vídeo dentro do app, para vídeos da biblioteca e do YouTube: qualidade até 1080p/4K quando existe, tela cheia na horizontal, toque duplo para pular 10 s, deslizar para brilho (esquerda) e volume (direita), pinça para zoom e legendas quando há.
+- Picture-in-picture: o vídeo continua numa janelinha quando você sai do app, com play/pausa e próximo.
+- Busca por voz (pt-BR) com o microfone na barra de busca. A busca cantarolando não entrou: não existe um reconhecedor de melodia público e legítimo para usar no Android.
+
 # Rise Musique 0.15.0
 
 ## Novidades (0.15.0)

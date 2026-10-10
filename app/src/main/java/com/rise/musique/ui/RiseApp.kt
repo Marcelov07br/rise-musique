@@ -31,10 +31,13 @@ enum class Mode(val label: String, val qualities: List<String>) {
   Musica("Música", listOf("128k", "192k", "320k")), Video("Vídeo", listOf("480p", "720p", "1080p", "Máx")) }
 data class HistoryItem(val title: String, val meta: String, val uri: String = "", val art: String = "", val artist: String = "", val duration: Long = 0, val album: String = "", val imported: Boolean = false, val video: Boolean = meta.startsWith("MP4"))
 data class NowPlaying(val key: String, val title: String, val artist: String, val art: String, val playing: Boolean = false,
-  val loading: Boolean = false, val position: Long = 0, val duration: Long = 0, val isPreview: Boolean = false,
+  val loading: Boolean = false, val position: Long = 0, val duration: Long = 0, val isPreview: Boolean = false, val streaming: Boolean = false, val saveState: String = "",
   val hasNext: Boolean = false, val hasPrev: Boolean = false, val shuffle: Boolean = false, val index: Int = 0, val count: Int = 1,
   val repeat: Int = 0, val lyrics: List<com.rise.musique.Lyrics.Line>? = null, val lyricsState: String = "", val quality: String = "")
-data class SearchResult(val url: String, val title: String, val channel: String, val duration: Int, val thumb: String)
+data class SearchResult(val url: String, val title: String, val channel: String, val duration: Int, val thumb: String,
+  /** song, video, album, artist, playlist */ val kind: String = "video", val album: String = "", val subtitle: String = "") {
+  val playable get() = kind == "song" || kind == "video"
+}
 data class FlyEvent(val id: Long, val art: String)
 class FlyTargets { var history by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero); var source by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
   val bounce = androidx.compose.animation.core.Animatable(1f) }
@@ -54,6 +57,9 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val eq: com.rise.musique.EqSettings = com.rise.musique.EqSettings(), val eqProfile: String = "speaker", val eqOpen: Boolean = false,
   val normalize: Boolean = true, val normalizeAlbum: Boolean = false, val lockLyrics: Boolean = false, val wifiOnly: Boolean = false,
   val followed: Set<String> = emptySet(), val trackInfo: Map<String, com.rise.musique.TrackInfo> = emptyMap(),
+  val searchKind: com.rise.musique.SearchKind = com.rise.musique.SearchKind.Songs, val durationFilter: com.rise.musique.DurationFilter = com.rise.musique.DurationFilter.Any,
+  val dateFilter: com.rise.musique.DateFilter = com.rise.musique.DateFilter.Any, val video: VideoUi? = null, val pip: Boolean = false,
+  val voice: VoiceUi? = null,
   val undo: UndoInfo? = null, val popular: Map<String, List<SearchResult>> = emptyMap(), val popularLoading: Set<String> = emptySet(), val hidden: Set<String> = emptySet())
 
 /** Snackbar with Desfazer; the real action runs only after the timeout. */
@@ -87,7 +93,10 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val openArtist: (String) -> Unit = {}, val openAlbum: (String) -> Unit = {}, val openPlaylist: (String) -> Unit = {}, val openDownloads: () -> Unit = {},
   val eqOpen: (Boolean) -> Unit = {}, val eqChange: (com.rise.musique.EqSettings) -> Unit = {}, val normalize: (Boolean) -> Unit = {},
   val normalizeAlbum: (Boolean) -> Unit = {}, val lockLyrics: (Boolean) -> Unit = {}, val wifiOnly: (Boolean) -> Unit = {},
-  val follow: (String) -> Unit = {}, val openSmart: (String, String) -> Unit = { _, _ -> })
+  val follow: (String) -> Unit = {}, val openSmart: (String, String) -> Unit = { _, _ -> },
+  val searchKind: (com.rise.musique.SearchKind) -> Unit = {}, val durationFilter: (com.rise.musique.DurationFilter) -> Unit = {}, val dateFilter: (com.rise.musique.DateFilter) -> Unit = {},
+  val openResult: (SearchResult) -> Unit = {}, val saveStream: () -> Unit = {}, val playVideo: (SearchResult) -> Unit = {}, val playLocalVideo: (HistoryItem) -> Unit = {},
+  val video: VideoActions = VideoActions(), val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -108,6 +117,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
     if (state.settingsOpen) SettingsSheet(state, actions)
     if (state.statsOpen) StatsSheet(state, actions)
     if (state.cutOpen) CutSheet(state, actions)
+    state.video?.let { VideoPlayerScreen(it, actions.video, state.pip, Modifier.fillMaxSize()) }
     if (state.eqOpen) EqSheet(state, actions)
     if (state.recapOpen) RecapSheet(state, actions)
   }
@@ -277,10 +287,17 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { typed = false; keyboard?.hide(); a.search() }),
         colors = TextFieldDefaults.colors(focusedContainerColor = c.surfaceVariant, unfocusedContainerColor = c.surfaceVariant,
           focusedIndicatorColor = c.surfaceVariant, unfocusedIndicatorColor = c.surfaceVariant))
+      RoundIconButton(if (state.voice?.listening == true) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (state.voice?.listening == true) "Parar de ouvir" else "Buscar por voz",
+        { keyboard?.hide(); if (state.voice?.listening == true) a.voiceStop() else a.voiceStart() }, container = c.surfaceVariant)
       if (state.searching) CircularProgressIndicator(Modifier.size(44.dp).padding(10.dp), strokeWidth = 2.dp, color = c.onSurface)
       else RoundIconButton(Icons.Rounded.ArrowForward, "Buscar", a.search, filled = state.query.isNotBlank())
     }
-    LazyColumn(Modifier.weight(1f).nestedScroll(hideKeyboard), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    if (!isLink) SearchFilters(state, a)
+    val resultsList = androidx.compose.foundation.lazy.rememberLazyListState()
+    val nearEnd by remember { derivedStateOf { val li = resultsList.layoutInfo; li.totalItemsCount > 0 && (li.visibleItemsInfo.lastOrNull()?.index ?: 0) >= li.totalItemsCount - 4 } }
+    LaunchedEffect(nearEnd, state.moreResults, state.loadingMore, state.results.size) { if (nearEnd && state.moreResults && !state.loadingMore && !state.searching) a.moreResults() }
+    LazyColumn(Modifier.weight(1f).nestedScroll(hideKeyboard), state = resultsList, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      state.voice?.let { v -> item(key = "voice") { VoicePanel(v, a) } }
       if (isLink && state.results.isEmpty()) item(key = "link") { Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceVariant)
           .clickable { keyboard?.hide(); a.search() }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Link, null); Spacer(Modifier.width(12.dp))
@@ -309,12 +326,16 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
         Text("${state.results.size} faixas · ${state.selected.size} marcadas", Modifier.weight(1f), color = c.onSurfaceVariant, fontSize = 13.sp)
         TextButton(a.selectAll) { Text(if (state.selected.size == state.results.size) "Desmarcar" else "Marcar todas") }
       } }
+      if (state.searching && state.results.isEmpty() && !isLink) items(6, key = { "sk$it" }) { SkeletonRow(state.searchKind) }
       itemsIndexed(state.results, key = { _, it -> it.url }) { i, r ->
         Box(Modifier.cascade(i)) {
-        ResultCard(r, r.url in state.selected, state.isPlaylist, state.previewing == r.url, state.previewing == r.url && state.previewLoading,
-          { a.select(r) }, { a.preview(r) }, { a.radio(r) }) }
+        if (!r.playable) CollectionResult(r) { keyboard?.hide(); if (r.kind == "artist") a.openArtist(r.title) else a.openResult(r) }
+        else ResultCard(r, r.url in state.selected, state.isPlaylist, state.previewing == r.url, state.previewing == r.url && state.previewLoading,
+          { a.select(r) }, { a.preview(r) }, { a.radio(r) }, if (r.kind == "video" || state.searchKind == com.rise.musique.SearchKind.Videos) ({ a.playVideo(r) }) else null) }
       }
-      if (state.moreResults) item { PillButton(if (state.loadingMore) "Carregando…" else "Carregar mais resultados", a.moreResults, Modifier.fillMaxWidth(), filled = false, enabled = !state.loadingMore) }
+      if (state.moreResults) item(key = "more") { Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+        if (state.loadingMore) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = c.onSurface)
+        else TextButton(a.moreResults) { Text("Carregar mais", color = c.onSurface) } } }
       if (state.results.isEmpty() && !state.searching) {
         if (q.isNotBlank() && state.status == "Nada encontrado" && local.isEmpty) item(key = "none") {
           EmptyState(Icons.Rounded.SearchOff, "Nada encontrado para “$q”", "Confira a grafia, tente o nome do artista ou cole um link.") }
@@ -353,7 +374,7 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
 }
 
 @Composable private fun ResultCard(r: SearchResult, selected: Boolean, multi: Boolean, playing: Boolean, loading: Boolean,
-                                   onSelect: () -> Unit, onPreview: () -> Unit, onRadio: () -> Unit = {}) {
+                                   onSelect: () -> Unit, onPreview: () -> Unit, onRadio: () -> Unit = {}, onVideo: (() -> Unit)? = null) {
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   Row(Modifier.fillMaxWidth().weightedPress(src, 22.dp).clip(RoundedCornerShape(22.dp))
@@ -361,7 +382,7 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
       .clickable(src, null, onClick = onSelect).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
     if (multi) { Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
       tint = if (selected) c.primary else c.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, end = 10.dp).size(22.dp)) }
-    Box(Modifier.size(width = 112.dp, height = 63.dp).clip(RoundedCornerShape(14.dp)).background(c.outline)) {
+    Box(Modifier.size(width = if (r.kind == "song") 63.dp else 112.dp, height = 63.dp).clip(RoundedCornerShape(14.dp)).background(c.outline)) {
       AsyncImage(r.thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
       if (r.duration > 0) Text(fmt(r.duration), Modifier.align(Alignment.BottomEnd).padding(4.dp).clip(CircleShape)
         .background(androidx.compose.ui.graphics.Color(0xAA000000)).padding(horizontal = 6.dp, vertical = 1.dp),
@@ -370,13 +391,14 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
     Spacer(Modifier.width(12.dp))
     Column(Modifier.weight(1f)) {
       Text(r.title, color = c.onSurface, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-      Text(r.channel, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+      Text(r.subtitle.ifBlank { r.channel }, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
     Spacer(Modifier.width(8.dp))
-    RoundIconButton(Icons.Rounded.Radio, "Rádio desta música", onRadio, container = c.background)
+    if (onVideo != null) RoundIconButton(Icons.Rounded.SmartDisplay, "Assistir vídeo", onVideo, container = c.background)
+    else RoundIconButton(Icons.Rounded.Radio, "Rádio desta música", onRadio, container = c.background)
     Spacer(Modifier.width(4.dp))
     if (loading) CircularProgressIndicator(Modifier.size(44.dp).padding(11.dp), strokeWidth = 2.dp, color = c.onSurface)
-    else RoundIconButton(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, "Prévia de 30 segundos", onPreview, container = c.background)
+    else RoundIconButton(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, if (playing) "Parar" else "Tocar", onPreview, container = c.background)
   }
 }
 

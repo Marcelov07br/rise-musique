@@ -29,7 +29,8 @@ class DownloadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
       setForeground(info(title, 0f))
       setProgress(workDataOf("p" to 0f, "running" to true, "stage" to "Preparando"))
       val item = Engine.download(applicationContext, d.getString("url")!!, Mode.valueOf(d.getString("mode")!!), d.getString("quality")!!,
-        d.getString("format") ?: "MP3", d.getString("cut"), d.getString("tree")?.let(Uri::parse), id.toString()) { p, line ->
+        d.getString("format") ?: "MP3", d.getString("cut"), d.getString("tree")?.let(Uri::parse), id.toString(),
+        d.getString("prefill")?.let { java.io.File(it) }, d.getString("formatId"), title) { p, line ->
         val now = System.currentTimeMillis()
         val stage = if (line.startsWith("[RiseSave]")) "Salvando" else DownloadStage.fromLine(line, lastStage)
         if (now - last > 500 || stage != lastStage) { last = now; lastStage = stage

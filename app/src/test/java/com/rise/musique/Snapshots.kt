@@ -112,3 +112,28 @@ class Round15 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
 class Round15Tall { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT, screenHeight = 4200))
   @Test fun settings() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SettingsContent(UiState(normalize = true, lockLyrics = true, wifiOnly = true), Actions()) } } }
 }
+
+private val songs = listOf(
+  SearchResult("s1", "Instant Crush (feat. Julian Casablancas)", "Daft Punk e Julian Casablancas", 338, "", "song", "Random Access Memories", "Daft Punk e Julian Casablancas • Random Access Memories"),
+  SearchResult("s2", "Da Funk", "Daft Punk", 329, "", "song", "Homework", "Daft Punk • Homework"),
+  SearchResult("s3", "One More Time", "Daft Punk", 320, "", "song", "Discovery", "Daft Punk • Discovery"),
+  SearchResult("s4", "Get Lucky (feat. Pharrell Williams & Nile Rodgers)", "Daft Punk", 369, "", "song", "Random Access Memories", "Daft Punk • Random Access Memories"))
+private val albumsR = listOf(SearchResult("a1", "Discovery", "Daft Punk", 0, "", "album", "Discovery", "Álbum • Daft Punk • 2001"),
+  SearchResult("a2", "Homework", "Daft Punk", 0, "", "album", "Homework", "Álbum • Daft Punk • 1997"),
+  SearchResult("ar", "Daft Punk", "Daft Punk", 0, "", "artist", "", "78,2 mi ouvintes mensais"))
+private val streamNp = NowPlaying("stream:s1", "Instant Crush (feat. Julian Casablancas)", "Daft Punk", "", playing = true, streaming = true,
+  quality = "AAC · 129 kbps · 44.1 kHz · Estéreo", position = 94_000, duration = 338_000, hasNext = true, count = 4, index = 0)
+private val vid = VideoUi("Daft Punk - Digital Love (Official Video)", "Daft Punk", "", playing = true, position = 61_000, duration = 302_000,
+  qualities = listOf(240, 360, 720, 1080), quality = 1080, subtitles = listOf("pt (auto)"), subtitle = "pt (auto)", hasNext = true)
+class Round16 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val base = UiState(page = "Buscar", query = "daft punk", status = "")
+  @Test fun searchFilters() = p.snapshot { RiseTheme(true) { RiseApp(base.copy(results = songs, durationFilter = DurationFilter.Medium, moreResults = true), Actions()) } }
+  @Test fun searchAlbums() = p.snapshot { RiseTheme(true) { RiseApp(base.copy(results = albumsR, searchKind = SearchKind.Albums), Actions()) } }
+  @Test fun searchSkeleton() = p.snapshot { RiseTheme(true) { RiseApp(base.copy(searching = true, searchKind = SearchKind.Videos, dateFilter = DateFilter.Week), Actions()) } }
+  @Test fun voiceSearch() = p.snapshot { RiseTheme(true) { RiseApp(UiState(page = "Buscar", voice = VoiceUi(partial = "get lucky daft", level = .7f)), Actions()) } }
+  @Test fun streamingPlayer() = p.snapshot { RiseTheme(true) { RiseApp(base.copy(results = songs, now = streamNp), Actions(), initialExpanded = true) } }
+  @Test fun videoPortrait() = p.snapshot { RiseTheme(true) { RiseApp(base.copy(results = songs, video = vid), Actions()) } }
+}
+class Round16Land { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(screenWidth = 2400, screenHeight = 1080, orientation = ScreenOrientation.LANDSCAPE, nightMode = NightMode.NIGHT))
+  @Test fun videoLandscape() = p.snapshot { RiseTheme(true) { RiseApp(UiState(video = vid.copy(fullscreen = true)), Actions()) } }
+}
