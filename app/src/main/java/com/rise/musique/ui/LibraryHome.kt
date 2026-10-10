@@ -1,4 +1,5 @@
 package com.rise.musique.ui
+import androidx.compose.ui.layout.layout
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -17,21 +18,24 @@ import coil.compose.AsyncImage
 
 fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d:%02d".format(it / 60, it % 60) }
 
-@Composable fun Cover(h: HistoryItem, modifier: Modifier) {
-  Box(modifier.clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+@Composable fun Cover(h: HistoryItem, modifier: Modifier, radius: androidx.compose.ui.unit.Dp = 14.dp) {
+  Box(modifier.clip(RoundedCornerShape(radius)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
     if (h.art.isNotBlank()) AsyncImage(h.art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     else Icon(if (h.video) Icons.Rounded.Movie else Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
   }
 }
 
-@Composable fun LibraryHome(s: UiState, a: Actions, modifier: Modifier) {
+@Composable fun LibraryHome(s: UiState, a: Actions, modifier: Modifier, list: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
+                            rows: Pair<androidx.compose.foundation.lazy.LazyListState, androidx.compose.foundation.lazy.LazyListState>? = null) {
   val c = MaterialTheme.colorScheme
   val shown = visibleHistory(s)
   var importMenu by remember { mutableStateOf(false) }
   var sortMenu by remember { mutableStateOf(false) }
   var rename by remember { mutableStateOf<String?>(null) }
   var deletePlaylist by remember { mutableStateOf<String?>(null) }
-  LazyColumn(modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = if (s.now != null) 104.dp else 24.dp)) {
+  val albumRow = rows?.first ?: androidx.compose.foundation.lazy.rememberLazyListState()
+  val playlistRow = rows?.second ?: androidx.compose.foundation.lazy.rememberLazyListState()
+  LazyColumn(modifier.padding(horizontal = 24.dp), state = list, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = if (s.now != null) 104.dp else 24.dp)) {
     item { Row(verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f)) {
         Text(when (s.historyView) { "Tudo" -> "Ouvir agora"; else -> s.historyView }, style = MaterialTheme.typography.headlineLarge)
@@ -92,15 +96,18 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     items(recent, key = { it.uri }) { h -> TrackRow(h, s, a) }
     val albums = if (home) shown.filter { !it.video && it.album.isNotBlank() }.groupBy { it.album to it.artist }.entries.take(20) else emptyList()
     if (albums.isNotEmpty()) {
-      item { Text("Álbuns e singles", style = MaterialTheme.typography.titleLarge) }
-      item { LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        items(albums) { entry -> val h = entry.value.first()
-          Column(Modifier.width(156.dp).clickable { a.albumFilter(h.album) }) {
-            Cover(h, Modifier.size(156.dp)); Spacer(Modifier.height(10.dp))
-            Text(h.album, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-            Text(h.artist.ifBlank { "${entry.value.size} faixas" }, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
-          }
-        }
+      item(key = "albums-title") { Text("Álbuns e singles", style = MaterialTheme.typography.titleLarge) }
+      item(key = "albums") { Carousel(albumRow) {
+        items(albums, key = { it.key.first + "|" + it.key.second }) { entry -> val h = entry.value.first()
+          CoverCard(h, h.album, h.artist.ifBlank { "${entry.value.size} faixas" }, "cover-al-${h.album}") { a.albumFilter(h.album) } }
+      } }
+    }
+    val lists = if (home) s.playlists.entries.sortedBy { it.key }.map { (name, uris) -> Triple(name, uris.size, uris.firstNotNullOfOrNull { u -> s.history.firstOrNull { it.uri == u && it.art.isNotBlank() } }) } else emptyList()
+    if (lists.isNotEmpty()) {
+      item(key = "lists-title") { Text("Suas playlists", style = MaterialTheme.typography.titleLarge) }
+      item(key = "lists") { Carousel(playlistRow) {
+        items(lists, key = { it.first }) { (name, n, cover) ->
+          CoverCard(cover ?: HistoryItem(name, "", "pl:$name"), name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-pl-$name") { a.historyView(name) } }
       } }
     }
     if (home && shown.size > 6) {
@@ -124,7 +131,8 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   var pick by remember(h.uri) { mutableStateOf(false) }
   var delete by remember(h.uri) { mutableStateOf(false) }
   Box {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).combinedClickable(onClick = { a.play(h) }, onLongClick = { menu = true }).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Row(Modifier.fillMaxWidth().weightedPress(press, 16.dp).clip(RoundedCornerShape(16.dp)).combinedClickable(press, null, onClick = { a.play(h) }, onLongClick = { menu = true }).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
       if (number != null) Text("$number", Modifier.width(36.dp), color = c.onSurfaceVariant, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
       else Cover(h, Modifier.size(60.dp))
       Spacer(Modifier.width(14.dp))
@@ -162,4 +170,27 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     text = { Text(if (h.imported) "O arquivo original permanece no celular." else "O arquivo baixado será apagado do armazenamento.") },
     confirmButton = { TextButton({ delete = false; if (h.imported) a.removeLocal(h) else a.delete(h) }) { Text(if (h.imported) "Remover" else "Apagar") } },
     dismissButton = { TextButton({ delete = false }) { Text("Cancelar") } })
+}
+
+/** Horizontal row that bleeds to the screen edges and snaps cards to the left margin with natural deceleration. */
+@Composable private fun Carousel(state: androidx.compose.foundation.lazy.LazyListState, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+  val bleed = 24.dp
+  LazyRow(Modifier.layout { m, cs -> val p = bleed.roundToPx()
+      val pl = m.measure(cs.copy(minWidth = cs.maxWidth + 2 * p, maxWidth = cs.maxWidth + 2 * p)); layout(cs.maxWidth, pl.height) { pl.place(-p, 0) } },
+    state = state, contentPadding = PaddingValues(horizontal = bleed), horizontalArrangement = Arrangement.spacedBy(16.dp),
+    flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(state, androidx.compose.foundation.gestures.snapping.SnapPosition.Start),
+    content = content)
+}
+
+/** Flat cover card with weighted press; its cover is the shared element that becomes the collection header. */
+@Composable private fun CoverCard(h: HistoryItem, title: String, subtitle: String, sharedKey: String, onClick: () -> Unit) {
+  val c = MaterialTheme.colorScheme
+  val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+  val haptics = rememberHaptics()
+  val r = morphCorner(8.dp, 14.dp)
+  Column(Modifier.width(156.dp).weightedPress(src, 14.dp).clickable(src, null) { haptics.tick(); onClick() }) {
+    Cover(h, Modifier.size(156.dp).sharedCover(sharedKey), r?.value ?: 14.dp); Spacer(Modifier.height(8.dp))
+    Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+    Text(subtitle, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+  }
 }

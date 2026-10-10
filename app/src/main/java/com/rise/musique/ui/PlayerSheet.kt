@@ -27,7 +27,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-private val bouncy = spring<Float>(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow) // quica de leve; p é travado em 0..1 no layout
+private val bouncy = Motion.settle<Float>(380f) // sem quique; carrega a velocidade do dedo
 private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 60) }
 
 /**
@@ -71,10 +71,10 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         .graphicsLayer { scaleX = scale; scaleY = scale; shape = RoundedCornerShape(corner.dp); clip = true }
         .background(c.surface.copy(alpha = (.62f + .38f * p).coerceIn(0f, 1f)))
         .draggable(dragState, Orientation.Vertical, onDragStarted = { haptics.tick() }, onDragStopped = { v ->
-          val target = when { v < -800 -> 1f; v > 800 -> 0f; else -> if (f.value > .5f) 1f else 0f }
-          f.animateTo(target, bouncy) })
+          val target = when { v < -Motion.FlingVelocity -> 1f; v > Motion.FlingVelocity -> 0f; else -> if (f.value > .5f) 1f else 0f }
+          f.animateTo(target, bouncy, initialVelocity = -v / (fullH - miniH)) })
         .clickable(enabled = p < .05f, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
-          scope.launch { f.animateTo(1f, bouncy) } }) {
+          scope.launch { f.animateTo(1f, Motion.enter(Motion.Medium)) } }) {
 
       // Mini player de vidro: cópia desfocada da capa + véu translúcido + borda de luz.
       if (p < .99f) GlassBox(Modifier.matchParentSize().alpha((1f - p).coerceIn(0f, 1f)), RoundedCornerShape(corner.dp), now.art,
@@ -96,9 +96,9 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       val onBg = if (p > .5f) Color.White else c.onSurface
 
       // Capa: o mesmo elemento cresce do mini até o tamanho cheio.
-      val artAlpha by animateFloatAsState(if (showLyrics && !wide && p > .9f) 0f else 1f, tween(300), label = "art")
+      val artAlpha by animateFloatAsState(if (showLyrics && !wide && p > .9f) 0f else 1f, Motion.standard(), label = "art")
       // Capa que respira: cheia no play, recua no pause, sempre com mola.
-      val breath by animateFloatAsState(if (now.playing || p < .5f) 1f else 0.84f, spring(dampingRatio = 0.45f, stiffness = 260f), label = "breath")
+      val breath by animateFloatAsState(if (now.playing || p < .5f) 1f else 0.84f, Motion.settle(260f), label = "breath")
       // Capa arremessável: arrasta na horizontal; forte o bastante troca de faixa, fraco volta com mola.
       val throwX = remember { Animatable(0f) }
       val maxWpx = with(density) { maxW.toPx() }
@@ -117,11 +117,11 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
               val go = if (throwX.value < -maxWpx / 3 || v < -1800f) 1 else if (throwX.value > maxWpx / 3 || v > 1800f) -1 else 0
               val canGo = (go == 1 && now.hasNext) || (go == -1 && now.hasPrev)
               if (go != 0 && canGo) {
-                haptics.press(); throwX.animateTo(-go * maxWpx * 1.3f, spring(stiffness = 500f))
+                haptics.press(); throwX.animateTo(-go * maxWpx * 1.3f, Motion.settle(500f))
                 if (go == 1) a.next() else a.prev()
                 throwX.snapTo(go * maxWpx * 1.1f)
               }
-              throwX.animateTo(0f, spring(dampingRatio = 0.55f, stiffness = 320f))
+              throwX.animateTo(0f, Motion.settle(320f))
             }) else Modifier).shadow(lerp(0.dp, 24.dp, p), RoundedCornerShape(lerp(12.dp, 28.dp, p)))
           .clip(RoundedCornerShape(lerp(12.dp, 28.dp, p))).background(c.outline), contentAlignment = Alignment.Center) {
         if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -223,7 +223,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
     items(lines.size) { i -> val l = lines[i]
       val dist = kotlin.math.abs(i - cur).coerceAtMost(4)
       // Linha ativa: maior e nítida; as outras menores, apagadas e desfocadas conforme a distância.
-      val focus by animateFloatAsState(if (i == cur) 1f else 0f, spring(dampingRatio = .7f, stiffness = 260f), label = "focus")
+      val focus by animateFloatAsState(if (i == cur) 1f else 0f, Motion.settle(260f), label = "focus")
       val fz = focus.coerceIn(0f, 1f)
       val blurDp = if (Build.VERSION.SDK_INT >= 31) (dist * 1.6f * (1f - fz)).dp else 0.dp
       Text(l.text.ifBlank { "♪" }, Modifier.fillMaxWidth()
@@ -267,7 +267,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 /** Ondas no ritmo: barras em anel em volta da capa, puxadas pelas 8 faixas de energia do áudio tocando. */
 @Composable private fun AudioRing(m: Modifier, color: Color, playing: Boolean) {
   val bands by com.rise.musique.AudioLevels.bands.collectAsState()
-  val fade by animateFloatAsState(if (playing) 1f else 0f, tween(400), label = "ring")
+  val fade by animateFloatAsState(if (playing) 1f else 0f, Motion.standard(Motion.Long), label = "ring")
   val t = rememberInfiniteTransition(label = "spin").animateFloat(0f, 360f, infiniteRepeatable(tween(24_000, easing = LinearEasing)), label = "a")
   Canvas(m) {
     if (fade <= 0.01f) return@Canvas
@@ -291,7 +291,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 /** Onda que sai do lado tocado com "−10 s" ou "+10 s". */
 @Composable private fun BoxScope.SeekRipple(id: Long, dir: Int) {
   val v = remember(id) { Animatable(0f) }
-  LaunchedEffect(id) { v.animateTo(1f, tween(650, easing = FastOutSlowInEasing)) }
+  LaunchedEffect(id) { v.animateTo(1f, Motion.enter(Motion.ExtraLong)) }
   if (v.value >= 1f) return
   Box(Modifier.align(if (dir < 0) Alignment.CenterStart else Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.5f)
       .graphicsLayer { alpha = 1f - v.value }.background(Brush.horizontalGradient(

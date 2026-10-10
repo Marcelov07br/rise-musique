@@ -1,4 +1,12 @@
-# Rise Musique 0.12.1
+# Rise Musique 0.13.0
+
+## Movimento (0.13.0)
+- Abrir um álbum ou playlist agora é uma transição contínua: a capa sai do cartão e cresce até o topo da tela, os cantos se ajustam, o fundo vivo aparece e o título sobe suavemente. Fechar faz o caminho inverso até o lugar de origem.
+- Tudo pode ser interrompido: voltar no meio da animação inverte a partir de onde estava. O gesto de voltar do Android mostra a prévia seguindo o dedo.
+- Arraste para baixo para fechar o player e as telas de álbum: a tela acompanha o dedo e, ao soltar, termina ou volta de acordo com a velocidade.
+- Toques com peso: cartões e faixas afundam de leve e escurecem ao pressionar.
+- Fileiras horizontais de álbuns e da nova seção "Suas playlists" param alinhadas à margem.
+- Movimento unificado, sem quiques exagerados, e desempenho melhor em telas de 120 Hz (menos trabalho por quadro e perfil de inicialização pré-compilado).
 
 ## Acabamento (0.12.1)
 - Telas de álbum e playlist: o fundo vivo agora ocupa a tela inteira, por trás das barras do sistema, e se dissolve suavemente na cor de fundo, sem cortes nem blocos desalinhados.

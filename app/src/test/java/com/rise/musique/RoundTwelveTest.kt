@@ -95,3 +95,12 @@ class CutTest {
     assertEquals(3, CutInfo.peaks(FloatArray(0), 0, 3).size)
   }
 }
+
+class MotionTest {
+  @Test fun curves() {
+    val d = com.rise.musique.ui.Motion.EmphasizedDecelerate; val a = com.rise.musique.ui.Motion.EmphasizedAccelerate
+    assertEquals(0f, d.transform(0f), 1e-3f); assertEquals(1f, d.transform(1f), 1e-3f)
+    assertTrue(d.transform(.3f) > .7f); assertTrue(a.transform(.3f) < .1f)
+    for (i in 0..100) { val t = i / 100f; assertTrue(d.transform(t) in -0.001f..1.001f) } // never overshoots
+  }
+}

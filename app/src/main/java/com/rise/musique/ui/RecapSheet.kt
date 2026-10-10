@@ -40,7 +40,7 @@ import com.rise.musique.Recap
 /** Story-format card: lines rise in one after another and the minutes count up. All progress values clamped to 0..1. */
 @Composable fun RecapCard(r: Recap, modifier: Modifier = Modifier) {
   val enter = remember { Animatable(if (StaticPreview.on) 1f else 0f) }
-  LaunchedEffect(r) { enter.animateTo(1f, tween(1600, easing = FastOutSlowInEasing)) }
+  LaunchedEffect(r) { enter.animateTo(1f, Motion.enter(1600)) }
   fun stage(i: Int) = ((enter.value * 6f - i) ).coerceIn(0f, 1f)
   Box(modifier.clip(RoundedCornerShape(28.dp))) {
     LivingArtwork("", Modifier.matchParentSize(), dim = 0f)

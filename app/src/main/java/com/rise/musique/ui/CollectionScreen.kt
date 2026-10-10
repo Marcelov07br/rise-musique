@@ -14,6 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -48,7 +51,8 @@ private val TopBarHeight = 64.dp
 }
 
 /** Album or playlist: collapsing hero header, glass actions and a numbered list, over [CollectionBackdrop]. */
-@Composable fun CollectionScreen(s: UiState, a: Actions, list: LazyListState, modifier: Modifier = Modifier) {
+@Composable fun CollectionScreen(s: UiState, a: Actions, list: LazyListState, modifier: Modifier = Modifier, onBack: () -> Unit = {},
+                                 dismiss: androidx.compose.animation.core.Animatable<Float, androidx.compose.animation.core.AnimationVector1D> = remember { androidx.compose.animation.core.Animatable(0f) }) {
   val c = MaterialTheme.colorScheme
   val tracks = visibleHistory(s)
   val isAlbum = s.albumFilter.isNotBlank()
@@ -59,21 +63,44 @@ private val TopBarHeight = 64.dp
   val meta = listOf(if (isAlbum) "ÁLBUM" else "PLAYLIST", artist.uppercase(), "${tracks.size} ${if (tracks.size == 1) "FAIXA" else "FAIXAS"}",
     if (totalMs > 0) "${(totalMs / 60_000).coerceAtLeast(1)} MIN" else "").filter(String::isNotBlank).joinToString(" · ")
   val haptics = rememberHaptics()
-  val back = { haptics.tick(); if (isAlbum) a.albumFilter("") else a.historyView("Tudo") }
-  androidx.activity.compose.BackHandler(onBack = back)
-  val collapse = collapseOf(list)
-  Box(modifier) {
+  val back = { haptics.tick(); onBack() }
+  val collapseState = rememberUpdatedState(collapseOf(list)); val collapse = collapseState.value
+  // Arrastar para fechar: puxando para baixo no topo da lista, a tela segue o dedo 1:1 (escala/fade proporcionais)
+  // e ao soltar decide pela distância ou pela velocidade.
+  val scope = rememberCoroutineScope()
+  var heightPx by remember { mutableFloatStateOf(1f) }
+  LaunchedEffect(Unit) { dismiss.snapTo(0f) }
+  val drag = remember(list) { object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+    override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource) =
+      if (dismiss.value > 0f && available.y < 0f) { val d = (available.y / heightPx).coerceAtLeast(-dismiss.value)
+        scope.launch { dismiss.snapTo((dismiss.value + d).coerceIn(0f, 1f)) }; androidx.compose.ui.geometry.Offset(0f, d * heightPx) }
+      else androidx.compose.ui.geometry.Offset.Zero
+    override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource) =
+      if (available.y > 0f && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
+        scope.launch { dismiss.snapTo((dismiss.value + available.y / heightPx).coerceIn(0f, 1f)) }; available }
+      else androidx.compose.ui.geometry.Offset.Zero
+    override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+      if (dismiss.value <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+      if (dismiss.value > .25f || available.y > Motion.FlingVelocity) { haptics.tick(); onBack() }
+      else dismiss.animateTo(0f, Motion.settle(), initialVelocity = available.y / heightPx)
+      return available
+    }
+  } }
+  Box(modifier.onSizeChanged { heightPx = it.height.toFloat().coerceAtLeast(1f) }.nestedScroll(drag).graphicsLayer {
+    val d = dismiss.value.coerceIn(0f, 1f); translationY = d * heightPx * .5f; val sc = 1f - .1f * d; scaleX = sc; scaleY = sc; alpha = 1f - .4f * d }) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = TopBarHeight, bottom = if (s.now != null) 104.dp else 24.dp)) {
       item(key = "header") {
         Column(Modifier.fillMaxWidth().height(HeaderHeight - TopBarHeight).padding(horizontal = 24.dp)
           .graphicsLayer { alpha = (1f - collapse * 1.2f).coerceIn(0f, 1f) }, horizontalAlignment = Alignment.CenterHorizontally) {
-          Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapse.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
-            .shadow(24.dp, RoundedCornerShape(16.dp))) {
-            if (hero != null) Cover(hero, Modifier.fillMaxSize())
+          val corner = morphCorner(14.dp, 8.dp)?.value ?: 8.dp
+          Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
+            .sharedCover(if (isAlbum) "cover-al-$title" else "cover-pl-$title")) {
+            if (hero != null) Cover(hero, Modifier.fillMaxSize(), corner)
             else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(.12f)), contentAlignment = Alignment.Center) {
               Icon(if (isAlbum) Icons.Rounded.Album else Icons.Rounded.QueueMusic, null, tint = Color.White.copy(.75f), modifier = Modifier.size(64.dp)) }
           }
           Spacer(Modifier.height(16.dp))
+          Column(Modifier.enterRise(), horizontalAlignment = Alignment.CenterHorizontally) {
           Text(title, color = Color.White, fontSize = 24.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
           Spacer(Modifier.height(4.dp))
           Text(meta, color = Color.White.copy(.7f), fontSize = 12.sp, letterSpacing = 1.sp, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -88,6 +115,7 @@ private val TopBarHeight = 64.dp
             }
             GlassIcon(Icons.Rounded.PlaylistAdd, "Adicionar tudo à fila", { haptics.tick(); a.queueAll(tracks) }, enabled = tracks.isNotEmpty())
           }
+          }
         }
       }
       if (tracks.isEmpty()) item(key = "empty") {
@@ -97,7 +125,7 @@ private val TopBarHeight = 64.dp
         }
       }
       itemsIndexed(tracks, key = { _, h -> h.uri }) { i, h ->
-        Box(Modifier.padding(horizontal = 16.dp)) { TrackRow(h, s, a, number = i + 1) }
+        Box(Modifier.padding(horizontal = 16.dp).enterRise()) { TrackRow(h, s, a, number = i + 1) }
         if (i < tracks.lastIndex) HorizontalDivider(Modifier.padding(start = 64.dp, end = 16.dp), color = c.outlineVariant)
       }
     }

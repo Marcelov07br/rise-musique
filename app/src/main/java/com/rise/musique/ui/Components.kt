@@ -21,16 +21,15 @@ object StaticPreview { @JvmField var on = false }
 @Composable fun Modifier.cascade(index: Int): Modifier {
   if (StaticPreview.on || androidx.compose.ui.platform.LocalInspectionMode.current) return this
   val a = remember { Animatable(0f) }
-  LaunchedEffect(Unit) { kotlinx.coroutines.delay((index.coerceAtMost(12) * 45L)); a.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = 300f)) }
+  LaunchedEffect(Unit) { kotlinx.coroutines.delay((index.coerceAtMost(12) * 45L)); a.animateTo(1f, Motion.enter(Motion.Long)) }
   return graphicsLayer { val v = a.value; alpha = v.coerceIn(0f, 1f); translationY = (1f - v) * 60f; scaleX = 0.94f + 0.06f * v; scaleY = scaleX }
 }
 
 /** Afunda ao tocar e volta com mola. */
 @Composable fun Modifier.springPress(src: MutableInteractionSource): Modifier {
   val pressed by src.collectIsPressedAsState()
-  val s by animateFloatAsState(if (pressed) 0.94f else 1f,
-    spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium), label = "press")
-  return graphicsLayer { scaleX = s; scaleY = s }
+  val s = animateFloatAsState(if (pressed) 0.94f else 1f, Motion.press(), label = "press")
+  return graphicsLayer { scaleX = s.value; scaleY = s.value } // leitura adiada: só redesenha
 }
 
 @Composable fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
@@ -57,7 +56,7 @@ object StaticPreview { @JvmField var on = false }
   val goingRight = remember { mutableStateOf(true) }
   val last = remember { mutableFloatStateOf(idx) }
   if (idx != last.floatValue) { goingRight.value = idx > last.floatValue; last.floatValue = idx }
-  val fast = spring<Float>(dampingRatio = 0.55f, stiffness = 700f); val slow = spring<Float>(dampingRatio = 0.6f, stiffness = 180f)
+  val fast = Motion.settle<Float>(700f); val slow = Motion.settle<Float>(260f)
   val left by animateFloatAsState(idx, if (goingRight.value) slow else fast, label = "l")
   val right by animateFloatAsState(idx + 1, if (goingRight.value) fast else slow, label = "r")
   val n = options.size.coerceAtLeast(1)

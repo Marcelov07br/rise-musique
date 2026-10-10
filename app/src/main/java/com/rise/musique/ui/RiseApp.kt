@@ -1,4 +1,5 @@
 package com.rise.musique.ui
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -95,29 +96,64 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   }
 }
 
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0) {
   val c = MaterialTheme.colorScheme
   val collection = state.page != "Buscar" && state.page != "Downloads" && (state.albumFilter.isNotBlank() || state.historyView in state.playlists)
-  val collectionKey = state.albumFilter + "|" + state.historyView
+  // Keep the last opened collection so its screen can play the reverse transition after the state already went back.
+  var last by remember { mutableStateOf(state) }
+  if (collection) last = state
+  val shownCollection = if (collection) state else state.copy(albumFilter = last.albumFilter, historyView = last.historyView, page = last.page)
+  val collectionKey = shownCollection.albumFilter + "|" + shownCollection.historyView
   val collectionList = androidx.compose.runtime.key(collectionKey) { androidx.compose.foundation.lazy.rememberLazyListState(initialCollectionItem) }
+  val homeList = androidx.compose.foundation.lazy.rememberLazyListState()
+  val homeRows = androidx.compose.foundation.lazy.rememberLazyListState() to androidx.compose.foundation.lazy.rememberLazyListState()
+  // Seekable: open/close are one interruptible transition; predictive back scrubs it with the finger.
+  val seek = remember { androidx.compose.animation.core.SeekableTransitionState(collection) }
+  val scope = rememberCoroutineScope()
+  var seeking by remember { mutableStateOf(false) }
+  LaunchedEffect(collection) { if (!seeking) seek.animateTo(collection, Motion.enter(Motion.Long)) }
+  val closeCollection = { if (shownCollection.albumFilter.isNotBlank()) actions.albumFilter("") else actions.historyView("Tudo") }
+  androidx.activity.compose.PredictiveBackHandler(enabled = collection) { progress ->
+    try {
+      seeking = true
+      progress.collect { e -> seek.seekTo((e.progress * .9f).coerceIn(0f, 1f), targetState = false) }
+      seek.animateTo(false, Motion.enter(Motion.Medium)); closeCollection()
+    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+      scope.launch { seek.animateTo(true, Motion.settle()) }; throw e
+    } finally { seeking = false }
+  }
+  val transition = androidx.compose.animation.core.rememberTransition(seek, label = "collection")
+  val backdropAlpha = transition.animateFloat({ Motion.enter(Motion.Long) }, label = "backdrop") { if (it) 1f else 0f }
+  val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
   Box(Modifier.fillMaxSize().background(c.background)) {
-    // Álbum/playlist: fundo vivo fixo cobrindo a tela inteira (atrás da barra de status e da de navegação),
-    // que se dissolve na cor de base para baixo e conforme a lista rola, sem cortes.
-    if (collection) CollectionBackdrop(visibleHistory(state).firstOrNull { it.art.isNotBlank() }?.art.orEmpty(),
-      collapseOf(collectionList), Modifier.fillMaxSize())
+    // Álbum/playlist: fundo vivo fixo cobrindo a tela inteira, entrando em fade junto com a transição.
+    if (collection || transition.isRunning) CollectionBackdrop(visibleHistory(shownCollection).firstOrNull { it.art.isNotBlank() }?.art.orEmpty(),
+      collapseOf(collectionList), Modifier.fillMaxSize().graphicsLayer { alpha = (backdropAlpha.value * (1f - dismiss.value)).coerceIn(0f, 1f) })
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-      if (!collection) Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("rise", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
-        RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
-        Spacer(Modifier.width(8.dp))
-        RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
-      }
-      if (state.status.isNotBlank() && !collection) Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
-      when {
-        state.page == "Buscar" -> MainPane(state, actions, targets, null, Modifier.weight(1f).fillMaxWidth())
-        state.page == "Downloads" -> DownloadHub(state, actions, Modifier.weight(1f).fillMaxWidth())
-        collection -> CollectionScreen(state, actions, collectionList, Modifier.weight(1f).fillMaxWidth())
-        else -> LibraryHome(state, actions, Modifier.weight(1f).fillMaxWidth())
+      androidx.compose.animation.SharedTransitionLayout(Modifier.weight(1f).fillMaxWidth()) {
+        CompositionLocalProvider(LocalShared provides this) {
+          transition.AnimatedContent(Modifier.fillMaxSize(), transitionSpec = { Motion.pageEnter togetherWith Motion.pageExit using SizeTransform(clip = false) }) { open ->
+            CompositionLocalProvider(LocalAnimScope provides this) {
+              if (open) CollectionScreen(shownCollection, actions, collectionList, Modifier.fillMaxSize(), closeCollection, dismiss)
+              else Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                  Text("rise", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, letterSpacing = (-1).sp)
+                  RoundIconButton(Icons.Rounded.SystemUpdate, "Verificar atualizações", actions.updates, container = c.background)
+                  Spacer(Modifier.width(8.dp))
+                  RoundIconButton(Icons.Rounded.Tune, "Ajustes", { actions.settings(true) }, container = c.background)
+                }
+                if (state.status.isNotBlank()) Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
+                // Abas: troca instantânea, sem animação entre páginas.
+                when (state.page) {
+                  "Buscar" -> MainPane(state, actions, targets, null, Modifier.weight(1f).fillMaxWidth())
+                  "Downloads" -> DownloadHub(state, actions, Modifier.weight(1f).fillMaxWidth())
+                  else -> LibraryHome(if (collection) state.copy(albumFilter = "", historyView = "Tudo") else state, actions, Modifier.weight(1f).fillMaxWidth(), homeList, homeRows)
+                }
+              }
+            }
+          }
+        }
       }
       NavigationDock(state, actions, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
@@ -213,7 +249,7 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
                                    onSelect: () -> Unit, onPreview: () -> Unit, onRadio: () -> Unit = {}) {
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-  Row(Modifier.fillMaxWidth().springPress(src).clip(RoundedCornerShape(22.dp))
+  Row(Modifier.fillMaxWidth().weightedPress(src, 22.dp).clip(RoundedCornerShape(22.dp))
       .background(if (selected) c.surfaceVariant else c.background).border(1.dp, if (selected) c.outline else c.background, RoundedCornerShape(22.dp))
       .clickable(src, null, onClick = onSelect).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
     if (multi) { Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
@@ -250,9 +286,9 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
   var done by remember(e.id) { mutableStateOf(false) }
   LaunchedEffect(e.id) {
     if (t.history == androidx.compose.ui.geometry.Offset.Zero) { done = true; return@LaunchedEffect }
-    prog.animateTo(1f, androidx.compose.animation.core.tween(650, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+    prog.animateTo(1f, Motion.enter(Motion.ExtraLong))
     done = true
-    t.bounce.snapTo(1.35f); t.bounce.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.35f, stiffness = 400f))
+    t.bounce.snapTo(1.08f); t.bounce.animateTo(1f, Motion.press())
   }
   if (done) return
   val d = LocalDensity.current

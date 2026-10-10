@@ -73,3 +73,6 @@ class Polish { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.c
 class PolishLight { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6)
   @Test fun albumTop() = p.snapshot { RiseTheme(false) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo"), Actions()) } }
   @Test fun albumScrolled() = p.snapshot { RiseTheme(false) { RiseApp(UiState(history = longAlbum, albumFilter = "Disco Longo"), Actions(), initialCollectionItem = 6) } } }
+class MotionHome { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT, screenHeight = 4000))
+  @Test fun carousels() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = longAlbum + (1..3).map { i -> HistoryItem("Single $i", "M4A", "s:$i", artist = "Outro", album = "Single $i") },
+    playlists = mapOf("Treino" to listOf("long:1", "long:2"), "Estrada" to listOf("s:1"), "Noite" to listOf("long:3"))), Actions()) } } }

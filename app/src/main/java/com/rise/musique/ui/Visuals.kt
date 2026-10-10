@@ -30,19 +30,23 @@ import kotlin.math.sin
 /** Neutral fallback palette (no dynamic color anywhere). */
 private val Neutral = listOf(Color(0xFF2A2A2E), Color(0xFF151517), Color(0xFF3A3A40), Color(0xFF0B0B0C))
 
+/** Palette results survive screen changes and shared transitions (no re-decode mid-animation). */
+private val PaletteCache = java.util.Collections.synchronizedMap(object : LinkedHashMap<String, List<Color>>(64, .75f, true) {
+  override fun removeEldestEntry(e: MutableMap.MutableEntry<String, List<Color>>?) = size > 64 })
+
 /** Up to four colors taken from the cover with Palette, darkened enough for white text. */
 @Composable fun rememberCoverPalette(url: String): List<Color> {
   val ctx = LocalContext.current
-  var colors by remember(url) { mutableStateOf(Neutral) }
+  var colors by remember(url) { mutableStateOf(PaletteCache[url] ?: Neutral) }
   LaunchedEffect(url) {
-    if (url.isBlank() || StaticPreview.on) return@LaunchedEffect
+    if (url.isBlank() || StaticPreview.on || PaletteCache.containsKey(url)) return@LaunchedEffect
     runCatching {
       val res = coil.ImageLoader(ctx).execute(ImageRequest.Builder(ctx).data(url).size(96).allowHardware(false).build())
       val bmp = (res.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: return@runCatching
       val pal = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { androidx.palette.graphics.Palette.from(bmp).maximumColorCount(16).generate() }
       val picks = listOfNotNull(pal.dominantSwatch, pal.vibrantSwatch, pal.darkVibrantSwatch, pal.mutedSwatch, pal.darkMutedSwatch, pal.lightMutedSwatch)
         .map { Color(it.rgb) }.distinct()
-      if (picks.isNotEmpty()) colors = List(4) { i -> lerp(picks[i % picks.size], Color.Black, .35f + i * .08f) }
+      if (picks.isNotEmpty()) colors = List(4) { i -> lerp(picks[i % picks.size], Color.Black, .35f + i * .08f) }.also { PaletteCache[url] = it }
     }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
   }
   return colors
@@ -54,17 +58,19 @@ private val Neutral = listOf(Color(0xFF2A2A2E), Color(0xFF151517), Color(0xFF3A3
  */
 @Composable fun LivingArtwork(art: String, modifier: Modifier = Modifier, dim: Float = .25f) {
   val colors = rememberCoverPalette(art)
-  val animated = colors.map { animateColorAsState(it, tween(1200), label = "mesh").value }
-  val t = if (StaticPreview.on) 0.3f else rememberInfiniteTransition(label = "mesh")
-    .animateFloat(0f, 1f, infiniteRepeatable(tween(36_000, easing = LinearEasing)), label = "t").value
+  // States are read only inside the draw lambda: the mesh redraws every frame without recomposing.
+  val animated = colors.map { animateColorAsState(it, Motion.standard(1200), label = "mesh") }
+  val tState = if (StaticPreview.on) null else rememberInfiniteTransition(label = "mesh")
+    .animateFloat(0f, 1f, infiniteRepeatable(tween(36_000, easing = LinearEasing)), label = "t")
   Canvas(modifier.fillMaxSize()) {
-    drawRect(animated[3])
+    val t = tState?.value ?: 0.3f
+    drawRect(animated[3].value)
     val w = size.width; val h = size.height; val r = maxOf(w, h) * .75f
     val orbits = listOf(Triple(.25f, .2f, 0f), Triple(.8f, .3f, 1.7f), Triple(.3f, .8f, 3.4f), Triple(.75f, .85f, 5.1f))
     orbits.forEachIndexed { i, (x, y, phase) ->
       val a = (t * 2 * Math.PI + phase).toFloat()
       val c = Offset(w * (x + .18f * cos(a * (1 + i % 2))), h * (y + .12f * sin(a)))
-      drawCircle(Brush.radialGradient(listOf(animated[i].copy(alpha = .9f), animated[i].copy(alpha = 0f)), c, r), r, c)
+      drawCircle(Brush.radialGradient(listOf(animated[i].value.copy(alpha = .9f), animated[i].value.copy(alpha = 0f)), c, r), r, c)
     }
     drawRect(Color.Black.copy(alpha = dim.coerceIn(0f, 1f)))
   }
@@ -80,7 +86,7 @@ private val Neutral = listOf(Color(0xFF2A2A2E), Color(0xFF151517), Color(0xFF3A3
   val edge = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) .35f else .9f), Color.White.copy(alpha = .04f)))
   Box(modifier.clip(shape)) {
     if (!backdrop.isNullOrBlank()) {
-      if (Build.VERSION.SDK_INT >= 31) AsyncImage(backdrop, null, Modifier.matchParentSize().blur(40.dp).graphicsLayer { alpha = .55f }, contentScale = ContentScale.Crop)
+      if (Build.VERSION.SDK_INT >= 31) AsyncImage(ImageRequest.Builder(LocalContext.current).data(backdrop).size(64).build(), null, Modifier.matchParentSize().blur(40.dp).graphicsLayer { alpha = .55f }, contentScale = ContentScale.Crop)
       else AsyncImage(ImageRequest.Builder(LocalContext.current).data(backdrop).size(12).build(), null,
         Modifier.matchParentSize().graphicsLayer { alpha = .35f }, contentScale = ContentScale.Crop)
     }
@@ -100,7 +106,7 @@ class Haptics(private val h: androidx.compose.ui.hapticfeedback.HapticFeedback) 
 @Composable fun ThinSlider(value: Float, onChange: (Float) -> Unit, onDone: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
   val haptics = rememberHaptics()
   var dragging by remember { mutableStateOf(false) }
-  val thick by animateFloatAsState(if (dragging) 1f else 0f, spring(dampingRatio = .6f), label = "thick")
+  val thick by animateFloatAsState(if (dragging) 1f else 0f, Motion.settle(), label = "thick")
   val v = value.coerceIn(0f, 1f)
   val change by rememberUpdatedState(onChange); val done by rememberUpdatedState(onDone)
   Box(modifier.fillMaxWidth().height(28.dp).then(if (!enabled) Modifier else Modifier.pointerInputSlider(

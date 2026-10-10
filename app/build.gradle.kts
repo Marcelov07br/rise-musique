@@ -7,7 +7,7 @@ plugins {
 val secrets = Properties().also { p -> rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { p.load(it) } }
 android {
   namespace = "com.rise.musique"; compileSdk = 35
-  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 14; versionName = "0.12.1"
+  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 15; versionName = "0.13.0"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     // Local secrets (gitignored secrets.properties or env vars); empty = feature shows "não configurado".
     fun secret(k: String) = (secrets.getProperty(k) ?: System.getenv(k) ?: "").replace("\\", "").replace("\"", "")
@@ -40,6 +40,7 @@ dependencies {
   implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
   implementation("androidx.documentfile:documentfile:1.0.1")
   implementation("io.coil-kt:coil-compose:2.7.0")
+  implementation("androidx.profileinstaller:profileinstaller:1.4.1")
   implementation("androidx.media3:media3-exoplayer:1.5.1")
   implementation("androidx.media3:media3-session:1.5.1")
   implementation("androidx.palette:palette-ktx:1.0.0")

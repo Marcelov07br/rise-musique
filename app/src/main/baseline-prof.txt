@@ -1,0 +1,11 @@
+# Baseline profile: pre-compiles the app and the Compose hot paths (startup, lists, animation, shared transitions)
+# so the first run doesn't JIT through every frame.
+HSPLcom/rise/musique/**->**(**)**
+Lcom/rise/musique/**;
+HSPLandroidx/compose/runtime/**->**(**)**
+HSPLandroidx/compose/ui/**->**(**)**
+HSPLandroidx/compose/foundation/**->**(**)**
+HSPLandroidx/compose/animation/**->**(**)**
+HSPLandroidx/compose/material3/**->**(**)**
+HSPLandroidx/media3/session/**->**(**)**
+HSPLcoil/**->**(**)**
