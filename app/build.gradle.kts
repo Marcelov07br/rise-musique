@@ -4,7 +4,7 @@ plugins {
 }
 android {
   namespace = "com.rise.musique"; compileSdk = 35
-  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 10; versionName = "0.9.1"
+  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 11; versionName = "0.10.0"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
   signingConfigs {
     create("stable") {

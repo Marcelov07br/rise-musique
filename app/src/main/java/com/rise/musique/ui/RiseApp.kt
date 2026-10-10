@@ -44,7 +44,8 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val favorites: Set<String> = emptySet(), val playlists: Map<String, List<String>> = emptyMap(), val historyFilter: String = "",
   val recentSearches: List<String> = emptyList(), val moreResults: Boolean = false, val loadingMore: Boolean = false,
   val importing: Boolean = false, val sort: String = "Recentes", val mediaFilter: String = "Tudo", val albumFilter: String = "", val theme: String = "Sistema", val settingsOpen: Boolean = false, val page: String = "Biblioteca", val choices: com.rise.musique.DownloadChoices = com.rise.musique.DownloadChoices(),
-  val playbackQueue: List<HistoryItem> = emptyList(), val queueOpen: Boolean = false, val historyView: String = "Tudo", val sleepAt: Long = 0, val queue: List<QueueItem> = emptyList())
+  val playbackQueue: List<HistoryItem> = emptyList(), val queueOpen: Boolean = false, val historyView: String = "Tudo", val sleepAt: Long = 0, val queue: List<QueueItem> = emptyList(),
+  val crossfade: Int = 0, val statsOpen: Boolean = false, val stats: com.rise.musique.StatsSummary? = null)
 class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, val quality: (String) -> Unit = {},
   val pickFolder: () -> Unit = {}, val download: () -> Unit = {}, val toggleTheme: () -> Unit = {},
   val search: () -> Unit = {}, val select: (SearchResult) -> Unit = {}, val preview: (SearchResult) -> Unit = {},
@@ -62,7 +63,8 @@ class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, v
   val importFiles: () -> Unit = {}, val importFolder: () -> Unit = {}, val moreResults: () -> Unit = {}, val clearSearches: () -> Unit = {},
   val sort: (String) -> Unit = {}, val mediaFilter: (String) -> Unit = {}, val albumFilter: (String) -> Unit = {},
   val renamePlaylist: (String, String) -> Unit = { _, _ -> }, val movePlaylist: (String, Int, Int) -> Unit = { _, _, _ -> },
-  val refreshMetadata: () -> Unit = {}, val theme: (String) -> Unit = {}, val settings: (Boolean) -> Unit = {}, val removeLocal: (HistoryItem) -> Unit = {})
+  val refreshMetadata: () -> Unit = {}, val theme: (String) -> Unit = {}, val settings: (Boolean) -> Unit = {}, val removeLocal: (HistoryItem) -> Unit = {},
+  val crossfade: (Int) -> Unit = {}, val stats: (Boolean) -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -79,6 +81,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
     state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics) } }
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
     if (state.settingsOpen) SettingsSheet(state, actions)
+    if (state.statsOpen) StatsSheet(state, actions)
   }
 }
 

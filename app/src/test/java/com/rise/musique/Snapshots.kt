@@ -26,3 +26,15 @@ class PhoneLight { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL
   @Test fun results() = p.snapshot { RiseTheme(false) { RiseApp(found, Actions()) } } }
 class Tablet { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_C)
   @Test fun results() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(queue = queued.queue), Actions()) } } }
+
+class Stats { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val now = System.currentTimeMillis()
+  private val data = init.let { PlayStats.summarize(listOf(
+    Play("1", "Música de exemplo", "Artista Exemplo", 3_600_000, now), Play("1", "Música de exemplo", "Artista Exemplo", 200_000, now - 40L * 86_400_000),
+    Play("2", "Outra faixa", "Canal Exemplo", 900_000, now - 70L * 86_400_000), Play("3", "Faixa ao vivo", "Artista Exemplo", 500_000, now - 100L * 86_400_000),
+    Play("2", "Outra faixa", "Canal Exemplo", 700_000, now)), now) }
+  @Test fun dark() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { StatsContent(data) } } }
+  @Test fun empty() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { StatsContent(StatsSummary()) } } } }
+class StatsLight { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6)
+  @Test fun light() = p.snapshot { StaticPreview.on = true; RiseTheme(false) { androidx.compose.material3.Surface { StatsContent(PlayStats.summarize(listOf(
+    Play("1", "Música de exemplo", "Artista Exemplo", 1_800_000, System.currentTimeMillis())))) } } } }

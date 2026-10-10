@@ -44,7 +44,7 @@ object Library {
     val prefs = c.getSharedPreferences("rise", 0).all.filterKeys { it != "tree" }.filterValues { it is String || it is Boolean || it is Int }
     val o = JSONObject().put("app", "RiseMusique").put("v", 2).put("package", c.packageName).put("includesAudioFiles", false)
       .put("history", HistoryStore.json(c))
-      .put("library", load(c)).put("prefs", JSONObject(prefs))
+      .put("library", load(c)).put("prefs", JSONObject(prefs)).put("stats", PlayStats.json(c))
     c.contentResolver.openOutputStream(to, "wt")!!.use { it.write(o.toString(2).toByteArray()) }
   }
   @Synchronized fun import(c: Context, from: Uri): Int {
@@ -72,6 +72,7 @@ object Library {
       mine.put("pl", pl)
     }
     val added = HistoryStore.merge(c, incoming)
+    o.optJSONArray("stats")?.let { PlayStats.merge(c, it) }
     save(c, mine)
     o.optJSONObject("prefs")?.let { pr -> val e = c.getSharedPreferences("rise", 0).edit()
       pr.keys().forEach { k -> if (k in setOf("mode", "format", "quality_Musica", "quality_Video")) {
@@ -79,7 +80,9 @@ object Library {
         val valid = when (k) { "mode" -> value in setOf("Musica", "Video"); "format" -> value in setOf("MP3", "M4A", "Opus", "FLAC")
           "quality_Musica" -> value in setOf("128k", "192k", "320k"); else -> value in setOf("480p", "720p", "1080p", "Máx") }
         if (valid) e.putString(k, value)
-      } }; e.apply() }
+      }
+      if (k == "crossfade") pr.optInt(k, -1).takeIf { it in CrossfadeRules.OPTIONS }?.let { e.putInt(k, it) }
+      }; e.apply() }
     return added
   }
 }

@@ -33,7 +33,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private var searchFetched = 0
   private val ctx get() = getApplication<Application>()
   var state by mutableStateOf(UiState(folder = prefs.getString("tree", null)?.let(Uri::parse), history = HistoryStore.load(app),
-    theme = prefs.getString("theme", "Sistema")!!, sort = prefs.getString("sort", "Recentes")!!,
+    theme = prefs.getString("theme", "Sistema")!!, crossfade = prefs.getInt("crossfade", 0), sort = prefs.getString("sort", "Recentes")!!,
     recentSearches = recentSearches(), format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app)).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
       st.copy(mode = m, quality = prefs.getString("quality_${m.name}", m.qualities.last())!!) })
     private set
@@ -129,8 +129,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   }
   fun selectAll() { state = state.copy(selected = if (state.selected.size == state.results.size) emptySet() else state.results.map { it.url }.toSet()) }
 
-  private fun meta(title: String, artist: String, art: String) = MediaMetadata.Builder().setTitle(title).setArtist(artist)
-    .apply { if (art.isNotBlank()) setArtworkUri(Uri.parse(art)) }.build()
+  private fun meta(title: String, artist: String, art: String, album: String = "") = MediaMetadata.Builder().setTitle(title).setArtist(artist)
+    .setAlbumTitle(album.ifBlank { null })
+    .apply { if (art.isNotBlank()) setArtworkUri(if (art.startsWith("/")) Uri.fromFile(File(art)) else Uri.parse(art)) }.build()
 
   private var previewRetried: String? = null
   private var lastPreview: SearchResult? = null
@@ -168,7 +169,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       state = state.copy(status = "Arquivo indisponível. Um backup de outra instalação não transfere os arquivos de música.") }
     stopPreview()
     val items = list.map { (item, u) -> MediaItem.Builder().setMediaId(item.uri).setUri(u)
-      .setMediaMetadata(meta(item.title, item.artist.ifBlank { item.meta }, item.art)).build() }
+      .setMediaMetadata(meta(item.title, item.artist.ifBlank { item.meta }, item.art, item.album)).build() }
     withPlayer { p -> p.setMediaItems(items, start, 0); p.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF); p.prepare(); p.play() }
     state = state.copy(now = NowPlaying(h.uri, h.title, h.artist.ifBlank { h.meta }, h.art, loading = true))
   }
@@ -236,7 +237,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private fun queueTrack(h: HistoryItem, next: Boolean) {
     val uri = uriOf(h) ?: return.also { state = state.copy(status = "Arquivo indisponível") }
     stopPreview()
-    val item = MediaItem.Builder().setMediaId(h.uri).setUri(uri).setMediaMetadata(meta(h.title, h.artist.ifBlank { h.meta }, h.art)).build()
+    val item = MediaItem.Builder().setMediaId(h.uri).setUri(uri).setMediaMetadata(meta(h.title, h.artist.ifBlank { h.meta }, h.art, h.album)).build()
     withPlayer { p ->
       if (p.mediaItemCount == 0) { p.setMediaItem(item); p.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF); p.prepare(); p.play() }
       else p.addMediaItem(if (next) p.currentMediaItemIndex + 1 else p.mediaItemCount, item)
@@ -266,6 +267,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun sort(value: String) { prefs.edit().putString("sort", value).apply(); state = state.copy(sort = value) }
   fun mediaFilter(value: String) { state = state.copy(mediaFilter = value, albumFilter = "") }
   fun albumFilter(value: String) { state = state.copy(albumFilter = value, historyView = "Tudo", historyFilter = "") }
+  fun crossfade(seconds: Int) { val v = CrossfadeRules.clampSeconds(seconds); prefs.edit().putInt("crossfade", v).apply(); state = state.copy(crossfade = v) }
+  fun stats(open: Boolean) {
+    state = state.copy(statsOpen = open, settingsOpen = if (open) false else state.settingsOpen)
+    if (open) viewModelScope.launch { state = state.copy(stats = withContext(Dispatchers.IO) { PlayStats.summarize(PlayStats.load(ctx)) }) }
+  }
   fun theme(value: String) { prefs.edit().putString("theme", value).apply(); state = state.copy(theme = value) }
   fun settings(open: Boolean) { state = state.copy(settingsOpen = open) }
   fun importFiles(uris: List<Uri>) = importMedia { uris to false }
