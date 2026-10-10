@@ -1,0 +1,28 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+  <application android:name=".RiseApplication" android:extractNativeLibs="true" android:label="Rise Musique" android:theme="@style/Theme.Rise.Splash" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher">
+    <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">
+      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+      <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+    </activity>
+    <activity android:name=".QuickDownloadActivity" android:exported="true" android:label="Baixar com Rise"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="">
+      <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+    </activity>
+    <service android:name=".PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback">
+      <intent-filter><action android:name="androidx.media3.session.MediaSessionService"/></intent-filter>
+    </service>
+    <receiver android:name=".RiseWidgetReceiver" android:exported="true" android:label="Rise Musique">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/rise_widget"/>
+    </receiver>
+    <provider android:name="androidx.core.content.FileProvider" android:authorities="com.rise.musique.files" android:exported="false" android:grantUriPermissions="true">
+      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/files"/>
+    </provider>
+    <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge"/>
+  </application>
+</manifest>
