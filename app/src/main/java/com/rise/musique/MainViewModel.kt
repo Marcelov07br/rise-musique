@@ -33,7 +33,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private var searchFetched = 0
   private val ctx get() = getApplication<Application>()
   var state by mutableStateOf(UiState(folder = prefs.getString("tree", null)?.let(Uri::parse), history = HistoryStore.load(app),
-    theme = prefs.getString("theme", "Sistema")!!, crossfade = prefs.getInt("crossfade", 0), sort = prefs.getString("sort", "Recentes")!!,
+    theme = prefs.getString("theme", "Sistema")!!, crossfade = prefs.getInt("crossfade", 0), automix = prefs.getBoolean("automix", false),
+    lastfmUser = LastFm.user(app), lastfmOn = LastFm.enabled(app), lastfmConfigured = LastFm.configured, sort = prefs.getString("sort", "Recentes")!!,
     recentSearches = recentSearches(), format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app)).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
       st.copy(mode = m, quality = prefs.getString("quality_${m.name}", m.qualities.last())!!) })
     private set
@@ -94,12 +95,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val a = org.json.JSONArray(prefs.getString("searches", "[]")); List(a.length()) { a.getString(it) }
   }.getOrDefault(emptyList())
   fun clearSearches() { prefs.edit().remove("searches").apply(); state = state.copy(recentSearches = emptyList()) }
+  /** Song radio: similar tracks from YouTube Music's mix for this song; shown as selectable results with previews. */
+  fun radio(r: SearchResult) = startRadio(r.title) { Engine.radio(r.url) }
+  /** Radio from a local track: find it on YouTube first (artist + title), then load its mix. */
+  fun radioFor(h: HistoryItem) = startRadio(h.title) {
+    val seed = Engine.search(listOf(h.artist, h.title).filter(String::isNotBlank).joinToString(" "), 0, 1).firstOrNull() ?: error("Música não encontrada no YouTube")
+    Engine.radio(seed.url) }
+  private fun startRadio(title: String, load: suspend () -> List<SearchResult>) {
+    if (state.searching) return
+    stopPreview(); moreRadio = true
+    state = state.copy(page = "Buscar", searching = true, results = emptyList(), selected = emptySet(), moreResults = false, radioOf = title, status = "")
+    viewModelScope.launch {
+      runCatching { load().also { ensureActive() } }
+        .onSuccess { r -> state = state.copy(searching = false, results = r, isPlaylist = true, status = if (r.isEmpty()) "Rádio vazia" else "") }
+        .onFailure { if (it is CancellationException) throw it
+          state = state.copy(searching = false, radioOf = null, status = "Rádio indisponível: ${it.message?.lineSequence()?.lastOrNull()?.take(100)}") }
+    }
+  }
+  private var moreRadio = false
+
   fun search() {
     if (state.query.isBlank() || state.searching || state.loadingMore) return
     stopPreview(); val query = state.query.trim(); searchTerm = query; searchFetched = 0
     val recent = (listOf(query) + recentSearches()).distinct().take(12)
     prefs.edit().putString("searches", org.json.JSONArray(recent).toString()).apply()
-    state = state.copy(page = "Buscar", searching = true, results = emptyList(), selected = emptySet(), moreResults = false, recentSearches = recent, status = "")
+    state = state.copy(page = "Buscar", searching = true, results = emptyList(), selected = emptySet(), moreResults = false, recentSearches = recent, status = "", radioOf = null)
     viewModelScope.launch {
       runCatching { Engine.search(query).also { ensureActive() } }
         .onSuccess { r -> searchFetched = r.size; state = state.copy(searching = false, results = r,
@@ -276,6 +296,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     state = state.copy(statsOpen = open, settingsOpen = if (open) false else state.settingsOpen)
     if (open) viewModelScope.launch { state = state.copy(stats = withContext(Dispatchers.IO) { PlayStats.summarize(PlayStats.load(ctx)) }) }
   }
+  fun automix(on: Boolean) { prefs.edit().putBoolean("automix", on).apply(); state = state.copy(automix = on) }
+  fun recap(open: Boolean) {
+    state = state.copy(recapOpen = open, statsOpen = if (open) false else state.statsOpen)
+    if (open) viewModelScope.launch { val plays = withContext(Dispatchers.IO) { PlayStats.load(ctx) }
+      state = state.copy(recapMonth = RecapBuilder.build(plays, false), recapYear = RecapBuilder.build(plays, true)) }
+  }
+  /** Story image for the share sheet. */
+  fun recapIntent(period: String): Intent? {
+    val r = (if (period == "Ano") state.recapYear else state.recapMonth) ?: return null
+    val uri = runCatching { RecapImage.share(ctx, r) }.getOrElse { state = state.copy(status = "Não foi possível gerar a imagem"); return null }
+    return Intent.createChooser(Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM, uri)
+      .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Compartilhar retrospectiva")
+  }
+  private fun lastfmState() = state.copy(lastfmUser = LastFm.user(ctx), lastfmOn = LastFm.enabled(ctx), lastfmConfigured = LastFm.configured)
+  fun lastfmLogin(user: String, password: String) {
+    state = state.copy(status = "Entrando no Last.fm…")
+    viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { LastFm.login(ctx, user, password) } }
+      .onSuccess { state = lastfmState().copy(status = "Last.fm conectado como $it") }
+      .onFailure { if (it is CancellationException) throw it; state = state.copy(status = "Last.fm: ${it.message}") } }
+  }
+  fun lastfmLogout() { LastFm.logout(ctx); state = lastfmState() }
+  fun lastfmToggle(on: Boolean) { LastFm.setEnabled(ctx, on); state = lastfmState() }
   fun theme(value: String) { prefs.edit().putString("theme", value).apply(); state = state.copy(theme = value) }
   fun settings(open: Boolean) { state = state.copy(settingsOpen = open) }
   fun importFiles(uris: List<Uri>) = importMedia { uris to false }

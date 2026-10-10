@@ -3,7 +3,8 @@ package com.rise.musique.ui
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.rise.musique.BuildConfig
@@ -19,6 +20,14 @@ import com.rise.musique.BuildConfig
       Text("Crossfade entre faixas locais. Faixas seguidas do mesmo álbum tocam sem pausa e sem fade; prévias não entram.",
         color = MaterialTheme.colorScheme.onSurfaceVariant)
       PillSelector(com.rise.musique.CrossfadeRules.OPTIONS, s.crossfade, { if (it == 0) "Não" else "${it}s" }, a.crossfade, Modifier.fillMaxWidth())
+      Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) { Text("Automix", style = MaterialTheme.typography.titleMedium)
+          Text("Transições no ritmo: entra no tempo forte da próxima e ajusta o andamento. Sem análise confiável, usa o crossfade.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp) }
+        NeutralSwitch(s.automix, a.automix)
+      }
+      Text("Last.fm", style = MaterialTheme.typography.titleMedium)
+      LastFmRow(s, a)
       Text("Estatísticas", style = MaterialTheme.typography.titleMedium)
       PillButton("Ver o que você mais ouviu", { a.stats(true) }, Modifier.fillMaxWidth(), filled = false)
       Text("Biblioteca", style = MaterialTheme.typography.titleMedium)
@@ -34,5 +43,37 @@ import com.rise.musique.BuildConfig
       PillButton("Verificar atualizações", a.updates, Modifier.fillMaxWidth())
       Text("Rise Musique ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+  }
+}
+
+@Composable private fun NeutralSwitch(on: Boolean, change: (Boolean) -> Unit) {
+  val c = MaterialTheme.colorScheme; val haptics = rememberHaptics()
+  Switch(on, { haptics.tick(); change(it) }, colors = SwitchDefaults.colors(checkedThumbColor = c.background, checkedTrackColor = c.onSurface,
+    uncheckedThumbColor = c.onSurfaceVariant, uncheckedTrackColor = c.surfaceVariant, uncheckedBorderColor = c.outline))
+}
+
+@Composable private fun LastFmRow(s: UiState, a: Actions) {
+  val c = MaterialTheme.colorScheme
+  var login by remember { mutableStateOf(false) }
+  when {
+    !s.lastfmConfigured -> Text("Não configurado nesta versão (falta a chave de API).", color = c.onSurfaceVariant, fontSize = 13.sp)
+    s.lastfmUser == null -> PillButton("Conectar ao Last.fm", { login = true }, Modifier.fillMaxWidth(), filled = false)
+    else -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+      Column(Modifier.weight(1f)) { Text("Scrobbles como ${s.lastfmUser}")
+        Text("Conta após metade da faixa ou 4 min (faixas com mais de 30 s).", color = c.onSurfaceVariant, fontSize = 12.sp) }
+      NeutralSwitch(s.lastfmOn, a.lastfmToggle)
+      TextButton(a.lastfmLogout) { Text("Sair") }
+    }
+  }
+  if (login) {
+    var user by remember { mutableStateOf("") }; var pass by remember { mutableStateOf("") }
+    AlertDialog({ login = false }, title = { Text("Entrar no Last.fm") },
+      text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(user, { user = it.take(64) }, label = { Text("Usuário") }, singleLine = true)
+        OutlinedTextField(pass, { pass = it.take(128) }, label = { Text("Senha") }, singleLine = true,
+          visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+        Text("A senha só é usada para obter a sessão e não fica salva.", fontSize = 12.sp, color = c.onSurfaceVariant) } },
+      confirmButton = { TextButton({ a.lastfmLogin(user, pass); login = false }, enabled = user.isNotBlank() && pass.isNotBlank()) { Text("Entrar") } },
+      dismissButton = { TextButton({ login = false }) { Text("Cancelar") } })
   }
 }

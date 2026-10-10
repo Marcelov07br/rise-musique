@@ -149,6 +149,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       DropdownMenuItem({ Text("Tocar a seguir") }, { menu = false; a.playNext(h) }, leadingIcon = { Icon(Icons.Rounded.QueuePlayNext, null) })
       DropdownMenuItem({ Text("Adicionar à fila") }, { menu = false; a.addQueue(h) })
       DropdownMenuItem({ Text("Adicionar à playlist") }, { menu = false; pick = true })
+      if (!h.video) DropdownMenuItem({ Text("Rádio desta música") }, { menu = false; a.radioFor(h) })
       if (s.historyView in s.playlists) DropdownMenuItem({ Text("Tirar desta playlist") }, { menu = false; a.removeFromPlaylist(h) })
       DropdownMenuItem({ Text("Compartilhar") }, { menu = false; a.share(h) })
       DropdownMenuItem({ Text("Abrir em outro app") }, { menu = false; a.open(h) })

@@ -1,4 +1,11 @@
-# Rise Musique 0.11.0
+# Rise Musique 0.12.0
+
+## Novidades (0.12.0)
+- Automix: transições no ritmo entre músicas locais. O app analisa o andamento (BPM) e os tempos fortes de cada faixa (fica guardado), entra com a próxima no tempo forte, dura compassos inteiros e ajusta o andamento por alguns segundos. Se a análise não for confiável, usa o crossfade normal. Ative em Ajustes › Transições.
+- Last.fm: scrobbles e "ouvindo agora" (faixas com mais de 30 s, após metade da duração ou 4 minutos). Entre com sua conta em Ajustes; a senha não fica salva. Scrobbles feitos sem internet são enviados depois.
+- Rádio da música: a partir de uma busca ou de uma faixa da biblioteca, encontra músicas parecidas, com prévia e download de todas ou das escolhidas.
+- Retrospectiva: cartão animado do mês ou do ano (minutos, artista e faixas mais tocadas), com imagem 9:16 para compartilhar nos stories.
+- Player em paisagem e tablet: capa de um lado, letra ou fila do outro.
 
 ## Novo visual (0.11.0)
 - Fundo vivo: degradê em malha com as cores da capa, se movendo devagar atrás do player e das telas de álbum/playlist.

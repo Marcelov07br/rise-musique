@@ -60,7 +60,9 @@ class MainActivity : ComponentActivity() {
         importFiles = { mediaPicker.launch(arrayOf("audio/*", "video/*")) }, importFolder = { mediaFolder.launch(null) },
         moreResults = vm::moreResults, clearSearches = vm::clearSearches, sort = vm::sort, mediaFilter = vm::mediaFilter, albumFilter = vm::albumFilter,
         renamePlaylist = vm::renamePlaylist, movePlaylist = vm::movePlaylist, refreshMetadata = vm::refreshMetadata,
-        theme = vm::theme, settings = vm::settings, removeLocal = vm::removeLocal, crossfade = vm::crossfade, stats = vm::stats, playShuffled = vm::playShuffled, queueAll = vm::queueAll)) } }
+        theme = vm::theme, settings = vm::settings, removeLocal = vm::removeLocal, crossfade = vm::crossfade, stats = vm::stats, playShuffled = vm::playShuffled, queueAll = vm::queueAll,
+        radio = vm::radio, radioFor = vm::radioFor, automix = vm::automix, lastfmLogin = vm::lastfmLogin, lastfmLogout = vm::lastfmLogout,
+        lastfmToggle = vm::lastfmToggle, recap = vm::recap, shareRecap = { p -> vm.recapIntent(p)?.let(::startActivity) })) } }
   }
   override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }
   private fun handle(i: Intent?) { if (i?.action == Intent.ACTION_SEND) vm.onIncomingLink(i.getStringExtra(Intent.EXTRA_TEXT)) }

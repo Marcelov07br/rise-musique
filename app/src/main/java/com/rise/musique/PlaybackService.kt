@@ -141,8 +141,9 @@ class PlaybackService : MediaLibraryService() {
     restorePlayback(player)
     setSleep(getSharedPreferences("playback", 0).getLong(SLEEP_AT, 0))
     scope.launch { while (true) { delay(5_000); savePlayback() } }
-    val fader = Crossfader(this, player) { getSharedPreferences("playback", 0).getLong(SLEEP_AT, 0).let { it > 0 && it - System.currentTimeMillis() < 30_000 } }
+    val fader = Crossfader(this, player, scope) { getSharedPreferences("playback", 0).getLong(SLEEP_AT, 0).let { it > 0 && it - System.currentTimeMillis() < 30_000 } }
     crossfader = fader
+    scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { LastFm.flush(this@PlaybackService) } }
     scope.launch { while (true) { delay(200); fader.tick(); trackPlay(player) } }
     player.addListener(object : androidx.media3.common.Player.Listener {
       private var lastArt: String? = "none"
@@ -186,9 +187,18 @@ class PlaybackService : MediaLibraryService() {
     var s = playSession
     if (s == null || s.key != item.mediaId) { finishPlay()
       s = PlaySession(item.mediaId, item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(), System.currentTimeMillis())
-      playSession = s }
-    if (s.add(delta, p.duration.takeIf { it != C.TIME_UNSET } ?: 0)) saveStat(s)
+      playSession = s; scrobbled = false
+      val m = item.mediaMetadata; val d = p.duration.takeIf { it != C.TIME_UNSET } ?: 0
+      scope.launch(kotlinx.coroutines.Dispatchers.IO) { LastFm.nowPlaying(this@PlaybackService, m.artist?.toString().orEmpty(), m.title?.toString().orEmpty(),
+        m.albumTitle?.toString().orEmpty(), d / 1000) } }
+    val dur = p.duration.takeIf { it != C.TIME_UNSET } ?: 0
+    if (s.add(delta, dur)) saveStat(s)
+    if (!scrobbled && ScrobbleRules.eligible(dur, s.listenedMs)) { scrobbled = true
+      val m = item.mediaMetadata
+      val sc = Scrobble(m.artist?.toString().orEmpty(), m.title?.toString().orEmpty(), m.albumTitle?.toString().orEmpty(), s.start / 1000, dur / 1000)
+      scope.launch(kotlinx.coroutines.Dispatchers.IO) { LastFm.enqueue(this@PlaybackService, sc); LastFm.flush(this@PlaybackService) } }
   }
+  private var scrobbled = false
   private fun finishPlay() { playSession?.let { if (it.counted) saveStat(it) }; playSession = null }
   private fun saveStat(s: PlaySession) { val play = s.play()
     scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { PlayStats.record(this@PlaybackService, play) } } }

@@ -45,7 +45,9 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val recentSearches: List<String> = emptyList(), val moreResults: Boolean = false, val loadingMore: Boolean = false,
   val importing: Boolean = false, val sort: String = "Recentes", val mediaFilter: String = "Tudo", val albumFilter: String = "", val theme: String = "Sistema", val settingsOpen: Boolean = false, val page: String = "Biblioteca", val choices: com.rise.musique.DownloadChoices = com.rise.musique.DownloadChoices(),
   val playbackQueue: List<HistoryItem> = emptyList(), val queueOpen: Boolean = false, val historyView: String = "Tudo", val sleepAt: Long = 0, val queue: List<QueueItem> = emptyList(),
-  val crossfade: Int = 0, val statsOpen: Boolean = false, val stats: com.rise.musique.StatsSummary? = null)
+  val crossfade: Int = 0, val statsOpen: Boolean = false, val radioOf: String? = null, val automix: Boolean = false,
+  val lastfmUser: String? = null, val lastfmOn: Boolean = false, val lastfmConfigured: Boolean = false, val recapOpen: Boolean = false,
+  val recapMonth: com.rise.musique.Recap? = null, val recapYear: com.rise.musique.Recap? = null, val stats: com.rise.musique.StatsSummary? = null)
 class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, val quality: (String) -> Unit = {},
   val pickFolder: () -> Unit = {}, val download: () -> Unit = {}, val toggleTheme: () -> Unit = {},
   val search: () -> Unit = {}, val select: (SearchResult) -> Unit = {}, val preview: (SearchResult) -> Unit = {},
@@ -65,7 +67,10 @@ class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = {}, v
   val renamePlaylist: (String, String) -> Unit = { _, _ -> }, val movePlaylist: (String, Int, Int) -> Unit = { _, _, _ -> },
   val refreshMetadata: () -> Unit = {}, val theme: (String) -> Unit = {}, val settings: (Boolean) -> Unit = {}, val removeLocal: (HistoryItem) -> Unit = {},
   val crossfade: (Int) -> Unit = {}, val stats: (Boolean) -> Unit = {},
-  val playShuffled: (HistoryItem) -> Unit = {}, val queueAll: (List<HistoryItem>) -> Unit = {})
+  val playShuffled: (HistoryItem) -> Unit = {}, val queueAll: (List<HistoryItem>) -> Unit = {},
+  val radio: (SearchResult) -> Unit = {}, val radioFor: (HistoryItem) -> Unit = {}, val automix: (Boolean) -> Unit = {},
+  val lastfmLogin: (String, String) -> Unit = { _, _ -> }, val lastfmLogout: () -> Unit = {}, val lastfmToggle: (Boolean) -> Unit = {},
+  val recap: (Boolean) -> Unit = {}, val shareRecap: (String) -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -79,10 +84,11 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   Box(Modifier.fillMaxSize()) {
     RiseContent(state, actions, initialHistoryOpen, targets)
     state.fly?.let { FlyOverlay(it, targets) }
-    state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics) } }
+    state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue) } }
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
     if (state.settingsOpen) SettingsSheet(state, actions)
     if (state.statsOpen) StatsSheet(state, actions)
+    if (state.recapOpen) RecapSheet(state, actions)
   }
 }
 
@@ -143,6 +149,12 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
       else RoundIconButton(Icons.Rounded.ArrowForward, "Buscar", a.search, filled = state.query.isNotBlank())
     }
     LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      state.radioOf?.let { seed -> item { Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Radio, null, tint = c.onSurface); Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) { Text("Rádio", style = MaterialTheme.typography.titleLarge)
+          Text("Parecidas com $seed", color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        if (state.results.isNotEmpty()) PillButton(if (state.selected.size == state.results.size) "Desmarcar" else "Baixar todas", a.selectAll, filled = false)
+      } } }
       if (state.selected.isNotEmpty()) item { DownloadOptions(state, a) }
       if (state.results.size > 1 && state.isPlaylist) item { Row(verticalAlignment = Alignment.CenterVertically) {
         Text("${state.results.size} faixas · ${state.selected.size} marcadas", Modifier.weight(1f), color = c.onSurfaceVariant, fontSize = 13.sp)
@@ -151,7 +163,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
       itemsIndexed(state.results, key = { _, it -> it.url }) { i, r ->
         Box(Modifier.cascade(i)) {
         ResultCard(r, r.url in state.selected, state.isPlaylist, state.previewing == r.url, state.previewing == r.url && state.previewLoading,
-          { a.select(r) }, { a.preview(r) }) }
+          { a.select(r) }, { a.preview(r) }, { a.radio(r) }) }
       }
       if (state.moreResults) item { PillButton(if (state.loadingMore) "Carregando…" else "Carregar mais resultados", a.moreResults, Modifier.fillMaxWidth(), filled = false, enabled = !state.loadingMore) }
       if (state.results.isEmpty() && !state.searching) {
@@ -203,7 +215,7 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
 }
 
 @Composable private fun ResultCard(r: SearchResult, selected: Boolean, multi: Boolean, playing: Boolean, loading: Boolean,
-                                   onSelect: () -> Unit, onPreview: () -> Unit) {
+                                   onSelect: () -> Unit, onPreview: () -> Unit, onRadio: () -> Unit = {}) {
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   Row(Modifier.fillMaxWidth().springPress(src).clip(RoundedCornerShape(22.dp))
@@ -223,6 +235,8 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
       Text(r.channel, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
     }
     Spacer(Modifier.width(8.dp))
+    RoundIconButton(Icons.Rounded.Radio, "Rádio desta música", onRadio, container = c.background)
+    Spacer(Modifier.width(4.dp))
     if (loading) CircularProgressIndicator(Modifier.size(44.dp).padding(11.dp), strokeWidth = 2.dp, color = c.onSurface)
     else RoundIconButton(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, "Prévia de 30 segundos", onPreview, container = c.background)
   }

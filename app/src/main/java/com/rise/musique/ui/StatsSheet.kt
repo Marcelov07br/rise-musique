@@ -23,7 +23,10 @@ import com.rise.musique.StatsSummary
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun StatsSheet(s: UiState, a: Actions) {
   ModalBottomSheet({ a.stats(false) }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-    StatsContent(s.stats, Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding())
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()) {
+      StatsContent(s.stats, Modifier.fillMaxWidth())
+      PillButton("Sua retrospectiva", { a.recap(true) }, Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
+    }
   }
 }
 

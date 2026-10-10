@@ -17,9 +17,15 @@ object Engine {
     val target = if (isLink(input)) input.trim() else "ytsearch${(offset + count).coerceIn(1, 100)}:${input.trim()}"
     val req = YoutubeDLRequest(target).apply { addOption("-J"); addOption("--flat-playlist")
       addOption(if (isPlaylist(input)) "--yes-playlist" else "--no-playlist") }
-    val root = JSONObject(runInterruptible { YoutubeDL.getInstance().execute(req).out })
+    parseEntries(runInterruptible { YoutubeDL.getInstance().execute(req).out })
+      .let { if (isLink(input)) it else it.drop(offset).take(count) }
+  }
+
+  /** Parses yt-dlp -J (flat) output into results. Visible for tests. */
+  fun parseEntries(json: String): List<SearchResult> {
+    val root = JSONObject(json)
     val list = root.optJSONArray("entries")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } } ?: listOf(root)
-    list.map { o ->
+    return list.map { o ->
       val id = o.optString("id")
       val url = o.optString("webpage_url").ifBlank { o.optString("url").ifBlank { "https://www.youtube.com/watch?v=$id" } }
       val thumb = o.optString("thumbnail").ifBlank {
@@ -27,7 +33,7 @@ object Engine {
           ?.takeIf { it.isNotBlank() } ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg" }
       SearchResult(url, o.optString("title"), o.optString("channel").ifBlank { o.optString("uploader") },
         o.optDouble("duration", 0.0).toInt(), thumb)
-    }.distinctBy { it.url }.let { if (isLink(input)) it else it.drop(offset).take(count) }
+    }.distinctBy { it.url }
   }
 
   /** URL direta do áudio, pra prévia. */
@@ -49,6 +55,17 @@ object Engine {
     val h = o.optJSONObject("http_headers")
     val headers = buildMap { h?.keys()?.forEach { k -> put(k, h.getString(k)) } }
     return Stream(url, headers)
+  }
+
+  /** YouTube video id from a watch/short/music link. */
+  fun videoId(url: String): String? = Regex("(?:v=|youtu\\.be/|/shorts/)([A-Za-z0-9_-]{11})").find(url)?.groupValues?.get(1)
+  /** Song radio: YouTube Music's automatic mix for a track (list=RDAMVM<id>), without the seed itself. */
+  fun radioUrl(id: String) = "https://www.youtube.com/watch?v=$id&list=RDAMVM$id"
+  suspend fun radio(url: String, count: Int = 30): List<SearchResult> = withContext(Dispatchers.IO) {
+    val id = videoId(url) ?: error("Link sem ID de vídeo")
+    val req = YoutubeDLRequest(radioUrl(id)).apply { addOption("-J"); addOption("--flat-playlist"); addOption("--yes-playlist")
+      addOption("--playlist-end", (count + 1).toString()) }
+    parseEntries(runInterruptible { YoutubeDL.getInstance().execute(req).out }).filter { videoId(it.url) != id }.take(count)
   }
 
   suspend fun audioStream(url: String): Stream = withContext(Dispatchers.IO) {

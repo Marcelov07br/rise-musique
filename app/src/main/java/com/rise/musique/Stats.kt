@@ -74,3 +74,20 @@ object PlayStats {
   fun duration(ms: Long): String { val m = ms / 60_000; val h = m / 60
     return if (h > 0) "${h} h ${m % 60} min" else "$m min" }
 }
+
+/** Retrospective for the current month or year. */
+data class Recap(val title: String, val period: String, val minutes: Long, val plays: Int, val topTrack: Ranked?, val topArtist: Ranked?,
+                 val topTracks: List<Ranked>)
+
+object RecapBuilder {
+  private val monthNames = listOf("Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro")
+  fun build(plays: List<Play>, yearly: Boolean, now: Long = System.currentTimeMillis()): Recap {
+    val cal = Calendar.getInstance().apply { timeInMillis = now }
+    val y = cal.get(Calendar.YEAR); val m = cal.get(Calendar.MONTH)
+    val inPeriod = plays.filter { val c = Calendar.getInstance().apply { timeInMillis = it.at }
+      c.get(Calendar.YEAR) == y && (yearly || c.get(Calendar.MONTH) == m) }
+    val s = PlayStats.summarize(inPeriod, now, top = 3)
+    return Recap(if (yearly) "Seu $y" else "Seu ${monthNames[m].lowercase()}", if (yearly) "$y" else "${monthNames[m]} de $y",
+      s.totalMs / 60_000, s.totalPlays, s.topTracks.firstOrNull(), s.topArtists.firstOrNull(), s.topTracks)
+  }
+}

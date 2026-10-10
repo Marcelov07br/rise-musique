@@ -3,6 +3,8 @@ import app.cash.paparazzi.*
 import com.android.resources.*
 import com.rise.musique.ui.*
 import org.junit.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.unit.dp
 private val init = run { StaticPreview.on = true }
 private val found = init.let { UiState(query = "música de exemplo", results = sampleResults, selected = setOf("a"), previewing = "a", history = sampleHistory, cutOn = true, cutStart = "0:45", cutEnd = "1:30") }
 private val playlist = init.let { _ -> null }.let { UiState(query = "https://youtube.com/playlist?list=x", results = sampleResults, isPlaylist = true, selected = setOf("a", "c"), format = "FLAC") }
@@ -45,3 +47,15 @@ class Collection { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL
   @Test fun album() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = albumHistory, albumFilter = "Disco de Exemplo"), Actions()) } }
   @Test fun playlistWithMini() = p.snapshot { RiseTheme(true) { RiseApp(UiState(history = albumHistory, playlists = mapOf("Treino" to listOf("album:2", "album:0")),
     historyView = "Treino", now = np), Actions()) } } }
+
+private val queueSample = albumHistory
+class Wide { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(screenWidth = 2400, screenHeight = 1080, orientation = ScreenOrientation.LANDSCAPE, nightMode = NightMode.NIGHT))
+  @Test fun playerQueue() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np.copy(index = 0), playbackQueue = queueSample), Actions(), initialExpanded = true) } }
+  @Test fun playerLyrics() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np), Actions(), initialExpanded = true, initialLyrics = true) } } }
+class TabletPlayer { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_C.copy(nightMode = NightMode.NIGHT))
+  @Test fun player() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np.copy(index = 0), playbackQueue = queueSample), Actions(), initialExpanded = true) } } }
+class Round12 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val recap = init.let { Recap("Seu outubro", "Outubro de 2026", 1834, 412, Ranked("Música de exemplo", "Artista Exemplo", 31, 0),
+    Ranked("Artista Exemplo", "", 120, 0), listOf(Ranked("Música de exemplo", "Artista Exemplo", 31, 0), Ranked("Outra faixa", "Canal Exemplo", 22, 0), Ranked("Faixa ao vivo", "Artista Exemplo", 18, 0))) }
+  @Test fun recapCard() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { RecapCard(recap, androidx.compose.ui.Modifier.padding(24.dp).aspectRatio(9f / 16f)) } } }
+  @Test fun radio() = p.snapshot { RiseTheme(true) { RiseApp(UiState(page = "Buscar", results = sampleResults, isPlaylist = true, radioOf = "Música de exemplo", selected = setOf("a")), Actions()) } } }

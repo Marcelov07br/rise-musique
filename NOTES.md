@@ -15,6 +15,11 @@
   no PC Windows do Marce. A chave NÃO está neste computador nem no Git. APK debug daqui usa a debug.keystore
   e não instala por cima da versão de release.
 
+### Chaves locais (secrets.properties)
+`secrets.properties` na raiz (ignorado pelo Git; modelo em `secrets.properties.example`) vira campos do BuildConfig:
+`LASTFM_API_KEY`, `LASTFM_API_SECRET` (criar em https://www.last.fm/api/account/create). Também aceita variáveis de ambiente
+com os mesmos nomes. Sem elas o app compila e mostra "Last.fm não configurado".
+
 ### Como lançar uma versão (Linux, neste computador)
 A chave fica em `signing/` (ignorado pelo Git, chmod 600; nunca commitar nem imprimir senhas).
 1. Aumentar versionCode/versionName em `app/build.gradle.kts`; atualizar `RELEASE_NOTES.md` (português, sem "GPT").

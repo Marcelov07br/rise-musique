@@ -1,2 +1,2 @@
-<paths><files-path name="art" path="art/"/><external-files-path name="dl" path="."/><cache-path name="updates" path="updates/"/></paths>
+<paths><files-path name="art" path="art/"/><external-files-path name="dl" path="."/><cache-path name="updates" path="updates/"/><cache-path name="share" path="share/"/></paths>
 

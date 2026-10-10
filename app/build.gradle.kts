@@ -1,11 +1,18 @@
+import java.util.Properties
 plugins {
   id("com.android.application"); id("org.jetbrains.kotlin.android")
   id("org.jetbrains.kotlin.plugin.compose"); id("app.cash.paparazzi")
 }
+// Local secrets (gitignored secrets.properties or env vars).
+val secrets = Properties().also { p -> rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { p.load(it) } }
 android {
   namespace = "com.rise.musique"; compileSdk = 35
-  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 12; versionName = "0.11.0"
-    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 13; versionName = "0.12.0"
+    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    // Local secrets (gitignored secrets.properties or env vars); empty = feature shows "não configurado".
+    fun secret(k: String) = (secrets.getProperty(k) ?: System.getenv(k) ?: "").replace("\\", "").replace("\"", "")
+    buildConfigField("String", "LASTFM_API_KEY", "\"${secret("LASTFM_API_KEY")}\"")
+    buildConfigField("String", "LASTFM_API_SECRET", "\"${secret("LASTFM_API_SECRET")}\"") }
   signingConfigs {
     create("stable") {
       System.getenv("RISE_KEYSTORE")?.let { storeFile = file(it) }

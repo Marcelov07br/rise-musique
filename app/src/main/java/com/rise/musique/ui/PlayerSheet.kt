@@ -35,7 +35,8 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
  * tamanho e posição da capa, fundo desfocado, cantos e controles. Arrastar move `f` junto com o dedo;
  * soltar assenta com mola. O voltar com prévia (Android 14+) encolhe a tela seguindo o gesto.
  */
-@Composable fun PlayerSheet(now: NowPlaying, a: Actions, initialExpanded: Boolean = false, initialLyrics: Boolean = false) {
+@Composable fun PlayerSheet(now: NowPlaying, a: Actions, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
+                            queue: List<HistoryItem> = emptyList()) {
   val c = MaterialTheme.colorScheme
   val scope = rememberCoroutineScope()
   val f = remember { Animatable(if (initialExpanded) 1f else 0f) }
@@ -85,14 +86,17 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       }
 
       val maxW = this@BoxWithConstraints.maxWidth
-      val artFull = (maxW - 56.dp).coerceAtMost(420.dp)
+      val maxH = this@BoxWithConstraints.maxHeight
+      // Paisagem / tablet deitado: capa à esquerda, letra ou fila à direita.
+      val wide = maxW > maxH && maxW >= 560.dp
+      val artFull = if (wide) minOf(maxH - 120.dp, maxW / 2 - 64.dp).coerceIn(120.dp, 420.dp) else (maxW - 56.dp).coerceAtMost(420.dp)
       val artSize = lerp(48.dp, artFull, p)
-      val artX = lerp(10.dp, (maxW - artFull) / 2, p)
-      val artY = lerp(10.dp, 96.dp, p)
+      val artX = lerp(10.dp, if (wide) (maxW / 2 - artFull) / 2 else (maxW - artFull) / 2, p)
+      val artY = lerp(10.dp, if (wide) (maxH - artFull) / 2 else 96.dp, p)
       val onBg = if (p > .5f) Color.White else c.onSurface
 
       // Capa: o mesmo elemento cresce do mini até o tamanho cheio.
-      val artAlpha by animateFloatAsState(if (showLyrics && p > .9f) 0f else 1f, tween(300), label = "art")
+      val artAlpha by animateFloatAsState(if (showLyrics && !wide && p > .9f) 0f else 1f, tween(300), label = "art")
       // Capa que respira: cheia no play, recua no pause, sempre com mola.
       val breath by animateFloatAsState(if (now.playing || p < .5f) 1f else 0.84f, spring(dampingRatio = 0.45f, stiffness = 260f), label = "breath")
       // Capa arremessável: arrasta na horizontal; forte o bastante troca de faixa, fraco volta com mola.
@@ -138,7 +142,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       }
 
       // Conteúdo do player cheio (surge ao expandir).
-      if (p > .4f) Column(Modifier.fillMaxSize().safeDrawingPadding().alpha((p - .4f) / .6f)
+      if (p > .4f) Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = if (wide) maxW / 2 - 12.dp else 0.dp).alpha(((p - .4f) / .6f).coerceIn(0f, 1f))
           .offset(y = lerp(40.dp, 0.dp, p)).padding(horizontal = 28.dp)) {
         Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
           IconButton({ scope.launch { f.animateTo(0f, bouncy) } }) { Icon(Icons.Rounded.KeyboardArrowDown, "Recolher", tint = Color.White) }
@@ -146,7 +150,10 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           Box(Modifier.size(width = 36.dp, height = 5.dp).clip(CircleShape).background(Color.White.copy(.35f)))
           Spacer(Modifier.weight(1f)); SleepButton(now, a)
         }
-        Box(Modifier.fillMaxWidth().height(artFull + 64.dp)) {
+        if (wide) Box(Modifier.fillMaxWidth().weight(1f)) {
+          if (showLyrics || now.isPreview) LyricsView(now, a, Modifier.fillMaxSize().padding(vertical = 8.dp))
+          else UpNext(now, queue, a, Modifier.fillMaxSize())
+        } else Box(Modifier.fillMaxWidth().height(artFull + 64.dp)) {
           if (showLyrics) LyricsView(now, a, Modifier.fillMaxSize().padding(top = 40.dp, bottom = 16.dp))
         }
         Text(now.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 32.sp, letterSpacing = (-.5f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -313,3 +320,25 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 }
 val LocalSleep = androidx.compose.runtime.compositionLocalOf { 0L }
 
+
+/** Próximas da fila (painel da direita em paisagem). */
+@Composable private fun UpNext(now: NowPlaying, queue: List<HistoryItem>, a: Actions, m: Modifier) {
+  val next = queue.drop(now.index + 1).take(30)
+  Column(m) {
+    Text("A seguir", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(8.dp))
+    if (next.isEmpty()) Text("Nada na fila", color = Color.White.copy(.6f))
+    androidx.compose.foundation.lazy.LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+      items(next.size) { i -> val h = next[i]
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { a.playQueue(now.index + 1 + i) }.padding(6.dp),
+          verticalAlignment = Alignment.CenterVertically) {
+          Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Color.White.copy(.1f))) {
+            if (h.art.isNotBlank()) AsyncImage(h.art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+          Spacer(Modifier.width(12.dp))
+          Column(Modifier.weight(1f)) { Text(h.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(h.artist, color = Color.White.copy(.6f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+      }
+    }
+  }
+}
