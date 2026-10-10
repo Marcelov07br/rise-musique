@@ -7,7 +7,7 @@ plugins {
 val secrets = Properties().also { p -> rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { p.load(it) } }
 android {
   namespace = "com.rise.musique"; compileSdk = 35
-  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 15; versionName = "0.13.0"
+  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 16; versionName = "0.13.1"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     // Local secrets (gitignored secrets.properties or env vars); empty = feature shows "não configurado".
     fun secret(k: String) = (secrets.getProperty(k) ?: System.getenv(k) ?: "").replace("\\", "").replace("\"", "")
@@ -22,6 +22,7 @@ android {
     }
   }
   buildTypes { getByName("release") { signingConfig = signingConfigs.getByName("stable") } }
+  testOptions { unitTests { isIncludeAndroidResources = true } }
   buildFeatures { compose = true; buildConfig = true }
   compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
   kotlinOptions { jvmTarget = "17" }
@@ -49,6 +50,10 @@ dependencies {
   implementation("androidx.core:core-splashscreen:1.0.1")
   testImplementation("junit:junit:4.13.2")
   testImplementation("org.json:json:20240303")
+  testImplementation("org.robolectric:robolectric:4.14.1")
+  testImplementation("androidx.compose.ui:ui-test-junit4")
+  testImplementation("androidx.test.ext:junit:1.2.1")
+  debugImplementation("androidx.compose.ui:ui-test-manifest")
   androidTestImplementation("androidx.test:runner:1.6.2")
   androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

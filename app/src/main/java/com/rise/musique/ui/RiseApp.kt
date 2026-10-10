@@ -96,20 +96,30 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   }
 }
 
+/**
+ * The one owner of the collection SeekableTransitionState: state and Transition are created together in one
+ * unconditional group, so a Transition is never re-created for an existing state.
+ */
+@Composable private fun rememberCollectionTransition(initial: Boolean):
+    Pair<androidx.compose.animation.core.SeekableTransitionState<Boolean>, androidx.compose.animation.core.Transition<Boolean>> {
+  val seek = remember { androidx.compose.animation.core.SeekableTransitionState(initial) }
+  return seek to androidx.compose.animation.core.rememberTransition(seek, label = "collection")
+}
+
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0) {
   val c = MaterialTheme.colorScheme
   val collection = state.page != "Buscar" && state.page != "Downloads" && (state.albumFilter.isNotBlank() || state.historyView in state.playlists)
+  val (seek, transition) = rememberCollectionTransition(collection)
   // Keep the last opened collection so its screen can play the reverse transition after the state already went back.
   var last by remember { mutableStateOf(state) }
   if (collection) last = state
   val shownCollection = if (collection) state else state.copy(albumFilter = last.albumFilter, historyView = last.historyView, page = last.page)
   val collectionKey = shownCollection.albumFilter + "|" + shownCollection.historyView
-  val collectionList = androidx.compose.runtime.key(collectionKey) { androidx.compose.foundation.lazy.rememberLazyListState(initialCollectionItem) }
+  val collectionList = remember(collectionKey) { androidx.compose.foundation.lazy.LazyListState(initialCollectionItem) } // no movable key() group here
   val homeList = androidx.compose.foundation.lazy.rememberLazyListState()
   val homeRows = androidx.compose.foundation.lazy.rememberLazyListState() to androidx.compose.foundation.lazy.rememberLazyListState()
   // Seekable: open/close are one interruptible transition; predictive back scrubs it with the finger.
-  val seek = remember { androidx.compose.animation.core.SeekableTransitionState(collection) }
   val scope = rememberCoroutineScope()
   var seeking by remember { mutableStateOf(false) }
   LaunchedEffect(collection) { if (!seeking) seek.animateTo(collection, Motion.enter(Motion.Long)) }
@@ -123,7 +133,6 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
       scope.launch { seek.animateTo(true, Motion.settle()) }; throw e
     } finally { seeking = false }
   }
-  val transition = androidx.compose.animation.core.rememberTransition(seek, label = "collection")
   val backdropAlpha = transition.animateFloat({ Motion.enter(Motion.Long) }, label = "backdrop") { if (it) 1f else 0f }
   val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
   Box(Modifier.fillMaxSize().background(c.background)) {

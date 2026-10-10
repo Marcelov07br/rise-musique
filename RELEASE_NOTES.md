@@ -1,4 +1,7 @@
-# Rise Musique 0.13.0
+# Rise Musique 0.13.1
+
+## Correção (0.13.1)
+- Corrigido o fechamento do app ao abrir na versão 0.13.0 (erro "SeekableTransitionState has been used in different Transitions"). A transição de abrir e fechar álbuns continua igual.
 
 ## Movimento (0.13.0)
 - Abrir um álbum ou playlist agora é uma transição contínua: a capa sai do cartão e cresce até o topo da tela, os cantos se ajustam, o fundo vivo aparece e o título sobe suavemente. Fechar faz o caminho inverso até o lugar de origem.
