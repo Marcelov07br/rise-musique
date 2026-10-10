@@ -7,10 +7,10 @@ import org.junit.Test
 class UpdateReleaseTest {
   private val sha = "a".repeat(64)
   private fun release() = JSONObject("""{"tag_name":"v0.7.0","draft":false,"prerelease":false,"body":"Mudanças",
-    "assets":[{"name":"RiseMusique-GPT-0.7.0.apk","size":1024,
-    "browser_download_url":"https://github.com/Marcelov07br/rise-musique-releases/releases/download/v0.7.0/RiseMusique-GPT-0.7.0.apk"}]}""")
+    "assets":[{"name":"RiseMusique-0.7.0.apk","size":1024,
+    "browser_download_url":"https://github.com/Marcelov07br/rise-musique-releases/releases/download/v0.7.0/RiseMusique-0.7.0.apk"}]}""")
   private fun manifest() = JSONObject().put("versionCode", 7).put("versionName", "0.7.0")
-    .put("asset", "RiseMusique-GPT-0.7.0.apk").put("sha256", sha)
+    .put("asset", "RiseMusique-0.7.0.apk").put("sha256", sha)
   private fun rejects(release: JSONObject = release(), manifest: JSONObject = manifest()) {
     try { UpdateReleaseParser.parse(release, manifest); fail("Should reject invalid publication") }
     catch (_: IllegalArgumentException) { }

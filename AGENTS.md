@@ -1,7 +1,7 @@
-# Rise Musique GPT
+# Rise Musique
 
-- Trabalhar na branch `gpt`; preservar a versão do Grok nas outras branches.
-- Application ID `com.rise.musique.gpt`; manter assinatura estável para atualizar por cima.
+- Trabalhar na branch `main` (a branch `gpt` foi incorporada e fica só como histórico).
+- Application ID `com.rise.musique.gpt` (identificador interno, não visível; não mudar, senão o app instalado não atualiza por cima). Manter assinatura estável.
 - Para cada versão solicitada, compilar APK release assinado, executar os testes relevantes e Android Lint.
 - Publicar somente APK e `update.json` em releases de `Marcelov07br/rise-musique-releases`.
 - Incrementar versionCode/versionName em cada nova entrega. Nunca substituir o APK de uma release publicada.

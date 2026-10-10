@@ -14,7 +14,7 @@ if not apk.exists():
     raise SystemExit("Signed release APK is missing; build assembleRelease first.")
 output = root / "delivery" / f"v{name}"
 output.mkdir(parents=True, exist_ok=True)
-asset = f"RiseMusique-GPT-{name}.apk"
+asset = f"RiseMusique-{name}.apk"
 shutil.copyfile(apk, output / asset)
 manifest = {"versionCode": code, "versionName": name, "asset": asset,
             "sha256": hashlib.sha256(apk.read_bytes()).hexdigest()}

@@ -1,13 +1,14 @@
-# Atualizações do Rise Musique GPT
+# Atualizações do Rise Musique
 
-O código fica na branch `gpt` de `Marcelov07br/rise-musique` (privado).
+O código fica na branch `main` de `Marcelov07br/rise-musique` (privado).
 Somente APKs, `update.json` e notas de versão ficam nas releases públicas de
 `Marcelov07br/rise-musique-releases`. Não colocar tokens no aplicativo.
 
 ## Identidade e assinatura
 
-Application ID: `com.rise.musique.gpt`. A versão do Grok usa outro ID e pode continuar instalada.
-Todas as versões GPT devem ser assinadas pela mesma chave estável.
+Application ID: `com.rise.musique.gpt` (interno; o nome visível é só "Rise Musique"). Não mudar:
+um ID novo vira outro app e não atualiza por cima. A versão antiga do Grok usa outro ID.
+Todas as versões devem ser assinadas pela mesma chave estável.
 A pasta `signing/` contém a chave e as credenciais locais; ambos estão ignorados pelo Git.
 Guardar uma cópia privada dos dois arquivos, fora deste computador. Não regenerar a chave.
 
@@ -31,7 +32,7 @@ Publicar um commit sozinho não cria uma atualização instalável.
 
 O download valida tamanho, SHA-256, ID do pacote, código de versão e certificado do APK.
 O usuário confirma a instalação no Android e, na primeira vez, autoriza instalar a partir do Rise.
-Não é necessário desinstalar entre versões GPT.
+Não é necessário desinstalar entre versões.
 
 ## Validação no celular
 

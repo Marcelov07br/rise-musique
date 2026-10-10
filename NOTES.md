@@ -1,12 +1,30 @@
 # Rise Musique — notas do projeto
 
-## Versão GPT (0.9.0)
+## Estado atual (0.9.1) — linha principal: `main`
 
-A branch `gpt` agora usa `com.rise.musique.gpt`, assinatura local própria e releases
-em `Marcelov07br/rise-musique-releases`. Consultar `UPDATES.md` e `RELEASE_NOTES.md`
-para o fluxo atual. As informações abaixo documentam a versão original do Grok.
+- `main` é a linha de desenvolvimento. A branch `gpt` (trabalho de 0.7–0.9.1) foi incorporada em `main`
+  por fast-forward em 10/10/2026 e fica só como histórico (não apagar, não usar mais).
+- Nome visível: "Rise Musique". Application ID interno `com.rise.musique.gpt` — NÃO mudar (mudar = outro app,
+  sem atualização por cima da 0.9.0 instalada no celular do Marce).
+- Atualização no app: consulta `https://api.github.com/repos/Marcelov07br/rise-musique-releases/releases/latest`
+  (repo público), exige tag `v<versionName>`, release estável, asset `update.json` {versionCode, versionName, asset, sha256}
+  e o APK nomeado em `asset` (agora `RiseMusique-<versão>.apk`; antigos eram `RiseMusique-GPT-<versão>.apk`).
+  Valida tamanho, SHA-256, pacote, versionCode maior e **mesmo certificado** do app instalado.
+- Assinatura: releases 0.7–0.9.0 assinadas com `signing/rise-musique-gpt.jks` (alias `rise-musique-gpt`,
+  DN `CN=Rise Musique GPT`, SHA-256 do certificado `788c94b2…41ffa6609`), criada por `setup-signing.py`
+  no PC Windows do Marce. A chave NÃO está neste computador nem no Git. APK debug daqui usa a debug.keystore
+  e não instala por cima da versão de release.
 
-App Android (Kotlin + Jetpack Compose + Material 3) que busca e baixa música/vídeo do YouTube com yt-dlp + ffmpeg embutidos (youtubedl-android 0.18.1). Dono: Marce. Versão atual: 0.6 código / build "v8" (debug).
+### Como lançar uma versão
+1. Aumentar versionCode/versionName em `app/build.gradle.kts`; atualizar `RELEASE_NOTES.md`.
+2. Ter `signing/` (jks + credentials.json) disponível localmente e exportar `RISE_KEYSTORE`, `RISE_STORE_PASSWORD`,
+   `RISE_KEY_ALIAS`, `RISE_KEY_PASSWORD` (ou `build-local.ps1` no Windows, que lê `signing/credentials.json`).
+3. `./gradlew :app:assembleRelease :app:lintRelease :app:testDebugUnitTest`
+4. `python3 scripts/prepare-release.py` → `delivery/v<versão>/` (APK + update.json + notas).
+5. `gh release create v<versão> --repo Marcelov07br/rise-musique-releases --title "Rise Musique <versão>" -F delivery/v<versão>/RELEASE_NOTES.md delivery/v<versão>/RiseMusique-<versão>.apk delivery/v<versão>/update.json`
+6. Commit + push em `main`.
+
+## Histórico (versão original do Grok)
 
 ## Como compilar (no computador do bot)
 - JDK 17 em `~/jdk`, Android SDK em `~/android`, Gradle via `./gradlew`.

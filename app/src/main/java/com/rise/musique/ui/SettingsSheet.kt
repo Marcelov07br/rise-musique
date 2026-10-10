@@ -26,7 +26,7 @@ import com.rise.musique.BuildConfig
         PillButton("Importar", a.importBackup, Modifier.weight(1f), filled = false)
       }
       PillButton("Verificar atualizações", a.updates, Modifier.fillMaxWidth())
-      Text("Rise Musique GPT ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Text("Rise Musique ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
 }

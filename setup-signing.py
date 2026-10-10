@@ -1,4 +1,4 @@
-"""Create the GPT app's stable signing key locally. Never commit signing/."""
+"""Create the app's stable signing key locally (already done once on Marce's PC; never rerun to replace it). Never commit signing/."""
 import json
 import secrets
 import subprocess
