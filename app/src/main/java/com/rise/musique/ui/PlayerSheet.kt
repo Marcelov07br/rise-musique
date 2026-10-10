@@ -160,6 +160,9 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         Spacer(Modifier.height(18.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
           ToggleIcon(Icons.Rounded.Shuffle, "Aleatório", now.shuffle, enabled = !now.isPreview, onClick = a.shuffle)
+          ToggleIcon(if (now.repeat == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+            when (now.repeat) { 1 -> "Repetir faixa"; 2 -> "Repetir fila"; else -> "Repetição desligada" }, now.repeat != 0, enabled = !now.isPreview, onClick = a.repeat)
+          ToggleIcon(Icons.Rounded.QueueMusic, "Fila de reprodução", false, enabled = !now.isPreview) { a.showQueue(true) }
           Spacer(Modifier.weight(1f))
           if (now.count > 1) Text("${now.index + 1} de ${now.count}", color = Color.White.copy(.5f), fontSize = 12.sp)
           Spacer(Modifier.weight(1f))

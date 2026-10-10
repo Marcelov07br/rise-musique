@@ -69,9 +69,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   fun onQuery(q: String) { state = state.copy(query = q) }
   fun onMode(m: Mode) { val q = prefs.getString("quality_${m.name}", m.qualities.last())!!
-    prefs.edit().putString("mode", m.name).apply(); state = state.copy(mode = m, quality = q) }
-  fun onQuality(q: String) { prefs.edit().putString("quality_${state.mode.name}", q).apply(); state = state.copy(quality = q) }
-  fun onFormat(f: String) { prefs.edit().putString("format", f).apply(); state = state.copy(format = f) }
+    prefs.edit().putString("mode", m.name).apply(); state = state.copy(mode = m, quality = q, choices = state.choices.chooseMedia()) }
+  fun onQuality(q: String) { prefs.edit().putString("quality_${state.mode.name}", q).apply(); state = state.copy(quality = q, choices = state.choices.chooseQuality()) }
+  fun onFormat(f: String) { prefs.edit().putString("format", f).apply(); state = state.copy(format = f, choices = state.choices.chooseFormat()) }
   fun onCut(on: Boolean, start: String, end: String) { state = state.copy(cutOn = on, cutStart = start, cutEnd = end) }
   fun onFolder(uri: Uri?) { uri ?: return
     runCatching {
@@ -82,12 +82,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun onIncomingLink(text: String?) {
     val link = text?.let { Regex("https?://\\S+").find(it)?.value } ?: return
     if (link == lastLink) return
-    lastLink = link; state = state.copy(query = link); search()
+    lastLink = link; state = state.copy(query = link, page = "Buscar"); search()
   }
 
   fun search() {
     if (state.query.isBlank() || state.searching) return
-    stopPreview(); state = state.copy(searching = true, results = emptyList(), selected = emptySet(), status = "")
+    stopPreview(); state = state.copy(page = "Buscar", searching = true, results = emptyList(), selected = emptySet(), status = "")
     val query = state.query
     viewModelScope.launch {
       runCatching { Engine.search(query).also { ensureActive() } }
@@ -117,14 +117,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val start = if (r.duration > 90) 30_000L else 0L
         withPlayer { p -> p.setMediaItem(MediaItem.Builder().setMediaId("preview:" + r.url).setUri(stream).setMediaMetadata(meta(r.title, r.channel, r.thumb))
           .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(start + 30_000).build()).build())
-          p.prepare(); p.play() }
+          p.repeatMode = Player.REPEAT_MODE_OFF; p.prepare(); p.play() }
         state = state.copy(previewLoading = false)
       }.onFailure { if (it is CancellationException) throw it
         state = state.copy(previewing = null, previewLoading = false, now = null, status = "Prévia indisponível") }
     }
   }
   private fun stopPreview() { previewJob?.cancel()
-    if (state.now?.isPreview == true) { controller?.stop(); controller?.clearMediaItems(); state = state.copy(now = null) }
+    if (state.now?.isPreview == true) { controller?.stop(); controller?.clearMediaItems(); state = state.copy(now = null, playbackQueue = emptyList(), queueOpen = false) }
     state = state.copy(previewing = null, previewLoading = false) }
 
   /** Toca o histórico como fila, começando pelo item tocado. */
@@ -135,7 +135,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     stopPreview()
     val items = list.map { (item, u) -> MediaItem.Builder().setMediaId(item.uri).setUri(u)
       .setMediaMetadata(meta(item.title, item.artist.ifBlank { item.meta }, item.art)).build() }
-    withPlayer { p -> p.setMediaItems(items, start, 0); p.prepare(); p.play() }
+    withPlayer { p -> p.setMediaItems(items, start, 0); p.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF); p.prepare(); p.play() }
     state = state.copy(now = NowPlaying(h.uri, h.title, h.artist.ifBlank { h.meta }, h.art, loading = true))
   }
 
@@ -154,10 +154,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       art = m.artworkUri?.toString() ?: "", playing = p.isPlaying, position = p.currentPosition.coerceAtLeast(0),
       duration = p.duration.takeIf { it > 0 } ?: n.duration, isPreview = preview,
       loading = p.playbackState == Player.STATE_BUFFERING, hasNext = p.hasNextMediaItem(), hasPrev = p.hasPreviousMediaItem(),
-      shuffle = p.shuffleModeEnabled, index = p.currentMediaItemIndex, count = p.mediaItemCount)
+      repeat = p.repeatMode, shuffle = p.shuffleModeEnabled, index = p.currentMediaItemIndex, count = p.mediaItemCount)
     if (key != n.key) now = now.copy(lyrics = null, lyricsState = "")
     if (preview && p.playbackState == Player.STATE_ENDED) { stopPreview(); return }
-    state = state.copy(now = now)
+    val queue = if (preview) emptyList() else (0 until p.mediaItemCount).map { i ->
+      val track = p.getMediaItemAt(i); val md = track.mediaMetadata
+      HistoryItem(md.title?.toString().orEmpty(), "", track.mediaId, md.artworkUri?.toString().orEmpty(), md.artist?.toString().orEmpty())
+    }
+    state = state.copy(now = now, playbackQueue = queue)
     if (!preview && lyricsFor != key && now.duration > 0) { lyricsFor = key; loadLyrics(key, now.title, now.artist, now.duration / 1000) }
   }
 
@@ -173,12 +177,45 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun prev() = withPlayer { p -> if (p.currentPosition > 3000 || !p.hasPreviousMediaItem()) p.seekTo(0) else p.seekToPreviousMediaItem() }
   fun shuffle() = withPlayer { it.shuffleModeEnabled = !it.shuffleModeEnabled }
   fun closePlayer() { sleep(0); previewJob?.cancel(); controller?.stop(); controller?.clearMediaItems(); lyricsFor = null
-    state = state.copy(now = null, previewing = null, previewLoading = false) }
+    state = state.copy(now = null, playbackQueue = emptyList(), queueOpen = false, previewing = null, previewLoading = false) }
+
+  fun page(page: String) { state = state.copy(page = page) }
+  fun showQueue(open: Boolean) { state = state.copy(queueOpen = open) }
+  fun repeat() = withPlayer { p ->
+    if (p.currentMediaItem?.mediaId?.startsWith("preview:") != true) {
+      p.repeatMode = when (p.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
+      prefs.edit().putInt("repeat", p.repeatMode).apply(); poll()
+    }
+  }
+  fun moveQueue(from: Int, to: Int) = withPlayer { p ->
+    if (from in 0 until p.mediaItemCount && to in 0 until p.mediaItemCount && from != to) { p.moveMediaItem(from, to); poll() }
+  }
+  fun removeQueue(index: Int) = withPlayer { p ->
+    if (index in 0 until p.mediaItemCount) { p.removeMediaItem(index)
+      if (p.mediaItemCount == 0) closePlayer() else poll() }
+  }
+  fun playQueue(index: Int) = withPlayer { p ->
+    if (index in 0 until p.mediaItemCount) { p.seekTo(index, 0); p.prepare(); p.play(); poll() }
+  }
+  fun addQueue(h: HistoryItem) = queueTrack(h, false)
+  fun playNext(h: HistoryItem) = queueTrack(h, true)
+  private fun queueTrack(h: HistoryItem, next: Boolean) {
+    val uri = uriOf(h) ?: return.also { state = state.copy(status = "Arquivo indisponível") }
+    stopPreview()
+    val item = MediaItem.Builder().setMediaId(h.uri).setUri(uri).setMediaMetadata(meta(h.title, h.artist.ifBlank { h.meta }, h.art)).build()
+    withPlayer { p ->
+      if (p.mediaItemCount == 0) { p.setMediaItem(item); p.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF); p.prepare(); p.play() }
+      else p.addMediaItem(if (next) p.currentMediaItemIndex + 1 else p.mediaItemCount, item)
+      poll()
+    }
+    state = state.copy(status = if (next) "Vai tocar a seguir" else "Adicionada à fila de reprodução")
+  }
 
   private fun secs(t: String): Int? = t.trim().split(":").map { it.toIntOrNull() ?: return null }
     .fold(0) { acc, n -> acc * 60 + n }.takeIf { t.isNotBlank() }
 
   fun enqueue() {
+    if (!state.choices.ready(state.mode, state.format)) { state = state.copy(status = "Escolha mídia, formato e qualidade antes de baixar"); return }
     val picked = state.results.filter { it.url in state.selected }; if (picked.isEmpty()) return
     var cut: String? = null
     if (state.cutOn && picked.size == 1) {

@@ -50,7 +50,8 @@ class MainActivity : ComponentActivity() {
         favorite = vm::favorite, addToPlaylist = vm::addToPlaylist, removeFromPlaylist = vm::removeFromPlaylist, deletePlaylist = vm::deletePlaylist,
         historyFilter = vm::historyFilter, historyView = vm::historyView, sleep = vm::sleep,
         exportBackup = { exporter.launch("rise-musique-backup.json") }, importBackup = { importer.launch(arrayOf("application/json", "*/*")) },
-        updates = { updates.check(true) })) } }
+        updates = { updates.check(true) }, page = vm::page, repeat = vm::repeat, showQueue = vm::showQueue,
+        moveQueue = vm::moveQueue, removeQueue = vm::removeQueue, playQueue = vm::playQueue, playNext = vm::playNext, addQueue = vm::addQueue)) } }
   }
   override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }
   private fun handle(i: Intent?) { if (i?.action == Intent.ACTION_SEND) vm.onIncomingLink(i.getStringExtra(Intent.EXTRA_TEXT)) }
