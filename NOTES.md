@@ -1,6 +1,6 @@
 # Rise Musique — notas do projeto
 
-## Estado atual (0.9.1) — linha principal: `main`
+## Estado atual (0.9.1, publicada em 10/10/2026) — linha principal: `main`
 
 - `main` é a linha de desenvolvimento. A branch `gpt` (trabalho de 0.7–0.9.1) foi incorporada em `main`
   por fast-forward em 10/10/2026 e fica só como histórico (não apagar, não usar mais).
@@ -15,7 +15,15 @@
   no PC Windows do Marce. A chave NÃO está neste computador nem no Git. APK debug daqui usa a debug.keystore
   e não instala por cima da versão de release.
 
-### Como lançar uma versão
+### Como lançar uma versão (Linux, neste computador)
+A chave fica em `signing/` (ignorado pelo Git, chmod 600; nunca commitar nem imprimir senhas).
+1. Aumentar versionCode/versionName em `app/build.gradle.kts`; atualizar `RELEASE_NOTES.md` (português, sem "GPT").
+2. `./build-local.sh` — lê `signing/credentials.json`, usa a cópia local do .jks, roda assembleRelease + lintRelease + testes e `scripts/prepare-release.py`.
+3. Conferir: `apksigner verify --print-certs delivery/v<versão>/RiseMusique-<versão>.apk` → SHA-256 `788c94b2df3707ba4f4ebdc3d8912e5dba1cc20ce6cca51be1fa89741ffa6609`.
+4. `gh release create v<versão> --repo Marcelov07br/rise-musique-releases --title "Rise Musique <versão>" -F delivery/v<versão>/RELEASE_NOTES.md --latest delivery/v<versão>/RiseMusique-<versão>.apk delivery/v<versão>/update.json`
+5. Commit + push em `main`.
+
+### Como lançar uma versão (genérico / Windows)
 1. Aumentar versionCode/versionName em `app/build.gradle.kts`; atualizar `RELEASE_NOTES.md`.
 2. Ter `signing/` (jks + credentials.json) disponível localmente e exportar `RISE_KEYSTORE`, `RISE_STORE_PASSWORD`,
    `RISE_KEY_ALIAS`, `RISE_KEY_PASSWORD` (ou `build-local.ps1` no Windows, que lê `signing/credentials.json`).
