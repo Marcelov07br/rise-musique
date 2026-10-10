@@ -44,4 +44,21 @@ class TransitionCrashTest {
       alive = false; rule.waitForIdle(); alive = true; rule.waitForIdle()
     }
   }
+
+  /** 0.15: smart folder (genre/mood/decade) opens through the same single-owner transition. */
+  @Test fun smartFolders() {
+    val info = album.associate { it.uri to TrackInfo(-9.0, .9, "Rock", 1994, 128.0) }
+    var state by mutableStateOf(UiState(history = album, page = "Biblioteca", trackInfo = info))
+    rule.setContent { RiseTheme(true) { RiseApp(state, Actions(page = { state = state.copy(page = it) })) } }
+    rule.waitForIdle()
+    repeat(2) {
+      rule.onAllNodesWithText("Rock")[0].performClick(); rule.mainClock.advanceTimeBy(150)
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Festa")[0].performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("GÊNERO", substring = true).assertCountEquals(0)
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("1990s")[0].performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Biblioteca")[0].performClick(); rule.waitForIdle()   // reselect pops to root
+    }
+  }
 }

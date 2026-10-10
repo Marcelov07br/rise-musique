@@ -51,6 +51,9 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val crossfade: Int = 0, val statsOpen: Boolean = false, val radioOf: String? = null, val automix: Boolean = false, val cutOpen: Boolean = false, val cutVisual: com.rise.musique.CutVisual? = null,
   val lastfmUser: String? = null, val lastfmOn: Boolean = false, val lastfmConfigured: Boolean = false, val recapOpen: Boolean = false,
   val recapMonth: com.rise.musique.Recap? = null, val recapYear: com.rise.musique.Recap? = null, val stats: com.rise.musique.StatsSummary? = null,
+  val eq: com.rise.musique.EqSettings = com.rise.musique.EqSettings(), val eqProfile: String = "speaker", val eqOpen: Boolean = false,
+  val normalize: Boolean = true, val normalizeAlbum: Boolean = false, val lockLyrics: Boolean = false, val wifiOnly: Boolean = false,
+  val followed: Set<String> = emptySet(), val trackInfo: Map<String, com.rise.musique.TrackInfo> = emptyMap(),
   val undo: UndoInfo? = null, val popular: Map<String, List<SearchResult>> = emptyMap(), val popularLoading: Set<String> = emptySet(), val hidden: Set<String> = emptySet())
 
 /** Snackbar with Desfazer; the real action runs only after the timeout. */
@@ -81,7 +84,10 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val openCut: (Boolean) -> Unit = {}, val previewRange: (Long, Long) -> Unit = { _, _ -> },
   val undo: () -> Unit = {}, val removeSearch: (String) -> Unit = {}, val searchLive: () -> Unit = {}, val clearQueue: () -> Unit = {},
   val artistPopular: (String) -> Unit = {}, val prepareDownload: (SearchResult) -> Unit = {}, val removeFromList: (HistoryItem, String) -> Unit = { _, _ -> },
-  val openArtist: (String) -> Unit = {}, val openAlbum: (String) -> Unit = {}, val openPlaylist: (String) -> Unit = {}, val openDownloads: () -> Unit = {})
+  val openArtist: (String) -> Unit = {}, val openAlbum: (String) -> Unit = {}, val openPlaylist: (String) -> Unit = {}, val openDownloads: () -> Unit = {},
+  val eqOpen: (Boolean) -> Unit = {}, val eqChange: (com.rise.musique.EqSettings) -> Unit = {}, val normalize: (Boolean) -> Unit = {},
+  val normalizeAlbum: (Boolean) -> Unit = {}, val lockLyrics: (Boolean) -> Unit = {}, val wifiOnly: (Boolean) -> Unit = {},
+  val follow: (String) -> Unit = {}, val openSmart: (String, String) -> Unit = { _, _ -> })
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -102,6 +108,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
     if (state.settingsOpen) SettingsSheet(state, actions)
     if (state.statsOpen) StatsSheet(state, actions)
     if (state.cutOpen) CutSheet(state, actions)
+    if (state.eqOpen) EqSheet(state, actions)
     if (state.recapOpen) RecapSheet(state, actions)
   }
 }
@@ -116,7 +123,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   return seek to androidx.compose.animation.core.rememberTransition(seek, label = "screen")
 }
 
-private val Route?.isDetail get() = this is Route.Album || this is Route.Playlist || this is Route.Artist
+private val Route?.isDetail get() = this is Route.Album || this is Route.Playlist || this is Route.Artist || this is Route.Smart
 
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0,
@@ -146,6 +153,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val navActions = remember(actions, tab, state.playlists.keys) { actions.copy(
     openAlbum = { nav.push(tab, Route.Album(it)) }, openPlaylist = { nav.push(tab, Route.Playlist(it)) }, openArtist = { nav.push(tab, Route.Artist(it)) },
     openDownloads = { nav.push("Buscar", Route.Downloads); actions.page("Buscar") },
+    openSmart = { k, v -> nav.push(tab, Route.Smart(k, v)) },
     albumFilter = { if (it.isBlank()) nav.pop(tab) else nav.push(tab, Route.Album(it)) },
     historyView = { if (it in state.playlists) nav.push(tab, Route.Playlist(it)) else actions.historyView(it) },
     page = { t -> val target = if (t == "Downloads") "Buscar" else t
@@ -161,6 +169,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
     lastDetail?.let { d -> if (screen.route.isDetail || transition.isRunning) {
       val art = when (d) { is Route.Artist -> artistArt(state, d.name)
         is Route.Album -> state.history.firstOrNull { it.album == d.name && it.art.isNotBlank() }?.art.orEmpty()
+        is Route.Smart -> smartFolder(state, d.kind, d.value)?.tracks?.firstOrNull { it.art.isNotBlank() }?.art.orEmpty()
         is Route.Playlist -> state.playlists[d.name].orEmpty().firstNotNullOfOrNull { u -> state.history.firstOrNull { it.uri == u && it.art.isNotBlank() }?.art }.orEmpty()
         else -> "" }
       CollectionBackdrop(art, collapseOf(nav.list(d.key, initialCollectionItem)),
@@ -177,6 +186,8 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
               when (val r = sc.route) {
                 is Route.Album -> CollectionScreen(clean.copy(albumFilter = r.name), navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
                 is Route.Playlist -> CollectionScreen(clean.copy(historyView = r.name), navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
+                is Route.Smart -> smartFolder(clean, r.kind, r.value).let { f -> if (f != null) CollectionScreen(clean, navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss, f)
+                  else Box(Modifier.fillMaxSize()) { EmptyState(androidx.compose.material.icons.Icons.Rounded.AutoAwesome, "Coleção vazia", "As faixas mudaram desde a última análise.") } }
                 is Route.Artist -> ArtistScreen(clean, navActions, r.name, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
                 Route.Downloads -> Column(Modifier.fillMaxSize()) {
                   Row(Modifier.fillMaxWidth().height(TopBarHeight).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {

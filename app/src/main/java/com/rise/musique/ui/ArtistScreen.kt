@@ -50,7 +50,7 @@ fun artistArt(s: UiState, name: String): String =
   Box(modifier.dragToDismiss(dismiss, onBack)) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = TopBarHeight, bottom = if (s.now != null) 104.dp else 24.dp)) {
       item(key = "header") {
-        Column(Modifier.fillMaxWidth().height(HeaderHeight - TopBarHeight).padding(horizontal = 24.dp)
+        Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
           .graphicsLayer { alpha = (1f - collapse * 1.2f).coerceIn(0f, 1f) }, horizontalAlignment = Alignment.CenterHorizontally) {
           Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapse; scaleX = sc; scaleY = sc }.sharedCover("cover-ar-$name")
             .clip(CircleShape).background(Color.White.copy(.12f)), contentAlignment = Alignment.Center) {
@@ -73,6 +73,14 @@ fun artistArt(s: UiState, name: String): String =
                   Text("Tocar", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp) }
               }
               GlassIcon(Icons.Rounded.Radio, "Rádio do artista", { haptics.tick(); tracks.firstOrNull { !it.video }?.let(a.radioFor) }, enabled = tracks.any { !it.video })
+            }
+            Spacer(Modifier.height(12.dp))
+            val following = name in s.followed
+            GlassBox(Modifier.height(48.dp), CircleShape) {
+              Row(Modifier.clickable { haptics.press(); a.follow(name) }.padding(horizontal = 20.dp).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (following) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationAdd, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (following) "Seguindo · avisa lançamentos" else "Seguir artista", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp) }
             }
           }
         }

@@ -35,8 +35,12 @@ internal val TopBarHeight = 64.dp
 
 /** 0 = header fully visible, 1 = scrolled past the header (collapsed top bar). Always clamped. */
 @Composable fun collapseOf(list: LazyListState): Float {
-  val px = with(LocalDensity.current) { (HeaderHeight - TopBarHeight).toPx() }
-  return if (list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / px).coerceIn(0f, 1f)
+  // Header height is measured (it wraps its content), falling back to the nominal height before the first layout.
+  val fallback = with(LocalDensity.current) { (HeaderHeight - TopBarHeight).toPx() }
+  val c by remember(list) { derivedStateOf {
+    val px = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 0 }?.size?.toFloat()?.takeIf { it > 0f } ?: fallback
+    if (list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / (px * .8f)).coerceIn(0f, 1f) } }
+  return c
 }
 
 /** Fixed full-screen backdrop: living artwork fading into the base color downwards, and fully as the list scrolls. */
@@ -52,15 +56,16 @@ internal val TopBarHeight = 64.dp
 
 /** Album or playlist: collapsing hero header, glass actions and a numbered list, over [CollectionBackdrop]. */
 @Composable fun CollectionScreen(s: UiState, a: Actions, list: LazyListState, modifier: Modifier = Modifier, onBack: () -> Unit = {},
-                                 dismiss: androidx.compose.animation.core.Animatable<Float, androidx.compose.animation.core.AnimationVector1D> = remember { androidx.compose.animation.core.Animatable(0f) }) {
+                                 dismiss: androidx.compose.animation.core.Animatable<Float, androidx.compose.animation.core.AnimationVector1D> = remember { androidx.compose.animation.core.Animatable(0f) },
+                                 smart: SmartFolder? = null) {
   val c = MaterialTheme.colorScheme
-  val tracks = visibleHistory(s)
-  val isAlbum = s.albumFilter.isNotBlank()
-  val title = if (isAlbum) s.albumFilter else s.historyView
+  val tracks = smart?.tracks ?: visibleHistory(s)
+  val isAlbum = smart == null && s.albumFilter.isNotBlank()
+  val title = smart?.value ?: if (isAlbum) s.albumFilter else s.historyView
   val hero = tracks.firstOrNull { it.art.isNotBlank() }
   val artist = if (isAlbum) tracks.map { it.artist }.filter(String::isNotBlank).distinct().singleOrNull().orEmpty() else ""
   val totalMs = tracks.sumOf { it.duration }
-  val meta = listOf(if (isAlbum) "ÁLBUM" else "PLAYLIST", artist.uppercase(), "${tracks.size} ${if (tracks.size == 1) "FAIXA" else "FAIXAS"}",
+  val meta = listOf(smart?.kind?.uppercase() ?: if (isAlbum) "ÁLBUM" else "PLAYLIST", artist.uppercase(), "${tracks.size} ${if (tracks.size == 1) "FAIXA" else "FAIXAS"}",
     if (totalMs > 0) "${(totalMs / 60_000).coerceAtLeast(1)} MIN" else "").filter(String::isNotBlank).joinToString(" · ")
   val haptics = rememberHaptics()
   val back = { haptics.tick(); onBack() }
@@ -68,14 +73,14 @@ internal val TopBarHeight = 64.dp
   Box(modifier.dragToDismiss(dismiss, onBack)) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = TopBarHeight, bottom = if (s.now != null) 104.dp else 24.dp)) {
       item(key = "header") {
-        Column(Modifier.fillMaxWidth().height(HeaderHeight - TopBarHeight).padding(horizontal = 24.dp)
+        Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
           .graphicsLayer { alpha = (1f - collapse * 1.2f).coerceIn(0f, 1f) }, horizontalAlignment = Alignment.CenterHorizontally) {
           val corner = morphCorner(14.dp, 8.dp)?.value ?: 8.dp
           Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
-            .sharedCover(if (isAlbum) "cover-al-$title" else "cover-pl-$title")) {
+            .sharedCover(smart?.key ?: if (isAlbum) "cover-al-$title" else "cover-pl-$title")) {
             if (hero != null) Cover(hero, Modifier.fillMaxSize(), corner)
             else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(.12f)), contentAlignment = Alignment.Center) {
-              Icon(if (isAlbum) Icons.Rounded.Album else Icons.Rounded.QueueMusic, null, tint = Color.White.copy(.75f), modifier = Modifier.size(64.dp)) }
+              Icon(if (isAlbum) Icons.Rounded.Album else if (smart != null) Icons.Rounded.AutoAwesome else Icons.Rounded.QueueMusic, null, tint = Color.White.copy(.75f), modifier = Modifier.size(64.dp)) }
           }
           Spacer(Modifier.height(16.dp))
           Column(Modifier.enterRise(), horizontalAlignment = Alignment.CenterHorizontally) {

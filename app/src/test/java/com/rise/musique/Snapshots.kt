@@ -5,6 +5,7 @@ import com.rise.musique.ui.*
 import org.junit.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
 private val init = run { StaticPreview.on = true }
 private val found = init.let { UiState(query = "música de exemplo", results = sampleResults, selected = setOf("a"), previewing = "a", history = sampleHistory, cutOn = true, cutStart = "0:45", cutEnd = "1:30") }
 private val playlist = init.let { _ -> null }.let { UiState(query = "https://youtube.com/playlist?list=x", results = sampleResults, isPlaylist = true, selected = setOf("a", "c"), format = "FLAC") }
@@ -94,4 +95,20 @@ class Round14 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
   @Test fun actionSheet() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { com.rise.musique.ui.TrackActionContent(artistLib[1],
     lib, Actions(), {}, {}) } } }
   @Test fun undoSnackbar() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Biblioteca", now = np, undo = com.rise.musique.ui.UndoInfo(1, "Arquivo apagado")), Actions()) } }
+}
+
+private val r15Info = artistLib.mapIndexed { i, h -> h.uri to TrackInfo(if (i % 2 == 0) -9.0 else -15.0, .9, if (i < 6) "Rock" else "Jazz", if (i < 5) 1994 else 2012, if (i % 2 == 0) 128.0 else 84.0) }.toMap()
+class Round15 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val lib = UiState(history = artistLib, trackInfo = r15Info, playlists = mapOf("Treino" to listOf("long:1", "long:2")))
+  private val eq = EqSettings(on = true, bands = Eq.PRESETS["Rock"]!!, bass = 3f, preset = "Rock")
+  @Test fun eqScreen() = p.snapshot { RiseTheme(true) { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color(0xFF101012))) {
+    EqContent(lib.copy(eq = eq, eqProfile = "bt:Galaxy Buds3 Pro"), Actions()) } } }
+  @Test fun smartFolders() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Biblioteca"), Actions()) } }
+  @Test fun smartFolderOpen() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Biblioteca"), Actions(), initialRoute = com.rise.musique.ui.Route.Smart("Clima", "Festa")) } }
+  @Test fun artistFollow() = p.snapshot { RiseTheme(true) { RiseApp(lib.copy(page = "Biblioteca", followed = setOf("Artista Exemplo"), popular = mapOf("Artista Exemplo" to ytPopular)), Actions(),
+    initialRoute = com.rise.musique.ui.Route.Artist("Artista Exemplo")) } }
+  @Test fun playlistHeader() = p.snapshot { RiseTheme(true) { RiseApp(lib, Actions(), initialRoute = com.rise.musique.ui.Route.Playlist("Treino")) } }
+}
+class Round15Tall { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT, screenHeight = 4200))
+  @Test fun settings() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SettingsContent(UiState(normalize = true, lockLyrics = true, wifiOnly = true), Actions()) } } }
 }

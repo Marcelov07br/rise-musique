@@ -14,11 +14,12 @@ object Engine {
 
   /** More results request a larger bounded search, then take the next page. */
   suspend fun search(input: String, offset: Int = 0, count: Int = 10): List<SearchResult> = withContext(Dispatchers.IO) {
-    val target = if (isLink(input)) input.trim() else "ytsearch${(offset + count).coerceIn(1, 100)}:${input.trim()}"
+    val target = when { isLink(input) -> input.trim(); input.startsWith("ytsearch") -> input.trim()
+      else -> "ytsearch${(offset + count).coerceIn(1, 100)}:${input.trim()}" }
     val req = YoutubeDLRequest(target).apply { addOption("-J"); addOption("--flat-playlist")
       addOption(if (isPlaylist(input)) "--yes-playlist" else "--no-playlist") }
     parseEntries(runInterruptible { YoutubeDL.getInstance().execute(req).out })
-      .let { if (isLink(input)) it else it.drop(offset).take(count) }
+      .let { if (isLink(input) || input.startsWith("ytsearch")) it else it.drop(offset).take(count) }
   }
 
   /** Parses yt-dlp -J (flat) output into results. Visible for tests. */
@@ -89,10 +90,12 @@ object Engine {
 
   suspend fun download(ctx: Context, url: String, mode: Mode, quality: String, format: String, cut: String?, tree: Uri?, procId: String,
                        onProgress: (Float, String) -> Unit): HistoryItem = withContext(Dispatchers.IO) {
-    val tmp = File(ctx.cacheDir, "dl-$procId").apply { deleteRecursively(); mkdirs() }
+    // Pasta persistente por trabalho: se o app morrer ou a rede cair, a nova tentativa continua o .part de onde parou.
+    val tmp = File(ctx.filesDir, "dl/$procId").apply { mkdirs() }
     try {
     val req = YoutubeDLRequest(url).apply {
-      addOption("--no-playlist"); addOption("-o", "${tmp.absolutePath}/%(title)s.%(ext)s")
+      addOption("--no-playlist"); addOption("--continue"); addOption("--retries", "10"); addOption("--fragment-retries", "10")
+      addOption("-o", "${tmp.absolutePath}/%(title)s.%(ext)s")
       addOption("--embed-metadata")
       if (cut != null) { addOption("--download-sections", "*$cut"); addOption("--force-keyframes-at-cuts") }
       if (mode == Mode.Musica) {

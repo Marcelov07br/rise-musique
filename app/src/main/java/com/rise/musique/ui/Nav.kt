@@ -8,6 +8,7 @@ sealed interface Route { val key: String
   data class Album(val name: String) : Route { override val key get() = "al:$name" }
   data class Playlist(val name: String) : Route { override val key get() = "pl:$name" }
   data class Artist(val name: String) : Route { override val key get() = "ar:$name" }
+  data class Smart(val kind: String, val value: String) : Route { override val key get() = "sm:$kind:$value" }
   data object Downloads : Route { override val key get() = "dl" }
 }
 

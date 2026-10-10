@@ -35,6 +35,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   var rename by remember { mutableStateOf<String?>(null) }
   var deletePlaylist by remember { mutableStateOf<String?>(null) }
   val albumRow = rows?.first ?: androidx.compose.foundation.lazy.rememberLazyListState()
+  val smartRow = androidx.compose.foundation.lazy.rememberLazyListState()
   val playlistRow = rows?.second ?: androidx.compose.foundation.lazy.rememberLazyListState()
   LazyColumn(modifier.padding(horizontal = 24.dp), state = list, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = if (s.now != null) 104.dp else 24.dp)) {
     item { Row(verticalAlignment = Alignment.CenterVertically) {
@@ -101,7 +102,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     val recent = if (home) shown.take(6) else shown
     if (shown.isNotEmpty() && (home || !browse)) item { Text(if (home) "Recentes" else "${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
     if (!home) { // Biblioteca: álbuns e artistas no topo, depois todas as faixas
-      AlbumAndArtistRows(shown.takeIf { browse }.orEmpty(), a, albumRow, artistRow)
+      AlbumAndArtistRows(shown.takeIf { browse }.orEmpty(), a, albumRow, artistRow, if (browse) smartFolders(s) else emptyList(), smartRow)
     }
     items(recent, key = { it.uri }) { h -> TrackRow(h, s, a) }
     if (home && shown.isNotEmpty()) item(key = "recap") { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -205,7 +206,13 @@ fun artistsOf(list: List<HistoryItem>): List<Triple<String, HistoryItem, Int>> =
     .sortedByDescending { it.third }.take(20)
 
 private fun androidx.compose.foundation.lazy.LazyListScope.AlbumAndArtistRows(shown: List<HistoryItem>, a: Actions,
-    albumRow: androidx.compose.foundation.lazy.LazyListState, artistRow: androidx.compose.foundation.lazy.LazyListState) {
+    albumRow: androidx.compose.foundation.lazy.LazyListState, artistRow: androidx.compose.foundation.lazy.LazyListState,
+    smart: List<SmartFolder> = emptyList(), smartRow: androidx.compose.foundation.lazy.LazyListState? = null) {
+  if (smart.isNotEmpty() && smartRow != null) {
+    item(key = "lib-smart-title") { Text("Coleções inteligentes", style = MaterialTheme.typography.titleLarge) }
+    item(key = "lib-smart") { Carousel(smartRow) { items(smart, key = { it.key }) { f ->
+      CoverCard(f.tracks.firstOrNull { it.art.isNotBlank() } ?: f.tracks.first(), f.value, "${f.kind} · ${f.tracks.size} faixas", f.key) { a.openSmart(f.kind, f.value) } } } }
+  }
   val albums = shown.filter { !it.video && it.album.isNotBlank() }.groupBy { it.album to it.artist }.entries.take(20)
   if (albums.isNotEmpty()) {
     item(key = "lib-albums-title") { Text("Álbuns", style = MaterialTheme.typography.titleLarge) }

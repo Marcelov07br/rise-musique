@@ -35,11 +35,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   var state by mutableStateOf(UiState(folder = prefs.getString("tree", null)?.let(Uri::parse), history = HistoryStore.load(app),
     theme = prefs.getString("theme", "Sistema")!!, crossfade = prefs.getInt("crossfade", 0), automix = prefs.getBoolean("automix", false),
     lastfmUser = LastFm.user(app), lastfmOn = LastFm.enabled(app), lastfmConfigured = LastFm.configured, sort = prefs.getString("sort", "Recentes")!!,
-    recentSearches = recentSearches(), format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app)).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
+    recentSearches = recentSearches(), format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app),
+    normalize = prefs.getBoolean("normalize", true), normalizeAlbum = prefs.getBoolean("normalizeAlbum", false), lockLyrics = prefs.getBoolean("lockLyrics", false),
+    wifiOnly = prefs.getBoolean("wifiOnly", false), followed = FollowStore.all(app)).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
       st.copy(mode = m, quality = prefs.getString("quality_${m.name}", m.qualities.last())!!) })
     private set
 
   init {
+    refreshTrackInfo(); LibraryScanWorker.schedule(app); if (FollowStore.all(app).isNotEmpty()) FollowWorker.schedule(app)
     viewModelScope.launch { Engine.update(app) }
     val fut = MediaController.Builder(app, SessionToken(app, ComponentName(app, PlaybackService::class.java))).buildAsync()
     controllerFuture = fut
@@ -94,6 +97,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private fun recentSearches(): List<String> = runCatching {
     val a = org.json.JSONArray(prefs.getString("searches", "[]")); List(a.length()) { a.getString(it) }
   }.getOrDefault(emptyList())
+  fun eqOpen(open: Boolean) { state = if (open) state.copy(eqOpen = true, eqProfile = EqStore.profileKey(ctx), eq = EqStore.load(ctx, EqStore.profileKey(ctx))) else state.copy(eqOpen = false) }
+  /** Saves into the current output's profile; the playback service picks it up instantly (shared prefs listener). */
+  fun eqChange(s: EqSettings) { state = state.copy(eq = s); EqStore.save(ctx, state.eqProfile, s) }
+  private fun flag(key: String, v: Boolean) = prefs.edit().putBoolean(key, v).apply()
+  fun normalize(on: Boolean) { flag("normalize", on); state = state.copy(normalize = on) }
+  fun normalizeAlbum(on: Boolean) { flag("normalizeAlbum", on); state = state.copy(normalizeAlbum = on) }
+  fun lockLyrics(on: Boolean) { flag("lockLyrics", on); state = state.copy(lockLyrics = on) }
+  fun wifiOnly(on: Boolean) { flag("wifiOnly", on); state = state.copy(wifiOnly = on) }
+  fun follow(name: String) { FollowStore.toggle(ctx, name); state = state.copy(followed = FollowStore.all(ctx)) }
+  fun refreshTrackInfo() { viewModelScope.launch { val m = withContext(Dispatchers.IO) { TrackInfoStore.all(ctx) }; state = state.copy(trackInfo = m) } }
+
   fun removeSearch(q: String) { val list = recentSearches() - q; prefs.edit().putString("searches", org.json.JSONArray(list).toString()).apply(); state = state.copy(recentSearches = list) }
   /** Live (debounced) search: same as search() but doesn't write the query into the history. */
   fun searchLive() = search(record = false)
@@ -308,7 +322,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun closePlayer() { sleep(0); previewJob?.cancel(); controller?.stop(); controller?.clearMediaItems(); lyricsFor = null
     state = state.copy(now = null, playbackQueue = emptyList(), queueOpen = false, previewing = null, previewLoading = false) }
 
-  fun page(page: String) { state = state.copy(page = page) }
+  fun page(page: String) { state = state.copy(page = page); if (page == "Biblioteca") refreshTrackInfo() }
   fun showQueue(open: Boolean) { state = state.copy(queueOpen = open) }
   fun repeat() = withPlayer { p ->
     if (p.currentMediaItem?.mediaId?.startsWith("preview:") != true) {

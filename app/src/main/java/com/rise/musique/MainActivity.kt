@@ -62,7 +62,8 @@ class MainActivity : ComponentActivity() {
         renamePlaylist = vm::renamePlaylist, movePlaylist = vm::movePlaylist, refreshMetadata = vm::refreshMetadata,
         theme = vm::theme, settings = vm::settings, removeLocal = vm::removeLocal, crossfade = vm::crossfade, stats = vm::stats, playShuffled = vm::playShuffled, queueAll = vm::queueAll,
         radio = vm::radio, radioFor = vm::radioFor, automix = vm::automix, lastfmLogin = vm::lastfmLogin, lastfmLogout = vm::lastfmLogout,
-        lastfmToggle = vm::lastfmToggle, openCut = vm::openCut, undo = vm::undo, removeSearch = vm::removeSearch, searchLive = vm::searchLive, clearQueue = vm::clearQueue,
+        lastfmToggle = vm::lastfmToggle, openCut = vm::openCut, eqOpen = vm::eqOpen, eqChange = vm::eqChange, normalize = vm::normalize, normalizeAlbum = vm::normalizeAlbum,
+        lockLyrics = vm::lockLyrics, wifiOnly = vm::wifiOnly, follow = vm::follow, undo = vm::undo, removeSearch = vm::removeSearch, searchLive = vm::searchLive, clearQueue = vm::clearQueue,
         artistPopular = vm::artistPopular, prepareDownload = vm::prepareDownload, removeFromList = vm::removeFromList, previewRange = vm::previewRange, recap = vm::recap, shareRecap = { p -> vm.recapIntent(p)?.let(::startActivity) })) } }
   }
   override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }

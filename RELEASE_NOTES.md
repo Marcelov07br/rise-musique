@@ -1,3 +1,17 @@
+# Rise Musique 0.15.0
+
+## Novidades (0.15.0)
+- Equalizador profissional de 10 bandas (31 Hz a 16 kHz), feito pelo próprio app: funciona igual em qualquer celular. Tem reforço de graves, pré-amplificador, predefinições (Flat, Bass, Vocal, Rock, Eletrônica, Acústico, Podcast) e curva de resposta ao vivo. Cada saída de áudio guarda o seu perfil (alto-falante, fone com fio, cada fone Bluetooth) e troca sozinha. "Evitar distorção" baixa o pré-amplificador automaticamente e um limitador segura os picos.
+- Normalização de volume: cada faixa local é medida uma vez em segundo plano (EBU R128) e toca a −14 LUFS, com limitador. Usa as tags ReplayGain quando o arquivo já tem. Modo álbum opcional. Prévias não são alteradas. Ordem: normalização → equalizador → limitador, junto com crossfade e Automix.
+- Letra na tela de bloqueio: a linha atual da letra sincronizada aparece na notificação e na tela de bloqueio (liga em Ajustes). Só atualiza quando a linha muda.
+- Coleções inteligentes na Biblioteca: por clima (Calmo, Foco, Animado, Festa, a partir do andamento e da energia), por gênero e por década. Abrem como álbum, com a mesma transição.
+- Downloads mais espertos: opção "Só no Wi-Fi", downloads continuam de onde pararam depois de queda de rede ou de fechar o app, e novas tentativas automáticas com espera crescente.
+- Seguir artista: na tela do artista, toque em "Seguir artista". A cada ~12 h o app procura lançamentos e avisa com um botão "Baixar".
+- Novo widget de vidro, redimensionável: 2x2 (capa e play), 4x2 (capa, título e controles) e 4x4 (capa, linha da letra, progresso e controles), com a capa desfocada de fundo.
+
+## Correções
+- Cabeçalho das playlists sem o espaço vazio embaixo dos botões.
+
 # Rise Musique 0.14.0
 
 ## Novidades (0.14.0)

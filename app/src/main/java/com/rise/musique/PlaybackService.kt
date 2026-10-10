@@ -74,18 +74,24 @@ class PlaybackService : MediaLibraryService() {
       extras.putLong(SLEEP_AT, 0); session?.setSessionExtras(Bundle(extras))
     }
   }
+  /** normalize → EQ → limiter for the main player (the crossfade player has its own). */
+  val mainFx = RiseAudioProcessor()
+  private var lyricPlayer: LyricPlayer? = null
+  private var lyricLines: List<Lyrics.Line> = emptyList()
+  private var lyricsFor: String? = null
   private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
   override fun onCreate() { super.onCreate()
     val renderers = object : DefaultRenderersFactory(this) {
       override fun buildAudioSink(ctx: Context, floatOut: Boolean, params: Boolean): AudioSink =
-        DefaultAudioSink.Builder(ctx).setAudioProcessors(arrayOf(TeeAudioProcessor(com.rise.musique.AudioLevels))).build()
+        DefaultAudioSink.Builder(ctx).setAudioProcessors(arrayOf(mainFx, TeeAudioProcessor(com.rise.musique.AudioLevels))).build()
     }
     val player = ExoPlayer.Builder(this, renderers)
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
       .setHandleAudioBecomingNoisy(true)
       .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(streamDataSource(this))).build()
     val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-    session = MediaLibrarySession.Builder(this, player, object : MediaLibrarySession.Callback {
+    val shown = LyricPlayer(player).also { lyricPlayer = it }
+    session = MediaLibrarySession.Builder(this, shown, object : MediaLibrarySession.Callback {
       override fun onConnect(s: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
         val base = MediaSession.ConnectionResult.AcceptedResultBuilder(s)
         val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
@@ -144,15 +150,24 @@ class PlaybackService : MediaLibraryService() {
     val fader = Crossfader(this, player, scope) { getSharedPreferences("playback", 0).getLong(SLEEP_AT, 0).let { it > 0 && it - System.currentTimeMillis() < 30_000 } }
     crossfader = fader
     scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { LastFm.flush(this@PlaybackService) } }
-    scope.launch { while (true) { delay(200); fader.tick(); trackPlay(player) } }
+    scope.launch { while (true) { delay(200); fader.tick(); trackPlay(player); lyricTick(player) } }
+    EqStore.applyCurrent(this)
+    getSystemService(android.media.AudioManager::class.java).registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+      override fun onAudioDevicesAdded(d: Array<out android.media.AudioDeviceInfo>?) { EqStore.applyCurrent(this@PlaybackService) }
+      override fun onAudioDevicesRemoved(d: Array<out android.media.AudioDeviceInfo>?) { EqStore.applyCurrent(this@PlaybackService) }
+    }, null)
+    getSharedPreferences("eq", 0).registerOnSharedPreferenceChangeListener(eqListener)
+    LibraryScanWorker.schedule(this)
     player.addListener(object : androidx.media3.common.Player.Listener {
       private var lastArt: String? = "none"
       override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
         val f = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }?.let { g -> (0 until g.length).firstOrNull(g::isTrackSelected)?.let(g::getTrackFormat) }
         extras.putString(QUALITY, f?.let { AudioQuality.label(it.sampleMimeType ?: it.codecs, it.bitrate.takeIf { b -> b > 0 } ?: it.averageBitrate, it.sampleRate, it.channelCount) } ?: "")
         session?.setSessionExtras(Bundle(extras))
+        applyGain(player, mainFx, player.currentMediaItem, f)
       }
-      override fun onMediaItemTransition(item: androidx.media3.common.MediaItem?, reason: Int) { fader.onTransition(reason); finishPlay() }
+      override fun onMediaItemTransition(item: androidx.media3.common.MediaItem?, reason: Int) { fader.onTransition(reason); finishPlay()
+        applyGain(player, mainFx, item, null); loadLyrics(player) }
       override fun onPositionDiscontinuity(o: androidx.media3.common.Player.PositionInfo, n: androidx.media3.common.Player.PositionInfo, reason: Int) {
         if (reason == androidx.media3.common.Player.DISCONTINUITY_REASON_SEEK && o.mediaItemIndex == n.mediaItemIndex) fader.abort() }
       override fun onEvents(p: androidx.media3.common.Player, e: androidx.media3.common.Player.Events) {
@@ -162,11 +177,48 @@ class PlaybackService : MediaLibraryService() {
         if (!p.isPlaying) AudioLevels.silence()
         val m = p.mediaMetadata; val art = m.artworkUri?.toString()
         val changed = art != lastArt; lastArt = art
-        scope.launch { RiseWidget.push(this@PlaybackService, m.title?.toString() ?: "Rise Musique", m.artist?.toString() ?: "", p.isPlaying, art, changed) }
+        scope.launch { RiseWidget.push(this@PlaybackService, m.title?.toString() ?: "Rise Musique", m.artist?.toString() ?: "", p.isPlaying, art, changed,
+          p.currentPosition, p.duration.takeIf { it != C.TIME_UNSET } ?: 0, lyricPlayer?.line) }
       }
     })
   }
   override fun onGetSession(info: MediaSession.ControllerInfo): MediaLibrarySession? = session
+
+  private val eqListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> EqStore.applyCurrent(this) }
+
+  /** Volume normalization: tag (ReplayGain) > cached EBU R128 measurement > 0 dB. Previews and streams are left alone. */
+  fun applyGain(p: androidx.media3.common.Player, fx: RiseAudioProcessor, item: androidx.media3.common.MediaItem?, format: androidx.media3.common.Format?) {
+    val prefs = getSharedPreferences("rise", 0)
+    if (item == null || !prefs.getBoolean("normalize", true) || item.mediaId.startsWith("preview:") || item.mediaId.startsWith("http")) { fx.normGainDb = 0.0; return }
+    val album = prefs.getBoolean("normalizeAlbum", false)
+    val tag = format?.metadata?.let { md -> (0 until md.length()).map { md[it] }.firstNotNullOfOrNull { e -> replayGainOf(e.toString(), album) } }
+    fx.normGainDb = TrackInfoStore.gainDb(this, item.mediaId, item.mediaMetadata.albumTitle?.toString(), album, tag) { HistoryStore.load(this) }
+  }
+  private fun replayGainOf(entry: String, album: Boolean): Double? {
+    val key = if (album) "REPLAYGAIN_ALBUM_GAIN" else "REPLAYGAIN_TRACK_GAIN"
+    val i = entry.indexOf(key, ignoreCase = true); if (i < 0) return null
+    return Loudness.parseReplayGain(entry.substring(i + key.length).take(24))
+  }
+
+  private fun loadLyrics(p: ExoPlayer) {
+    lyricLines = emptyList(); lyricPlayer?.line = null
+    val item = p.currentMediaItem ?: return
+    if (!getSharedPreferences("rise", 0).getBoolean("lockLyrics", false) || item.mediaId.startsWith("preview:")) return
+    val m = item.mediaMetadata; val key = item.mediaId; lyricsFor = key
+    scope.launch { val l = runCatching { Lyrics.fetch(m.title?.toString().orEmpty(), m.artist?.toString().orEmpty(), (p.duration.coerceAtLeast(0)) / 1000) }.getOrNull()
+      if (lyricsFor == key) lyricLines = l.orEmpty() }
+  }
+  /** Updates the shown line only when it changes (no per-tick metadata churn). */
+  private fun lyricTick(p: ExoPlayer) {
+    val lp = lyricPlayer ?: return
+    if (lyricLines.isEmpty() || !getSharedPreferences("rise", 0).getBoolean("lockLyrics", false)) { lp.line = null; return }
+    val i = LyricPlayer.lineAt(lyricLines, p.currentPosition)
+    val text = lyricLines.getOrNull(i)?.text?.takeIf { it.isNotBlank() }?.let { "♪ $it" }
+    if (text != lp.line) { lp.line = text
+      val m = p.mediaMetadata
+      scope.launch { RiseWidget.push(this@PlaybackService, m.title?.toString() ?: "Rise Musique", m.artist?.toString() ?: "", p.isPlaying, null, false,
+        p.currentPosition, p.duration.takeIf { it != C.TIME_UNSET } ?: 0, text) } }
+  }
 
   private fun browseChildren(parentId: String): List<AutoLibrary.Node> = AutoLibrary.children(parentId,
     HistoryStore.load(this), Library.favorites(this), Library.playlists(this))

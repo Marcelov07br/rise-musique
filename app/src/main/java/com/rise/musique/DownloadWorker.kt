@@ -36,8 +36,11 @@ class DownloadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
           setProgressAsync(workDataOf("p" to p, "line" to line, "running" to true, "stage" to stage)); nm.notify(id.hashCode(), notif("$title · $stage", p)) }
       }
       HistoryStore.add(applicationContext, item.copy(art = item.art.ifBlank { d.getString("art").orEmpty() }, artist = item.artist.ifBlank { d.getString("artist").orEmpty() }))
-    }.fold({ Result.success(workDataOf("stage" to "Concluído")) },
+    }.fold({ java.io.File(applicationContext.filesDir, "dl/$id").deleteRecursively(); Result.success(workDataOf("stage" to "Concluído")) },
       { if (it is CancellationException) { YoutubeDL.getInstance().destroyProcessById(id.toString()); throw it }
+        // Rede/servidor: tenta de novo com espera crescente (WorkManager), mantendo o arquivo parcial.
+        if (DownloadRetry.shouldRetry(it.message, runAttemptCount)) return@withLock Result.retry()
+        java.io.File(applicationContext.filesDir, "dl/$id").deleteRecursively()
         Result.failure(workDataOf("err" to (it.message?.lineSequence()?.lastOrNull { l -> l.isNotBlank() }?.take(140) ?: "erro"))) })
   }
   companion object {
@@ -45,11 +48,13 @@ class DownloadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
     private val lock = Mutex()
     fun enqueue(ctx: Context, data: Data) {
       val req = OneTimeWorkRequestBuilder<DownloadWorker>().addTag(TAG).setInputData(data)
-        .setConstraints(Constraints(requiredNetworkType = NetworkType.CONNECTED)).build()
+        .setConstraints(Constraints(requiredNetworkType = if (wifiOnly(ctx)) NetworkType.UNMETERED else NetworkType.CONNECTED))
+        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, java.util.concurrent.TimeUnit.SECONDS).build()
       Jobs.remember(ctx, req.id.toString(), data); WorkManager.getInstance(ctx).enqueue(req) }
     fun data(url: String, title: String, art: String, artist: String, mode: Mode, quality: String, format: String, cut: String?, tree: Uri?) =
       workDataOf("url" to url, "title" to title, "art" to art, "artist" to artist, "mode" to mode.name, "quality" to quality, "format" to format, "cut" to cut, "tree" to tree?.toString())
-    fun cancel(ctx: Context, id: String) { YoutubeDL.getInstance().destroyProcessById(id)
+    fun wifiOnly(ctx: Context) = ctx.getSharedPreferences("rise", 0).getBoolean("wifiOnly", false)
+    fun cancel(ctx: Context, id: String) { YoutubeDL.getInstance().destroyProcessById(id); java.io.File(ctx.filesDir, "dl/$id").deleteRecursively()
       WorkManager.getInstance(ctx).cancelWorkById(java.util.UUID.fromString(id)); Jobs.forget(ctx, id) }
   }
 }
@@ -64,3 +69,11 @@ object Jobs {
     val o = org.json.JSONObject(s); Data.Builder().apply { o.keys().forEach { k -> putString(k, o.getString(k)) } }.build() }
 }
 
+
+object DownloadRetry {
+  const val MAX = 5
+  private val transient = listOf("timed out", "timeout", "connection", "network", "unable to download", "http error 5", "http error 429",
+    "temporary failure", "reset by peer", "unreachable", "ssl", "eof", "incomplete")
+  /** Visible for tests. */
+  fun shouldRetry(msg: String?, attempt: Int) = attempt < MAX && msg != null && transient.any { msg.contains(it, ignoreCase = true) }
+}
