@@ -7,7 +7,7 @@ plugins {
 val secrets = Properties().also { p -> rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { p.load(it) } }
 android {
   namespace = "com.rise.musique"; compileSdk = 35
-  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 24; versionName = "0.20.1"
+  defaultConfig { applicationId = "com.rise.musique.gpt"; minSdk = 26; targetSdk = 35; versionCode = 25; versionName = "0.20.2"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     // Local secrets (gitignored secrets.properties or env vars); empty = feature shows "não configurado".
     fun secret(k: String) = (secrets.getProperty(k) ?: System.getenv(k) ?: "").replace("\\", "").replace("\"", "")

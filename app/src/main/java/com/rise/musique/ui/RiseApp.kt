@@ -120,8 +120,10 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
                        initialCollectionItem: Int = 0, initialRoute: Route? = null, initialRootItem: Int = 0, initialShare: Boolean = false, initialPlayerFraction: Float? = null) {
   val targets = remember { FlyTargets() }
   val haze = remember { dev.chrisbanes.haze.HazeState() }
-  Box(Modifier.fillMaxSize()) { CompositionLocalProvider(LocalHaze provides haze) {
+  val dock = remember { mutableStateOf<(@Composable (Modifier) -> Unit)?>(null) }
+  Box(Modifier.fillMaxSize()) { CompositionLocalProvider(LocalHaze provides haze, LocalDock provides dock) {
     RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute, initialRootItem)
+    dock.value?.invoke(Modifier.align(Alignment.BottomCenter))
     UndoBar(state, actions, Modifier.align(Alignment.BottomCenter))
     state.fly?.let { FlyOverlay(it, targets) }
     state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue,
@@ -258,9 +260,12 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
         }
       }
    }
-      NavigationDock(tab, navActions, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+      // A barra é desenhada no nível do RiseApp (fora da árvore da fonte do desfoque, como o mini player).
+      val dockLatest = rememberUpdatedState<@Composable (Modifier) -> Unit>({ m -> NavigationDock(tab, navActions, m.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
-        .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) })
+        .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) }) })
+      val dockSlot = LocalDock.current
+      DisposableEffect(dockSlot) { dockSlot.value = { m -> dockLatest.value(m) }; onDispose { dockSlot.value = null } }
     }
   }
 }
@@ -275,8 +280,10 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val lead = androidx.compose.animation.core.animateFloatAsState(idx, androidx.compose.animation.core.spring(.62f, 620f), label = "lead")
   val trail = androidx.compose.animation.core.animateFloatAsState(idx, androidx.compose.animation.core.spring(.74f, 230f), label = "trail")
   val pill = accent.copy(alpha = if (dark) .16f else .12f)
-  Row(modifier.shadow(18.dp, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(.25f), spotColor = androidx.compose.ui.graphics.Color.Black.copy(.25f))
-      .liquidGlass(CircleShape, dark).padding(5.dp)
+  // Mesmo vidro do mini player: o desfoque (hazeEffect) fica num nó sem camada de sombra por cima; a sombra é um irmão atrás.
+  Box(modifier) {
+  Box(Modifier.matchParentSize().shadow(18.dp, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(.25f), spotColor = androidx.compose.ui.graphics.Color.Black.copy(.25f)))
+  Row(Modifier.fillMaxWidth().liquidGlass(CircleShape, dark).padding(5.dp)
       .drawBehind {
         val w = size.width / Tabs.size; val n = (Tabs.size - 1).toFloat()
         val l = minOf(lead.value, trail.value).coerceIn(0f, n); val r = maxOf(lead.value, trail.value).coerceIn(0f, n)
@@ -298,6 +305,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       }
     }
   }
+}
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -550,3 +558,6 @@ fun localMatches(s: UiState, q: String): LocalMatches {
     }
   }
 }
+
+/** Slot for the floating tab bar: RiseContent fills it, RiseApp draws it as a sibling of the blur source. */
+val LocalDock = staticCompositionLocalOf<MutableState<(@Composable (Modifier) -> Unit)?>> { mutableStateOf(null) }

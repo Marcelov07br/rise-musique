@@ -1,6 +1,6 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.20.1 (11/10/2026) — linha principal `main`
+## Estado atual: 0.20.2 (11/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
@@ -55,7 +55,7 @@
 - `androidx/media3/decoder/ffmpeg/*.java` (0.20) — cópia da extensão FFmpeg do Media3 1.5.1 (Apache 2.0) com `getCodecName` estendido para os MIMEs acima. `jniLibs/arm64-v8a/libffmpegJNI.so` = build nosso (ver "Decoder FFmpeg"). `PlaybackService`/`Crossfade` usam `EXTENSION_RENDERER_MODE_PREFER` + `RiseExtractorsFactory`.
 - `ArtistBrowse.kt` (0.20) — innertube `browse` (WEB_REMIX) do canal do artista e de álbuns `MPREb_…`: `ArtistPage` (foto, bio, ouvintes, Top músicas, Álbuns, Singles, Vídeos, Parecidos) e `AlbumPage` (faixas). Cache bruto em `cacheDir/ytm/*.json` por 24 h + memória. Nome→canal via busca de artistas (ou id já conhecido dos "parecidos"). Fixtures reais em `app/src/test/resources/ytm/*.json.gz`.
 ### UI (`ui/`)
-- `LiquidGlass.kt` (0.20.1) — `LocalHaze` (HazeState criado no `RiseApp`), `glassSource` no conteúdo (a barra/mini são irmãos, nunca filhos da fonte), `liquidGlass(shape, dark)`: Haze 1.3.1 (blur 26dp, grão, tint; fallback tingido < API 31) + borda especular/sombra interna. Pílula das abas: duas molas (frente firme, trás mole) desenhadas em `drawBehind`; troca de aba `Motion.tabSwitch`.
+- `LiquidGlass.kt` (0.20.1) — `LocalHaze` (HazeState criado no `RiseApp`), `glassSource` no conteúdo; a barra e o mini são desenhados no nível do `RiseApp` (slot `LocalDock`) — dentro da árvore do `RiseContent` o Haze não desenhava nada (barra transparente, 0.20.2), `liquidGlass(shape, dark)`: Haze 1.3.1 (blur 26dp, grão, tint; fallback tingido < API 31) + borda especular/sombra interna. Pílula das abas: duas molas (frente firme, trás mole) desenhadas em `drawBehind`; troca de aba `Motion.tabSwitch`.
 - `RiseApp.kt` — raiz: `NavState` (pilha por aba), `SeekableTransitionState` (transição interrompível + volta preditiva), barra flutuante (`NavigationDock`), topo com título colapsável, `MainPane` (Buscar), `ResultCard`.
 - `Nav.kt` — rotas (Album, Playlist, Artist, Smart, Downloads), `sharedCover` (elemento compartilhado, dono único), `morphCorner`, `enterRise`.
 - `Motion.kt` — tokens: `OpenMs 720`/`CloseMs 560` (relógio linear da transição), `coverOpen` (mola ζ0.8, k210) / `coverClose` (ζ0.8, k300), `pageEnter` com atraso de 80 ms. Overshoot só em escala/translação.
