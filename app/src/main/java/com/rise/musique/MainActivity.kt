@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
         radio = vm::radio, radioFor = vm::radioFor, automix = vm::automix, lastfmLogin = vm::lastfmLogin, lastfmLogout = vm::lastfmLogout,
         lastfmToggle = vm::lastfmToggle, openCut = vm::openCut, eqOpen = vm::eqOpen, eqChange = vm::eqChange, normalize = vm::normalize, normalizeAlbum = vm::normalizeAlbum,
         lockLyrics = vm::lockLyrics, wifiOnly = vm::wifiOnly, follow = vm::follow, undo = vm::undo, removeSearch = vm::removeSearch, searchLive = vm::searchLive, clearQueue = vm::clearQueue,
-        searchKind = vm::searchKind, durationFilter = vm::durationFilter, dateFilter = vm::dateFilter, openResult = vm::openResult, saveStream = vm::saveStream,
+        searchKind = vm::searchKind, durationFilter = vm::durationFilter, dateFilter = vm::dateFilter, openResult = vm::openResult, artistPage = vm::artistPage, albumPage = vm::albumPage, playStreams = vm::playStreams, downloadAll = vm::downloadAll, saveStream = vm::saveStream,
         playVideo = vm::playVideo, playStation = vm::playStation, shareSnippet = { v, ms -> vm.shareSnippet(v, ms) { startActivity(it) } }, downloadItem = vm::downloadItem, dlRemove = vm::dlRemove, dlQuery = vm::dlQuery, dlLink = vm::dlLink, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
         video = com.rise.musique.ui.VideoActions(close = { vm.video.close(); exitFullscreen() }, playPause = vm.video::playPause, seek = vm.video::seek, seekBy = vm.video::seekBy,
           quality = vm.video::quality, subtitle = vm.video::subtitle, fullscreen = { on -> vm.video.fullscreen(on); if (on) enterFullscreen() else exitFullscreen() },

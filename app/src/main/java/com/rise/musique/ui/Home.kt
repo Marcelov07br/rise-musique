@@ -30,18 +30,21 @@ import com.rise.musique.Station
 import com.rise.musique.Stations
 
 /** Hero card content: what it is ("Volte a ouvir"…), its art (track cover or generated station cover), action and menu. */
-data class HeroItem(val key: String, val label: String, val title: String, val subtitle: String, val track: HistoryItem?, val station: Station?, val open: () -> Unit)
+data class HeroItem(val key: String, val label: String, val title: String, val subtitle: String, val track: HistoryItem?, val station: Station?, val album: String = "", val open: () -> Unit) {
+  /** Album heroes share their cover with the album header under a hero-only key (rows use "cover-al-<album>"), so both can be on screen. */
+  val sharedKey get() = if (album.isNotBlank()) "cover-al-hero-$album" else "hero-$key"
+}
 
 /** Up to five heroes: back-to (most played), made-for-you stations, recently added album. */
 fun heroItems(s: UiState, shown: List<HistoryItem>, stations: List<Station>, a: Actions): List<HeroItem> {
   val out = mutableListOf<HeroItem>()
   val topName = s.stats?.topTracks?.firstOrNull()?.name
   val back = shown.firstOrNull { it.title == topName } ?: shown.firstOrNull { !it.video }
-  back?.let { h -> out += HeroItem("back:${h.uri}", "Volte a ouvir", if (h.album.isNotBlank()) h.album else h.title, h.artist.ifBlank { h.meta }, h, null) {
-    if (h.album.isNotBlank()) a.openAlbum(h.album) else a.play(h) } }
+  back?.let { h -> out += HeroItem("back:${h.uri}", "Volte a ouvir", if (h.album.isNotBlank()) h.album else h.title, h.artist.ifBlank { h.meta }, h, null, h.album) {
+    if (h.album.isNotBlank()) a.openAlbumFrom(h.album, "hero") else a.play(h) } }
   stations.take(2).forEach { st -> out += HeroItem("st:${st.id}", "Feito pra você", st.name, st.subtitle, st.seeds.firstOrNull(), st) { a.playStation(st) } }
   shown.firstOrNull { !it.video && it.album.isNotBlank() && it.album != back?.album }?.let { h ->
-    out += HeroItem("new:${h.album}", "Adicionado recentemente", h.album, h.artist, h, null) { a.openAlbum(h.album) } }
+    out += HeroItem("new:${h.album}", "Adicionado recentemente", h.album, h.artist, h, null, h.album) { a.openAlbumFrom(h.album, "hero") } }
   return out.take(5)
 }
 
@@ -71,7 +74,7 @@ fun contentFor(bg: Color): Color = if (.2126f * bg.red + .7152f * bg.green + .07
     if (h.station != null) StationArt(h.station, Modifier.fillMaxSize())
     else if (h.track != null && h.track.art.isBlank()) Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Tint.scrim(dom).copy(alpha = 1f), Tint.soft(dom, dark = true), Tint.scrim(dom)))), contentAlignment = Alignment.Center) {
       Icon(Icons.Rounded.MusicNote, null, Modifier.size(72.dp).offset(y = (-40).dp), tint = Color.White.copy(.35f)) }
-    else if (h.track != null) Cover(h.track, Modifier.fillMaxSize().sharedCover("hero-${h.key}"), 0.dp)
+    else if (h.track != null) Cover(h.track, Modifier.fillMaxSize().sharedCover(h.sharedKey), 0.dp)
     // Bottom scrim tinted with the cover's own color: art stays visible on top, text always readable below.
     Box(Modifier.fillMaxWidth().fillMaxHeight(.5f).align(Alignment.BottomCenter)
       .background(Brush.verticalGradient(0f to scrim.copy(alpha = 0f), .45f to scrim.copy(alpha = .78f), 1f to scrim.copy(alpha = .96f))))

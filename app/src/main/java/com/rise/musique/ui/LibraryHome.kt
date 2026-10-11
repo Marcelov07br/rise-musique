@@ -117,7 +117,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     }
     if (shown.isNotEmpty() && !home && !browse) item { Text("${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
     if (!home) { // Biblioteca: álbuns e artistas no topo, depois todas as faixas
-      AlbumAndArtistRows(shown.takeIf { browse }.orEmpty(), a, albumRow, artistRow, if (browse) smartFolders(s) else emptyList(), smartRow)
+      AlbumAndArtistRows(shown.takeIf { browse }.orEmpty(), a, albumRow, artistRow, if (browse) smartFolders(s) else emptyList(), smartRow, s.artistPhotos)
     }
     items(recent, key = { it.uri }) { h -> TrackRow(h, s, a) }
     if (home && shown.isNotEmpty()) item(key = "recap") { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -145,7 +145,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       if (artists.isNotEmpty()) {
         item(key = "artists-title") { SectionTitle("Artistas") }
         item(key = "artists") { Carousel(artistRow) { items(artists, key = { it.first }) { (name, h, n) ->
-          CoverCard(h, name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-ar-$name", circle = true) { a.openArtist(name) } } } }
+          CoverCard(s.artistPhotos[name]?.let { p -> h.copy(art = p) } ?: h, name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-ar-$name", circle = true) { a.openArtist(name) } } } }
       }
       if (shown.size > 6) item(key = "all") { PillButton("Ver a biblioteca inteira", { a.page("Biblioteca") }, Modifier.fillMaxWidth(), filled = false) }
     }
@@ -228,7 +228,7 @@ fun artistsOf(list: List<HistoryItem>): List<Triple<String, HistoryItem, Int>> =
 
 private fun androidx.compose.foundation.lazy.LazyListScope.AlbumAndArtistRows(shown: List<HistoryItem>, a: Actions,
     albumRow: androidx.compose.foundation.lazy.LazyListState, artistRow: androidx.compose.foundation.lazy.LazyListState,
-    smart: List<SmartFolder> = emptyList(), smartRow: androidx.compose.foundation.lazy.LazyListState? = null) {
+    smart: List<SmartFolder> = emptyList(), smartRow: androidx.compose.foundation.lazy.LazyListState? = null, photos: Map<String, String> = emptyMap()) {
   if (smart.isNotEmpty() && smartRow != null) {
     item(key = "lib-smart-title") { Text("Coleções inteligentes", style = MaterialTheme.typography.titleLarge) }
     item(key = "lib-smart") { Carousel(smartRow) { items(smart, key = { it.key }) { f ->
@@ -244,7 +244,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.AlbumAndArtistRows(sh
   if (artists.isNotEmpty()) {
     item(key = "lib-artists-title") { Text("Artistas", style = MaterialTheme.typography.titleLarge) }
     item(key = "lib-artists") { Carousel(artistRow) { items(artists, key = { it.first }) { (name, h, n) ->
-      CoverCard(h, name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-ar-$name", circle = true) { a.openArtist(name) } } } }
+      CoverCard(photos[name]?.let { p -> h.copy(art = p) } ?: h, name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-ar-$name", circle = true) { a.openArtist(name) } } } }
   }
   if (shown.isNotEmpty()) item(key = "lib-tracks-title") { Text("Faixas", style = MaterialTheme.typography.titleLarge) }
 }

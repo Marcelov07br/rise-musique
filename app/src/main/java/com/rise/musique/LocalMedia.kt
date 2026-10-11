@@ -12,7 +12,7 @@ import java.io.File
 import java.security.MessageDigest
 
 object LocalMedia {
-  private val audio = setOf("mp3", "m4a", "aac", "ogg", "opus", "flac", "wav", "wma", "aiff", "alac")
+  private val audio = setOf("mp3", "m4a", "aac", "ogg", "opus", "flac", "wav", "wma", "aiff", "alac", "aif", "aifc", "dsf", "dff", "ape", "wv", "tak")
   private val video = setOf("mp4", "mkv", "webm", "mov", "m4v", "3gp")
   data class Report(val added: Int, val repeated: Int, val failed: Int, val limited: Boolean = false)
 
@@ -37,6 +37,17 @@ object LocalMedia {
     } catch (_: Exception) { fallback } finally { reader.release() }
   }
 
+  /** DSF/DFF/AIFF: MediaMetadataRetriever can't read them; parse header + embedded ID3 ourselves. */
+  fun nativeTags(c: Context, uri: Uri, fallback: HistoryItem): HistoryItem {
+    val t = runCatching { Lossless.tags { c.contentResolver.openInputStream(uri) } }.getOrNull() ?: return fallback
+    val cover = t.cover?.takeIf { it.size <= 8 * 1024 * 1024 }?.let { bytes ->
+      val hash = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray()).joinToString("") { "%02x".format(it) }
+      File(c.filesDir, "art/$hash.jpg").apply { parentFile?.mkdirs(); writeBytes(bytes) }.toURI().toString() }
+    return fallback.copy(title = t.title.ifBlank { fallback.title }, artist = t.artist.ifBlank { fallback.artist }, album = t.album,
+      duration = t.durationMs.takeIf { it > 0 } ?: fallback.duration, art = cover ?: fallback.art, video = false,
+      meta = if (t.quality.isNotBlank()) "${t.quality} · Local" else fallback.meta)
+  }
+
   suspend fun import(c: Context, uris: List<Uri>, limited: Boolean = false): Report {
     var added = 0; var repeated = 0; var failed = 0
     val known = HistoryStore.load(c).map { it.uri }.toMutableSet()
@@ -57,7 +68,13 @@ object LocalMedia {
         val meta = "${ext.uppercase().ifBlank { mime.substringAfter('/') }} · Local · ${"%.1f".format(size / 1e6)} MB"
         val fallback = HistoryItem(name.substringBeforeLast('.').ifBlank { "Arquivo local" }, meta, uri.toString(), imported = true,
           video = ext in video || mime.startsWith("video/"))
-        tracks.add(metadata(c, uri, fallback)); known.add(uri.toString()); added++
+        require(ext != "tak") { "TAK ainda não é suportado" }
+        val item = when (ext) {
+          in Lossless.transcode -> { val f = Lossless.toFlac(c, uri, name)
+            metadata(c, Uri.fromFile(f), fallback.copy(uri = Uri.fromFile(f).toString(), meta = "${ext.uppercase()} → FLAC · Local · ${"%.1f".format(f.length() / 1e6)} MB")) }
+          in Lossless.native -> nativeTags(c, uri, fallback)
+          else -> metadata(c, uri, fallback) }
+        tracks.add(item); known.add(uri.toString()); known.add(item.uri); added++
       } catch (_: Exception) { failed++ }
     }
     if (tracks.isNotEmpty()) HistoryStore.addAll(c, tracks)

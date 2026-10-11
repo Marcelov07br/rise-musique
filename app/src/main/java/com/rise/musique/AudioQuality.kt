@@ -4,6 +4,10 @@ package com.rise.musique
 object AudioQuality {
   fun codec(mime: String?): String = when {
     mime == null -> ""
+    mime.startsWith("audio/x-rise-pcm") -> "AIFF"
+    mime.contains("alac", true) -> "ALAC"
+    mime.contains("ape", true) -> "APE"
+    mime.contains("wavpack", true) -> "WavPack"
     mime.contains("flac", true) -> "FLAC"
     mime.contains("opus", true) -> "Opus"
     mime.contains("vorbis", true) -> "Vorbis"
@@ -12,7 +16,10 @@ object AudioQuality {
     mime.contains("raw", true) || mime.contains("wav", true) -> "PCM"
     else -> mime.substringAfter('/').uppercase()
   }
-  fun label(mime: String?, bitrate: Int, sampleRate: Int, channels: Int): String = listOfNotNull(
+  fun label(mime: String?, bitrate: Int, sampleRate: Int, channels: Int): String =
+    if (mime != null && mime in HiRes.DSD) HiRes.dsdLabel(sampleRate * 8, HiRes.outRate(sampleRate), false) +
+      (when (channels) { 1 -> " · Mono"; 2 -> " · Estéreo"; in 3..16 -> " · $channels canais"; else -> "" })
+    else listOfNotNull(
     codec(mime).ifBlank { null },
     bitrate.takeIf { it > 0 }?.let { "${(it + 500) / 1000} kbps" },
     sampleRate.takeIf { it > 0 }?.let { r -> val k = r / 1000.0; (if (r % 1000 == 0) "${r / 1000}" else String.format(java.util.Locale.US, "%.1f", k)) + " kHz" },

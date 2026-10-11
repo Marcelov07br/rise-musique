@@ -37,7 +37,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     lastfmUser = LastFm.user(app), lastfmOn = LastFm.enabled(app), lastfmConfigured = LastFm.configured, sort = prefs.getString("sort", "Recentes")!!,
     recentSearches = recentSearches(), format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app),
     normalize = prefs.getBoolean("normalize", true), normalizeAlbum = prefs.getBoolean("normalizeAlbum", false), lockLyrics = prefs.getBoolean("lockLyrics", false),
-    wifiOnly = prefs.getBoolean("wifiOnly", false), followed = FollowStore.all(app)).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
+    wifiOnly = prefs.getBoolean("wifiOnly", false), followed = FollowStore.all(app), artistPhotos = loadPhotos(app.getSharedPreferences("rise", 0))).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
       st.copy(mode = m, quality = prefs.getString("quality_${m.name}", m.qualities.last())!!) })
     private set
 
@@ -153,6 +153,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun normalizeAlbum(on: Boolean) { flag("normalizeAlbum", on); state = state.copy(normalizeAlbum = on) }
   fun lockLyrics(on: Boolean) { flag("lockLyrics", on); state = state.copy(lockLyrics = on) }
   fun wifiOnly(on: Boolean) { flag("wifiOnly", on); state = state.copy(wifiOnly = on) }
+  // ---- 0.20: YouTube Music artist / album pages ----
+  private val artistIds = java.util.concurrent.ConcurrentHashMap<String, String>()
+  private fun loadPhotos(p: android.content.SharedPreferences): Map<String, String> = runCatching {
+    val o = org.json.JSONObject(p.getString("artistPhotos", "{}")!!); o.keys().asSequence().associateWith { o.getString(it) } }.getOrDefault(emptyMap())
+  private fun savePhotos() { val o = org.json.JSONObject(); state.artistPhotos.entries.take(500).forEach { (k, v) -> o.put(k, v) }; prefs.edit().putString("artistPhotos", o.toString()).apply() }
+  fun artistPage(name: String) {
+    if (name in state.artistPages || name in state.artistLoading) return
+    state = state.copy(artistLoading = state.artistLoading + name, artistFailed = state.artistFailed - name)
+    viewModelScope.launch {
+      runCatching { ArtistBrowse.artist(ctx, name, artistIds[name]) }.onSuccess { p ->
+        p.similar.forEach { r -> r.url.substringAfter("/channel/", "").takeIf { it.isNotBlank() }?.let { artistIds[r.title] = it } }
+        val extra = p.similar.filter { it.thumb.isNotBlank() && it.title !in state.artistPhotos }.associate { it.title to it.thumb }
+        state = state.copy(artistPages = state.artistPages + (name to p), artistLoading = state.artistLoading - name,
+          artistPhotos = state.artistPhotos + extra + (if (p.image.isNotBlank()) mapOf(name to p.image) else emptyMap()))
+        savePhotos()
+      }.onFailure { if (it is CancellationException) throw it; state = state.copy(artistLoading = state.artistLoading - name, artistFailed = state.artistFailed + name) }
+    }
+  }
+  fun albumPage(id: String) {
+    if (id in state.albumPages || id in state.albumLoading) return
+    state = state.copy(albumLoading = state.albumLoading + id)
+    viewModelScope.launch {
+      val p = runCatching { ArtistBrowse.album(ctx, id) }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+      state = state.copy(albumLoading = state.albumLoading - id, albumPages = if (p != null) state.albumPages + (id to p) else state.albumPages,
+        status = if (p == null) "Não deu pra abrir o álbum agora. Confira a conexão." else state.status)
+    }
+  }
+  /** Streams a YouTube Music list (top songs / album) as the queue, from [start]. */
+  fun playStreams(list: List<SearchResult>, start: Int, shuffle: Boolean) {
+    val pl = list.filter { it.playable && Streams.uriFor(it.url) != null }
+    val first = list.getOrNull(start)?.let { r -> pl.indexOfFirst { it.url == r.url } }?.coerceAtLeast(0) ?: 0
+    val items = pl.mapNotNull { streamItem(it) }
+    if (items.isEmpty()) { state = state.copy(status = "Não dá pra tocar esta lista agora"); return }
+    stopPreview()
+    val idx = if (shuffle) items.indices.random() else first.coerceIn(0, items.lastIndex); val r = pl[idx]
+    state = state.copy(now = NowPlaying("stream:" + r.url, r.title, r.channel, r.thumb, loading = true, streaming = true))
+    withPlayer { p -> p.setMediaItems(items, idx, 0); p.shuffleModeEnabled = shuffle; p.prepare(); p.play() }
+  }
+  /** "Baixar tudo": the whole list goes to the Downloads page, preselected. */
+  fun downloadAll(list: List<SearchResult>) { val l = list.filter { it.playable }; if (l.isEmpty()) return
+    state = state.copy(dlItems = l, dlRequest = state.dlRequest + 1, cutOn = false, cutStart = "", cutEnd = "") }
+  private fun pools(): List<List<SearchResult>> = listOf(state.results) + state.popular.values +
+    state.artistPages.values.flatMap { listOf(it.top, it.videos) } + state.albumPages.values.map { it.tracks }
+
   fun follow(name: String) { FollowStore.toggle(ctx, name); state = state.copy(followed = FollowStore.all(ctx)) }
   fun refreshTrackInfo() { viewModelScope.launch { val m = withContext(Dispatchers.IO) { TrackInfoStore.all(ctx) }; state = state.copy(trackInfo = m) } }
 
@@ -287,7 +331,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     if (state.previewing == r.url) { stopPreview(); return }
     if (!r.playable) { openResult(r); return }
     stopPreview()
-    val pool = (listOf(state.results) + state.popular.values).firstOrNull { l -> l.any { it.url == r.url } } ?: listOf(r)
+    val pool = pools().firstOrNull { l -> l.any { it.url == r.url } } ?: listOf(r)
     val list = pool.filter { it.playable && Streams.uriFor(it.url) != null }.ifEmpty { listOf(r) }
     val start = list.indexOfFirst { it.url == r.url }.coerceAtLeast(0)
     val items = list.mapNotNull { streamItem(it) }
@@ -308,7 +352,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   val video by lazy { VideoController(ctx, viewModelScope) { v -> state = state.copy(video = v, pip = if (v == null) false else state.pip) } }
   /** Video: the music pauses (its queue stays), the visible videos become the "next" list. */
   fun playVideo(r: SearchResult) { withPlayer { it.pause() }
-    val pool = (listOf(state.results) + state.popular.values).firstOrNull { l -> l.any { it.url == r.url } } ?: listOf(r)
+    val pool = pools().firstOrNull { l -> l.any { it.url == r.url } } ?: listOf(r)
     video.open(r, pool) }
   fun playLocalVideo(h: HistoryItem) { val u = uriOf(h) ?: return; withPlayer { it.pause() }; video.openLocal(h, u) }
   fun voiceDenied() { state = state.copy(voice = VoiceUi(false, error = "Sem permissão do microfone. Libere em Ajustes do Android para buscar por voz.")) }

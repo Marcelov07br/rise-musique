@@ -57,7 +57,7 @@ internal val TopBarHeight = 64.dp
 /** Album or playlist: collapsing hero header, glass actions and a numbered list, over [CollectionBackdrop]. */
 @Composable fun CollectionScreen(s: UiState, a: Actions, list: LazyListState, modifier: Modifier = Modifier, onBack: () -> Unit = {},
                                  dismiss: androidx.compose.animation.core.Animatable<Float, androidx.compose.animation.core.AnimationVector1D> = remember { androidx.compose.animation.core.Animatable(0f) },
-                                 smart: SmartFolder? = null) {
+                                 smart: SmartFolder? = null, src: String = "") {
   val c = MaterialTheme.colorScheme
   val tracks = smart?.tracks ?: visibleHistory(s)
   val isAlbum = smart == null && s.albumFilter.isNotBlank()
@@ -77,7 +77,7 @@ internal val TopBarHeight = 64.dp
           .graphicsLayer { alpha = (1f - collapse * 1.2f).coerceIn(0f, 1f) }, horizontalAlignment = Alignment.CenterHorizontally) {
           val corner = morphCorner(14.dp, 8.dp)?.value ?: 8.dp
           Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
-            .sharedCover(smart?.key ?: if (isAlbum) "cover-al-$title" else "cover-pl-$title")) {
+            .sharedCover(smart?.key ?: if (isAlbum) "cover-al-${if (src.isNotBlank()) "$src-" else ""}$title" else "cover-pl-$title")) {
             if (hero != null) Cover(hero, Modifier.fillMaxSize().kenBurns(hero.art.isNotBlank()), corner)
             else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(.12f)), contentAlignment = Alignment.Center) {
               Icon(if (isAlbum) Icons.Rounded.Album else if (smart != null) Icons.Rounded.AutoAwesome else Icons.Rounded.QueueMusic, null, tint = Color.White.copy(.75f), modifier = Modifier.size(64.dp)) }

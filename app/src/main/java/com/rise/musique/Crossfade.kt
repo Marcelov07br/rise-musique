@@ -100,9 +100,9 @@ class Crossfader(private val ctx: Context, private val main: ExoPlayer, private 
     val fx = RiseAudioProcessor()
     val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(ctx) {
       override fun buildAudioSink(c: android.content.Context, floatOut: Boolean, params: Boolean): androidx.media3.exoplayer.audio.AudioSink =
-        androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(c).setAudioProcessors(arrayOf(fx)).build() }
+        androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(c).setAudioProcessors(arrayOf(fx)).build() }.setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
     (ctx as? PlaybackService)?.let { svc -> fx.normGainDb = 0.0; svc.applyGain(main, fx, item, null) }
-    aux = ExoPlayer.Builder(ctx, renderers).setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playerDataSource(ctx)))
+    aux = ExoPlayer.Builder(ctx, renderers).setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playerDataSource(ctx), RiseExtractorsFactory()))
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
       .build().apply { volume = 0f; setMediaItem(item, fromMs.coerceAtLeast(0)); if (speed != 1f) setPlaybackSpeed(speed); prepare(); play() }
     target = index; fade = f; startedAt = SystemClock.elapsedRealtime()

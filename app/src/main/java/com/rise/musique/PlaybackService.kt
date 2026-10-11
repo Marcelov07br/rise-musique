@@ -84,11 +84,11 @@ class PlaybackService : MediaLibraryService() {
     val renderers = object : DefaultRenderersFactory(this) {
       override fun buildAudioSink(ctx: Context, floatOut: Boolean, params: Boolean): AudioSink =
         DefaultAudioSink.Builder(ctx).setAudioProcessors(arrayOf(mainFx, TeeAudioProcessor(com.rise.musique.AudioLevels))).build()
-    }
+    }.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER) // FFmpeg: DSD, AIFF, ALAC/FLAC hi-res
     val player = ExoPlayer.Builder(this, renderers)
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
       .setHandleAudioBecomingNoisy(true)
-      .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playerDataSource(this))).build()
+      .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playerDataSource(this), RiseExtractorsFactory())).build()
     val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
     val shown = LyricPlayer(player).also { lyricPlayer = it }
     session = MediaLibrarySession.Builder(this, shown, object : MediaLibrarySession.Callback {

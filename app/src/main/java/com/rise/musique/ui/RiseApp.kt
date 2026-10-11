@@ -63,7 +63,9 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val dateFilter: com.rise.musique.DateFilter = com.rise.musique.DateFilter.Any, val video: VideoUi? = null, val pip: Boolean = false,
   val voice: VoiceUi? = null,
   val stationLoading: String? = null, val dlItems: List<SearchResult> = emptyList(), val dlQuery: String = "", val dlLoading: Boolean = false, val dlRequest: Int = 0, val snippetBusy: Boolean = false,
-  val undo: UndoInfo? = null, val popular: Map<String, List<SearchResult>> = emptyMap(), val popularLoading: Set<String> = emptySet(), val hidden: Set<String> = emptySet())
+  val undo: UndoInfo? = null, val popular: Map<String, List<SearchResult>> = emptyMap(), val popularLoading: Set<String> = emptySet(), val hidden: Set<String> = emptySet(),
+  val artistPages: Map<String, com.rise.musique.ArtistPage> = emptyMap(), val artistLoading: Set<String> = emptySet(), val artistFailed: Set<String> = emptySet(),
+  val albumPages: Map<String, com.rise.musique.AlbumPage> = emptyMap(), val albumLoading: Set<String> = emptySet(), val artistPhotos: Map<String, String> = emptyMap())
 
 /** Snackbar with Desfazer; the real action runs only after the timeout. */
 data class UndoInfo(val id: Long, val message: String)
@@ -100,7 +102,10 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val searchKind: (com.rise.musique.SearchKind) -> Unit = {}, val durationFilter: (com.rise.musique.DurationFilter) -> Unit = {}, val dateFilter: (com.rise.musique.DateFilter) -> Unit = {},
   val openResult: (SearchResult) -> Unit = {}, val saveStream: () -> Unit = {}, val playVideo: (SearchResult) -> Unit = {}, val playLocalVideo: (HistoryItem) -> Unit = {},
   val video: VideoActions = VideoActions(), val playStation: (com.rise.musique.Station) -> Unit = {}, val downloadItem: (SearchResult) -> Unit = {}, val dlRemove: (SearchResult) -> Unit = {},
-  val dlQuery: (String) -> Unit = {}, val dlLink: (String) -> Unit = {}, val shareSnippet: (Boolean, Long) -> Unit = { _, _ -> }, val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {})
+  val dlQuery: (String) -> Unit = {}, val dlLink: (String) -> Unit = {},
+  val artistPage: (String) -> Unit = {}, val albumPage: (String) -> Unit = {}, val playStreams: (List<SearchResult>, Int, Boolean) -> Unit = { _, _, _ -> },
+  val downloadAll: (List<SearchResult>) -> Unit = {}, val openRemoteAlbum: (SearchResult, String) -> Unit = { _, _ -> }, val openAlbumFrom: (String, String) -> Unit = { _, _ -> },
+  val openArtistFrom: (String, String) -> Unit = { _, _ -> }, val shareSnippet: (Boolean, Long) -> Unit = { _, _ -> }, val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -110,14 +115,14 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   SearchResult("c", "Música de exemplo · versão acústica", "Outro Canal", 189, ""))
 
 @Composable fun RiseApp(state: UiState, actions: Actions, initialHistoryOpen: Boolean = false, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
-                       initialCollectionItem: Int = 0, initialRoute: Route? = null, initialRootItem: Int = 0, initialShare: Boolean = false) {
+                       initialCollectionItem: Int = 0, initialRoute: Route? = null, initialRootItem: Int = 0, initialShare: Boolean = false, initialPlayerFraction: Float? = null) {
   val targets = remember { FlyTargets() }
   Box(Modifier.fillMaxSize()) {
     RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute, initialRootItem)
     UndoBar(state, actions, Modifier.align(Alignment.BottomCenter))
     state.fly?.let { FlyOverlay(it, targets) }
     state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue,
-      local = !it.streaming && !it.isPreview && state.history.any { h -> h.uri == it.key }, snippetBusy = state.snippetBusy, initialShare = initialShare) } }
+      local = !it.streaming && !it.isPreview && state.history.any { h -> h.uri == it.key }, snippetBusy = state.snippetBusy, initialShare = initialShare, initialFraction = initialPlayerFraction) } }
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
     if (state.settingsOpen) SettingsSheet(state, actions)
     if (state.statsOpen) StatsSheet(state, actions)
@@ -138,7 +143,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   return seek to androidx.compose.animation.core.rememberTransition(seek, label = "screen")
 }
 
-private val Route?.isDetail get() = this is Route.Album || this is Route.Playlist || this is Route.Artist || this is Route.Smart
+private val Route?.isDetail get() = this is Route.Album || this is Route.Playlist || this is Route.Artist || this is Route.Smart || this is Route.RemoteAlbum
 
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0,
@@ -168,7 +173,9 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   androidx.activity.compose.BackHandler(enabled = nav.stack(tab).isEmpty() && tab != "Início") { actions.page("Início") }
   val rootKey = "root:$tab"
   val navActions = remember(actions, tab, state.playlists.keys) { actions.copy(
-    openAlbum = { nav.push(tab, Route.Album(it)) }, openPlaylist = { nav.push(tab, Route.Playlist(it)) }, openArtist = { nav.push(tab, Route.Artist(it)) },
+    openAlbum = { nav.push(tab, Route.Album(it)) }, openAlbumFrom = { n, src -> nav.push(tab, Route.Album(n, src)) },
+    openRemoteAlbum = { r, src -> nav.push(tab, Route.RemoteAlbum(r.url.substringAfterLast('/'), r.title, r.thumb, r.channel, src)) },
+    openArtistFrom = { n, src -> nav.push(tab, Route.Artist(n, src)) }, openPlaylist = { nav.push(tab, Route.Playlist(it)) }, openArtist = { nav.push(tab, Route.Artist(it)) },
     openDownloads = { if (nav.stack(tab).lastOrNull() != Route.Downloads) nav.push(tab, Route.Downloads) },
     openSmart = { k, v -> nav.push(tab, Route.Smart(k, v)) },
     albumFilter = { if (it.isBlank()) nav.pop(tab) else nav.push(tab, Route.Album(it)) },
@@ -190,6 +197,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       val art = when (d) { is Route.Artist -> artistArt(state, d.name)
         is Route.Album -> state.history.firstOrNull { it.album == d.name && it.art.isNotBlank() }?.art.orEmpty()
         is Route.Smart -> smartFolder(state, d.kind, d.value)?.tracks?.firstOrNull { it.art.isNotBlank() }?.art.orEmpty()
+        is Route.RemoteAlbum -> state.albumPages[d.id]?.art?.ifBlank { null } ?: d.art
         is Route.Playlist -> state.playlists[d.name].orEmpty().firstNotNullOfOrNull { u -> state.history.firstOrNull { it.uri == u && it.art.isNotBlank() }?.art }.orEmpty()
         else -> "" }
       CollectionBackdrop(art, collapseOf(nav.list(d.key, initialCollectionItem)),
@@ -204,11 +212,12 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
             CompositionLocalProvider(LocalAnimScope provides this) {
               val clean = state.copy(historyFilter = "", mediaFilter = "Tudo", albumFilter = "", historyView = "Tudo")
               when (val r = sc.route) {
-                is Route.Album -> CollectionScreen(clean.copy(albumFilter = r.name), navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
+                is Route.Album -> CollectionScreen(clean.copy(albumFilter = r.name), navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss, src = r.src)
+                is Route.RemoteAlbum -> RemoteAlbumScreen(clean, navActions, r, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
                 is Route.Playlist -> CollectionScreen(clean.copy(historyView = r.name), navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
                 is Route.Smart -> smartFolder(clean, r.kind, r.value).let { f -> if (f != null) CollectionScreen(clean, navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss, f)
                   else Box(Modifier.fillMaxSize()) { EmptyState(androidx.compose.material.icons.Icons.Rounded.AutoAwesome, "Coleção vazia", "As faixas mudaram desde a última análise.") } }
-                is Route.Artist -> ArtistScreen(clean, navActions, r.name, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
+                is Route.Artist -> ArtistScreen(clean, navActions, r.name, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss, src = r.src)
                 Route.Downloads -> DownloadPage(state, navActions, nav.list(r.key), pop, Modifier.fillMaxSize().background(c.background))
                 null -> Column(Modifier.fillMaxSize()) {
                   val rootList = nav.list("root:${sc.tab}", initialRootItem)
@@ -336,7 +345,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       if (state.searching && state.results.isEmpty() && !isLink) items(6, key = { "sk$it" }) { SkeletonRow(state.searchKind) }
       itemsIndexed(state.results, key = { _, it -> it.url }) { i, r ->
         Box(Modifier.cascade(i)) {
-        if (!r.playable) CollectionResult(r) { keyboard?.hide(); if (r.kind == "artist") a.openArtist(r.title) else a.openResult(r) }
+        if (!r.playable) CollectionResult(r) { keyboard?.hide(); if (r.kind == "artist") a.openArtist(r.title) else if (r.kind == "album" && r.url.contains("/browse/MPRE")) a.openRemoteAlbum(r, "search") else a.openResult(r) }
         else { val video = r.kind == "video" || state.searchKind == com.rise.musique.SearchKind.Videos
           ResultCard(r, state.previewing == r.url, state.previewing == r.url && state.previewLoading, video,
             play = { keyboard?.hide(); if (video) a.playVideo(r) else a.preview(r) }, radio = { a.radio(r) }, download = { a.downloadItem(r) },

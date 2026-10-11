@@ -5,9 +5,11 @@ import androidx.compose.runtime.*
 
 /** Destinations pushed on a tab's own back stack. */
 sealed interface Route { val key: String
-  data class Album(val name: String) : Route { override val key get() = "al:$name" }
+  /** [src] tells which card opened it, so the shared cover key is unique (hero vs. rows showing the same album). */
+  data class Album(val name: String, val src: String = "") : Route { override val key get() = "al:$name" }
+  data class RemoteAlbum(val id: String, val title: String, val art: String, val artist: String, val src: String = "") : Route { override val key get() = "ra:$id" }
   data class Playlist(val name: String) : Route { override val key get() = "pl:$name" }
-  data class Artist(val name: String) : Route { override val key get() = "ar:$name" }
+  data class Artist(val name: String, val src: String = "") : Route { override val key get() = "ar:$name" }
   data class Smart(val kind: String, val value: String) : Route { override val key get() = "sm:$kind:$value" }
   data object Downloads : Route { override val key get() = "dl" }
 }

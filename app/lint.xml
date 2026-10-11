@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+  <!-- Vendored Media3 FFmpeg extension sources (Apache 2.0, from androidx/media 1.5.1): they are Media3's own @UnstableApi code. -->
+  <issue id="UnsafeOptInUsageError"><ignore path="src/main/java/androidx/media3/**" /></issue>
+</lint>

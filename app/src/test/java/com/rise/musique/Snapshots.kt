@@ -208,3 +208,27 @@ class Round19 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
   @Test fun crashDialog() = p.snapshot { RiseTheme(true) { Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF0B0B0D)).padding(24.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
     CrashCard(sampleCrash, {}, {}, {}) } } }
 }
+
+// ---- 0.20.0 ----
+private fun res(n: String) = java.io.File(listOf("src/test/resources/$n", "app/src/test/resources/$n").first { java.io.File(it).exists() }).absolutePath
+private fun song(i: Int, t: String, alb: String = "Portas") = SearchResult("https://music.youtube.com/watch?v=v$i", t, "Marisa Monte", 160 + i * 17, res("cover.jpg"), "song", alb)
+private val artistPage = init.let { ArtistPage("UC1", "Marisa Monte", res("hero.jpg"), "Marisa de Azevedo Monte é uma cantora, compositora e musicista brasileira, conhecida pela entrega vocal e por canções de MPB influenciadas pelo pop. Alcançou a fama em 1989 com o álbum ao vivo MM.",
+  "4,2 mi ouvintes mensais",
+  top = listOf("Vilarejo", "Amor I Love You", "Ainda Bem", "Beija Eu", "Depois").mapIndexed { i, t -> song(i, t) },
+  albums = listOf("Portas", "O Que Você Quer Saber de Verdade", "Infinito Particular").mapIndexed { i, t -> SearchResult("https://music.youtube.com/browse/MPREb_$i", t, "Marisa Monte", 0, res("cover.jpg"), "album", t, listOf("2022", "2011", "2006")[i]) },
+  singles = listOf(SearchResult("https://music.youtube.com/browse/MPREb_s", "Calma", "Marisa Monte", 0, res("cover.jpg"), "album", "Calma", "Single • 2021")),
+  videos = listOf(SearchResult("https://music.youtube.com/watch?v=vid1", "Portas (Clipe Oficial)", "Marisa Monte", 0, res("cover.jpg"), "video", "", "Marisa Monte • 2,1 mi visualizações")),
+  similar = listOf("Adriana Calcanhotto", "Arnaldo Antunes", "Gal Costa").map { SearchResult("https://music.youtube.com/channel/UC$it", it, it, 0, res("hero.jpg"), "artist") }) }
+private val artistState = init.let { UiState(history = listOf(HistoryItem("Bem Que Se Quis", "FLAC", "l:1", artist = "Marisa Monte", album = "MM", duration = 260_000)),
+  artistPages = mapOf("Marisa Monte" to artistPage)) }
+@Composable private fun SyncImages() { val ctx = androidx.compose.ui.platform.LocalContext.current
+  androidx.compose.runtime.remember { coil.Coil.setImageLoader(coil.ImageLoader.Builder(ctx).dispatcher(kotlinx.coroutines.Dispatchers.Unconfined).allowHardware(false).build()); true } }
+class Round20 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  @Test fun artistTop() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(artistState, Actions(), initialRoute = Route.Artist("Marisa Monte")) } }
+  @Test fun artistScrolled() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(artistState, Actions(), initialRoute = Route.Artist("Marisa Monte"), initialCollectionItem = 4) } }
+  @Test fun albumFromArtist() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(artistState.copy(albumPages = mapOf("MPREb_0" to AlbumPage("MPREb_0", "Portas", "Marisa Monte", "2022", res("cover.jpg"),
+    listOf("Portas", "Calma", "Déjà Vu", "Praia Vermelha", "Medo do Perigo", "Pra Melhorar").mapIndexed { i, t -> song(i, t) }))), Actions(),
+    initialRoute = Route.RemoteAlbum("MPREb_0", "Portas", res("cover.jpg"), "Marisa Monte")) } }
+  @Test fun dsdQuality() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(UiState(now = np.copy(quality = AudioQuality.label(HiRes.DSD_LSBF_PLANAR, 0, 352_800, 2), title = "Bem Que Se Quis", artist = "Marisa Monte")), Actions(), initialExpanded = true) } }
+  @Test fun playerMidExpansion() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(homeState.copy(now = np), Actions(), initialPlayerFraction = .5f) } }
+}

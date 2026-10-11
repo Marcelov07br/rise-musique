@@ -101,4 +101,36 @@ class TransitionCrashTest {
       rule.onAllNodesWithText("Da Funk").assertCountEquals(1)
     }
   }
+
+  /** 0.20: hero card → album (hero-only shared key), artist → streamed album → back, artist → similar artist → back. */
+  @Test fun heroArtistAlbumSimilar() {
+    val page = ArtistPage("UC1", "Fulano", "", "Bio curta.", top = listOf(SearchResult("https://music.youtube.com/watch?v=t1", "Sucesso", "Fulano", 200, "", "song")),
+      albums = listOf(SearchResult("https://music.youtube.com/browse/MPREb_x", "Disco Remoto", "Fulano", 0, "", "album", "Disco Remoto", "2020")),
+      similar = listOf(SearchResult("https://music.youtube.com/channel/UC2", "Beltrano", "Beltrano", 0, "", "artist")))
+    val al = AlbumPage("MPREb_x", "Disco Remoto", "Fulano", "2020", "", listOf(SearchResult("https://music.youtube.com/watch?v=r1", "Faixa remota", "Fulano", 180, "", "song", "Disco Remoto")))
+    var state by mutableStateOf(UiState(history = album, artistPages = mapOf("Fulano" to page, "Beltrano" to page.copy(name = "Beltrano", similar = emptyList())),
+      albumPages = mapOf("MPREb_x" to al), stats = StatsSummary(topTracks = listOf(Ranked("Faixa 1", "Fulano", 3, 1)))))
+    rule.setContent { RiseTheme(true) { RiseApp(state, Actions(page = { state = state.copy(page = it) })) } }
+    rule.waitForIdle()
+    repeat(2) {
+      rule.onAllNodesWithText("Volte a ouvir")[0].performClick(); rule.waitForIdle()        // hero → album (shared cover grows)
+      rule.onAllNodesWithText("ÁLBUM", substring = true)[0].assertExists()
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Volte a ouvir")[0].performClick(); rule.mainClock.advanceTimeBy(150) // interrupted
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Volte a ouvir")[0].performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Fulano")[0].performClick(); rule.waitForIdle()              // album header artist → artist
+      rule.onAllNodesWithText("Top músicas").assertCountEquals(1)
+      rule.onNodeWithText("Disco Remoto").performScrollTo().performClick(); rule.waitForIdle() // artist → streamed album
+      rule.onAllNodesWithText("Faixa remota").assertCountEquals(1)
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()
+      rule.onNodeWithText("Beltrano").performScrollTo().performClick(); rule.mainClock.advanceTimeBy(200) // similar → artist, interrupted
+      rule.waitForIdle()
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()     // similar → artist
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()     // artist → album
+      rule.onNodeWithContentDescription("Voltar").performClick(); rule.waitForIdle()     // album → root
+      rule.onAllNodesWithText("Início")[0].performClick(); rule.waitForIdle()
+      rule.onAllNodesWithText("Ouvir agora").assertCountEquals(1)
+    }
+  }
 }

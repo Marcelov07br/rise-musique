@@ -1,4 +1,7 @@
 package com.rise.musique.ui
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.SideEffect
 import android.os.Build
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
@@ -37,53 +40,68 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
  * soltar assenta com mola. O voltar com prévia (Android 14+) encolhe a tela seguindo o gesto.
  */
 @Composable fun PlayerSheet(now: NowPlaying, a: Actions, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
-                            queue: List<HistoryItem> = emptyList(), local: Boolean = false, snippetBusy: Boolean = false, initialShare: Boolean = false) {
+                            queue: List<HistoryItem> = emptyList(), local: Boolean = false, snippetBusy: Boolean = false, initialShare: Boolean = false, initialFraction: Float? = null) {
   val c = MaterialTheme.colorScheme
   var share by remember { mutableStateOf(initialShare) }
   if (share) ShareSheet(now, local, snippetBusy, a) { share = false }
   val scope = rememberCoroutineScope()
-  val f = remember { Animatable(if (initialExpanded) 1f else 0f) }
+  // Limites 0..1: a mola para no limite em vez de oscilar em volta dele (sem cruzar limiares várias vezes).
+  val f = remember { Animatable(initialFraction ?: if (initialExpanded) 1f else 0f).apply { updateBounds(0f, 1f) } }
   var back by remember { mutableFloatStateOf(0f) }
   val density = LocalDensity.current
   val haptics = rememberHaptics()
   var showLyrics by remember { mutableStateOf(initialLyrics) }
 
-  PredictiveBackHandler(enabled = f.value > 0.5f) { progress ->
+  // Jank-free: o layout é fixo (tela cheia) e nunca muda durante a expansão. Tudo que anima (posição, recorte, cantos,
+  // escala da capa, opacidades) é lido só dentro de graphicsLayer/draw, então os quadros da animação não recompõem
+  // nem remedem nada. Só os limiares (mostrar/esconder partes) viram estado derivado e recompõem uma vez ao cruzar.
+  val pf = { f.value.coerceIn(0f, 1f) } // nunca sai de 0..1, nem em rebote
+  val expanded by remember { derivedStateOf { f.value > 0.5f } }
+  val collapsed by remember { derivedStateOf { f.value < .05f } }
+  val showMini by remember { derivedStateOf { f.value < .6f } }
+  val showGlass by remember { derivedStateOf { f.value < .99f } }
+  val showFull by remember { derivedStateOf { f.value > .4f } }
+  val showBg by remember { derivedStateOf { f.value > 0.01f } }
+  val settled by remember { derivedStateOf { f.value > .9f } }
+  SideEffect { PlayerProbe.sheet++ }
+
+  PredictiveBackHandler(enabled = expanded) { progress ->
     try { progress.collect { back = it.progress }; scope.launch { f.animateTo(0f, bouncy) }; back = 0f }
     catch (e: CancellationException) { animate(back, 0f, animationSpec = bouncy) { v, _ -> back = v } }
   }
 
   BoxWithConstraints(Modifier.fillMaxSize()) {
+    SideEffect { PlayerProbe.body++ }
     val fullH = constraints.maxHeight.toFloat()
+    val fullW = constraints.maxWidth.toFloat()
     val miniH = with(density) { 68.dp.toPx() }
     val margin = with(density) { 16.dp.toPx() }
-    val p = f.value.coerceIn(0f, 1f) // nunca sai de 0..1, nem em rebote
     val dragState = rememberDraggableState { d -> scope.launch { f.snapTo((f.value - d / (fullH - miniH)).coerceIn(0f, 1f)) } }
-    // Mini: cartão compacto (miniH) com margens iguais dos lados.
+    // Mini: cartão compacto (miniH) com margens iguais dos lados, logo acima da dock (~82dp) e da barra de gestos.
     val navBottom = WindowInsets.navigationBars.getBottom(density).toFloat()
-    // Fica logo acima da barra de navegação do app (dock ~82dp), que por sua vez fica acima da barra de gestos.
     val dockH = with(density) { 82.dp.toPx() }
-    val sheetTop = lerp(fullH - miniH - margin - navBottom - dockH, 0f, p)
-    val sheetH = lerp(miniH, fullH, p).coerceIn(miniH, fullH)
-    val corner = lerp(34f, 0f, p) + back * 36f
-    val scale = 1f - back * 0.12f
+    val miniTop = fullH - miniH - margin - navBottom - dockH
+    val surface = c.surface
 
-    Box(Modifier.fillMaxWidth().height(with(density) { sheetH.toDp() })
-        .offset { IntOffset(0, sheetTop.toInt()) }
-        .padding(horizontal = with(density) { lerp(margin, 0f, p).toDp() })
-        .graphicsLayer { scaleX = scale; scaleY = scale; shape = RoundedCornerShape(corner.dp); clip = true }
-        .background(c.surface.copy(alpha = (.62f + .38f * p).coerceIn(0f, 1f)))
+    Box(Modifier.fillMaxSize()
+        .graphicsLayer {
+          val p = pf(); val b = back
+          translationY = lerp(miniTop, 0f, p)
+          val sc = 1f - b * 0.12f; scaleX = sc; scaleY = sc
+          transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f)
+          shape = SheetShape(lerp(margin, 0f, p), lerp(miniH, fullH, p).coerceIn(miniH, fullH), (lerp(34f, 0f, p) + b * 36f) * density.density)
+          clip = true }
+        .drawBehind { drawRect(surface.copy(alpha = (.62f + .38f * pf()).coerceIn(0f, 1f))) }
         .draggable(dragState, Orientation.Vertical, onDragStarted = { haptics.tick() }, onDragStopped = { v ->
           val target = when { v < -Motion.FlingVelocity -> 1f; v > Motion.FlingVelocity -> 0f; else -> if (f.value > .5f) 1f else 0f }
-          f.animateTo(target, bouncy, initialVelocity = -v / (fullH - miniH)) })
-        .clickable(enabled = p < .05f, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
-          scope.launch { f.animateTo(1f, Motion.enter(Motion.Medium)) } }) {
+          f.animateTo(target, bouncy, initialVelocity = -v / (fullH - miniH)) })) {
+      SideEffect { PlayerProbe.sheetBody++ }
 
-      // Mini player de vidro: cópia desfocada da capa + véu translúcido + borda de luz.
-      if (p < .99f) GlassBox(Modifier.matchParentSize().alpha((1f - p).coerceIn(0f, 1f)), RoundedCornerShape(corner.dp), now.art,
-        dark = c.background.luminance() < .5f) {}
+      // Mini player de vidro: cópia desfocada da capa + véu translúcido + borda de luz (só a faixa do mini, sem relayout).
+      if (showGlass) GlassBox(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(68.dp).graphicsLayer { alpha = (1f - pf()).coerceIn(0f, 1f) },
+        RoundedCornerShape(34.dp), now.art, dark = c.background.luminance() < .5f) {}
       // Fundo vivo: degradê em malha com as cores da capa, se movendo devagar.
-      if (p > 0.01f) Box(Modifier.fillMaxSize().alpha(p.coerceIn(0f, 1f))) {
+      if (showBg) Box(Modifier.fillMaxSize().graphicsLayer { alpha = pf() }) {
         LivingArtwork(now.art, Modifier.fillMaxSize(), dim = .2f)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(.15f), Color.Black.copy(.55f)))))
       }
@@ -98,29 +116,47 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       var controlsH by remember { mutableStateOf(340.dp) }
       val artSpace = (maxH - insetTop - 56.dp - controlsH - insetBottom - 12.dp).coerceAtLeast(120.dp)
       val artFull = if (wide) minOf(maxH - 120.dp, maxW / 2 - 64.dp).coerceIn(120.dp, 420.dp) else PlayerLayout.art(maxW, artSpace)
-      val artSize = lerp(48.dp, artFull, p)
-      val artX = lerp(10.dp, if (wide) (maxW / 2 - artFull) / 2 else (maxW - artFull) / 2, p)
-      val artY = lerp(10.dp, if (wide) (maxH - artFull) / 2 else insetTop + 56.dp + (artSpace - artFull) / 2, p)
-      val onBg = if (p > .5f) Color.White else c.onSurface
+      // A capa tem SEMPRE o tamanho cheio no layout; mini = mesma capa reduzida/transladada via graphicsLayer.
+      val fullX = if (wide) (maxW / 2 - artFull) / 2 else (maxW - artFull) / 2
+      val fullY = if (wide) (maxH - artFull) / 2 else insetTop + 56.dp + (artSpace - artFull) / 2
+      val artFullPx = with(density) { artFull.toPx() }; val fullXPx = with(density) { fullX.toPx() }; val fullYPx = with(density) { fullY.toPx() }
+      val miniArt = with(density) { 48.dp.toPx() }; val miniX = margin + with(density) { 10.dp.toPx() }; val miniY = with(density) { 10.dp.toPx() }
+      val onBg = if (expanded) Color.White else c.onSurface
 
       // Capa: o mesmo elemento cresce do mini até o tamanho cheio.
-      val artAlpha by animateFloatAsState(if (showLyrics && !wide && p > .9f) 0f else 1f, Motion.standard(), label = "art")
+      val artAlphaS = animateFloatAsState(if (showLyrics && !wide && settled) 0f else 1f, Motion.standard(), label = "art")
       // Capa que respira: cheia no play, recua no pause, sempre com mola.
-      val breath by animateFloatAsState(if (now.playing || p < .5f) 1f else 0.84f, Motion.settle(169f), label = "breath")
+      val breathS = animateFloatAsState(if (now.playing || !expanded) 1f else 0.84f, Motion.settle(169f), label = "breath")
       // Capa arremessável: arrasta na horizontal; forte o bastante troca de faixa, fraco volta com mola.
       val throwX = remember { Animatable(0f) }
-      val maxWpx = with(density) { maxW.toPx() }
+      val maxWpx = fullW
       val artColor = Color(0xFFBEBEC4)
-      if (p > .5f && artAlpha > 0f) AudioRing(Modifier.offset(artX, artY).size(artSize)
-        .graphicsLayer { translationX = throwX.value; val sc = breath; scaleX = sc; scaleY = sc }, artColor, now.playing)
+      /** Shared mini→full transform for the cover and its ring: translation + scale only (origin top-left). */
+      fun androidx.compose.ui.graphics.GraphicsLayerScope.artMove(extra: Float) {
+        val p = pf(); val k = lerp(miniArt / artFullPx, 1f, p)
+        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+        // Escala extra (respiração/arremesso) em torno do centro da capa já reduzida.
+        val s = k * extra; val shift = artFullPx * k * (1f - extra) / 2f
+        translationX = lerp(miniX, fullXPx, p) - fullXPx + shift + throwX.value
+        translationY = lerp(miniY, fullYPx, p) - fullYPx + shift
+        scaleX = s; scaleY = s
+      }
+      if (expanded && !(showLyrics && !wide)) AudioRing(Modifier.offset(fullX, fullY).size(artFull)
+        .graphicsLayer { artMove(breathS.value); alpha = artAlphaS.value }, artColor, now.playing)
       var tapHint by remember { mutableStateOf<Pair<Long, Int>?>(null) }
-      Box(Modifier.offset(artX, artY).size(artSize).alpha(artAlpha)
-          .then(if (p > .9f && !showLyrics) Modifier.pointerInput(now.key) { detectTapGestures(onDoubleTap = { o ->
+      val interactive = settled && !showLyrics
+      Box(Modifier.offset(fullX, fullY).size(artFull)
+          .graphicsLayer {
+            val p = pf(); val k = lerp(miniArt / artFullPx, 1f, p)
+            artMove(lerp(1f, breathS.value, p) * (1f - kotlin.math.abs(throwX.value) / maxWpx * .15f))
+            rotationZ = throwX.value / maxWpx * 14f; alpha = artAlphaS.value
+            // Cantos e sombra compensados pela escala, pra parecerem 12dp no mini e 28dp no cheio.
+            shape = RoundedCornerShape((lerp(12f, 28f, p) * density.density / k.coerceAtLeast(.05f)).coerceAtLeast(0f))
+            clip = true; shadowElevation = lerp(0f, 24f, p) * density.density }
+          .then(if (interactive) Modifier.pointerInput(now.key) { detectTapGestures(onDoubleTap = { o ->
             val dir = if (o.x < size.width / 2) -1 else 1
             a.seek((now.position + dir * 10_000).coerceIn(0, now.duration.coerceAtLeast(0))); tapHint = System.nanoTime() to dir }) } else Modifier)
-          .graphicsLayer { translationX = throwX.value; rotationZ = throwX.value / maxWpx * 14f
-            val sc = lerp(1f, breath, p) * (1f - kotlin.math.abs(throwX.value) / maxWpx * .15f); scaleX = sc; scaleY = sc }
-          .then(if (p > .9f && !showLyrics) Modifier.draggable(rememberDraggableState { d -> scope.launch { throwX.snapTo(throwX.value + d) } },
+          .then(if (interactive) Modifier.draggable(rememberDraggableState { d -> scope.launch { throwX.snapTo(throwX.value + d) } },
             Orientation.Horizontal, onDragStopped = { v ->
               val go = if (throwX.value < -maxWpx / 3 || v < -1800f) 1 else if (throwX.value > maxWpx / 3 || v > 1800f) -1 else 0
               val canGo = (go == 1 && now.hasNext) || (go == -1 && now.hasPrev)
@@ -130,15 +166,18 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
                 throwX.snapTo(go * maxWpx * 1.1f)
               }
               throwX.animateTo(0f, Motion.settle(208f))
-            }) else Modifier).shadow(lerp(0.dp, 24.dp, p), RoundedCornerShape(lerp(12.dp, 28.dp, p)))
-          .clip(RoundedCornerShape(lerp(12.dp, 28.dp, p))).background(c.outline), contentAlignment = Alignment.Center) {
-        if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize().kenBurns(now.playing && p > .9f && !showLyrics), contentScale = ContentScale.Crop)
+            }) else Modifier).background(c.outline), contentAlignment = Alignment.Center) {
+        if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize().kenBurns(now.playing && interactive), contentScale = ContentScale.Crop)
         else Icon(Icons.Rounded.MusicNote, null, tint = c.onSurfaceVariant, modifier = Modifier.fillMaxSize(.4f))
         tapHint?.let { (id, dir) -> SeekRipple(id, dir) }
       }
 
       // Linha do mini player (some ao expandir).
-      if (p < .6f) Row(Modifier.fillMaxWidth().height(68.dp).alpha(1f - p / .6f).padding(start = 70.dp, end = 8.dp),
+      // O toque para abrir fica só na faixa do mini (a camada é do tamanho da tela; semântica/acessibilidade com os limites certos).
+      if (showMini) Row(Modifier.fillMaxWidth().height(68.dp)
+        .clickable(enabled = collapsed, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
+          scope.launch { f.animateTo(1f, Motion.enter(Motion.Medium)) } }
+        .graphicsLayer { alpha = (1f - pf() / .6f).coerceIn(0f, 1f) }.padding(start = 86.dp, end = 24.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
           Text(now.title, color = c.onSurface, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -150,8 +189,9 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       }
 
       // Conteúdo do player cheio (surge ao expandir).
-      if (p > .4f) Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = if (wide) maxW / 2 - 12.dp else 0.dp).alpha(((p - .4f) / .6f).coerceIn(0f, 1f))
-          .offset(y = lerp(40.dp, 0.dp, p)).padding(horizontal = 28.dp)) {
+      val rise = with(density) { 40.dp.toPx() }
+      if (showFull) Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = if (wide) maxW / 2 - 12.dp else 0.dp)
+          .graphicsLayer { val p = pf(); alpha = ((p - .4f) / .6f).coerceIn(0f, 1f); translationY = lerp(rise, 0f, p) }.padding(horizontal = 28.dp)) {
         Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
           IconButton({ scope.launch { f.animateTo(0f, bouncy) } }) { Icon(Icons.Rounded.KeyboardArrowDown, "Recolher", tint = Color.White) }
           Spacer(Modifier.weight(1f))
@@ -378,3 +418,14 @@ object PlayerLayout {
   fun art(maxW: androidx.compose.ui.unit.Dp, space: androidx.compose.ui.unit.Dp) =
     minOf(maxW - 56.dp, space - 16.dp, 420.dp).coerceAtLeast(120.dp)
 }
+
+/** Recorte do cartão: faixa [inset, w-inset] x [0, height] com cantos; recriado por quadro só dentro do graphicsLayer. */
+private data class SheetShape(val inset: Float, val height: Float, val radius: Float) : androidx.compose.ui.graphics.Shape {
+  override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection, density: androidx.compose.ui.unit.Density) =
+    androidx.compose.ui.graphics.Outline.Rounded(androidx.compose.ui.geometry.RoundRect(inset, 0f, (size.width - inset).coerceAtLeast(inset), height.coerceAtMost(size.height),
+      androidx.compose.ui.geometry.CornerRadius(radius.coerceAtLeast(0f))))
+}
+
+/** Contadores de composição do player (testes verificam que a expansão não recompõe por quadro). */
+object PlayerProbe { var sheet = 0; var body = 0; var sheetBody = 0
+  fun total() = sheet + body + sheetBody; fun reset() { sheet = 0; body = 0; sheetBody = 0 } }
