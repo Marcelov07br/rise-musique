@@ -232,3 +232,10 @@ class Round20 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
   @Test fun dsdQuality() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(UiState(now = np.copy(quality = AudioQuality.label(HiRes.DSD_LSBF_PLANAR, 0, 352_800, 2), title = "Bem Que Se Quis", artist = "Marisa Monte")), Actions(), initialExpanded = true) } }
   @Test fun playerMidExpansion() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(homeState.copy(now = np), Actions(), initialPlayerFraction = .5f) } }
 }
+
+// ---- 0.20.1: liquid glass over busy content ----
+class Round201 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val busy = homeState.copy(history = homeLib.mapIndexed { i, h -> h.copy(art = res(if (i % 2 == 0) "cover.jpg" else "hero.jpg")) }, now = np.copy(art = res("cover.jpg")))
+  @Test fun glassBarOverCovers() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(busy, Actions(), initialRootItem = 2) } }
+  @Test fun glassBarLight() = p.snapshot { SyncImages(); RiseTheme(false) { RiseApp(busy, Actions(), initialRootItem = 2) } }
+}

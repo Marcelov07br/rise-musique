@@ -91,15 +91,15 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f)
           shape = SheetShape(lerp(margin, 0f, p), lerp(miniH, fullH, p).coerceIn(miniH, fullH), (lerp(34f, 0f, p) + b * 36f) * density.density)
           clip = true }
-        .drawBehind { drawRect(surface.copy(alpha = (.62f + .38f * pf()).coerceIn(0f, 1f))) }
+        .drawBehind { drawRect(surface.copy(alpha = (pf() * 1.6f).coerceIn(0f, 1f))) }
         .draggable(dragState, Orientation.Vertical, onDragStarted = { haptics.tick() }, onDragStopped = { v ->
           val target = when { v < -Motion.FlingVelocity -> 1f; v > Motion.FlingVelocity -> 0f; else -> if (f.value > .5f) 1f else 0f }
           f.animateTo(target, bouncy, initialVelocity = -v / (fullH - miniH)) })) {
       SideEffect { PlayerProbe.sheetBody++ }
 
       // Mini player de vidro: cópia desfocada da capa + véu translúcido + borda de luz (só a faixa do mini, sem relayout).
-      if (showGlass) GlassBox(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(68.dp).graphicsLayer { alpha = (1f - pf()).coerceIn(0f, 1f) },
-        RoundedCornerShape(34.dp), now.art, dark = c.background.luminance() < .5f) {}
+      if (showGlass) Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(68.dp).graphicsLayer { alpha = (1f - pf()).coerceIn(0f, 1f) }
+        .liquidGlass(RoundedCornerShape(34.dp), c.background.luminance() < .5f))
       // Fundo vivo: degradê em malha com as cores da capa, se movendo devagar.
       if (showBg) Box(Modifier.fillMaxSize().graphicsLayer { alpha = pf() }) {
         LivingArtwork(now.art, Modifier.fillMaxSize(), dim = .2f)

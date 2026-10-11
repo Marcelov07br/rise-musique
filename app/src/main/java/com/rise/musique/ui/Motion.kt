@@ -80,3 +80,11 @@ val LocalAnimScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
   return with(v) { this@enterRise.animateEnterExit(enter = fadeIn(tween(420, delayMillis = Motion.Stagger * 2, easing = Motion.Standard)) + slideInVertically(spring(0.8f, 230f)) { it / 8 },
     exit = fadeOut(Motion.exit())) }
 }
+
+/** Troca de aba: novo conteúdo entra deslizando 24dp do lado da aba escolhida com fade; o antigo só some (rápido). */
+fun Motion.tabSwitch(dir: Int): androidx.compose.animation.ContentTransform {
+  val d = if (dir >= 0) 1 else -1
+  return (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240, 60, androidx.compose.animation.core.FastOutSlowInEasing)) +
+    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.spring(.9f, 380f, androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { (it * .06f).toInt() * d }) togetherWith
+    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+}

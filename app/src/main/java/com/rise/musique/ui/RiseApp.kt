@@ -1,4 +1,6 @@
 package com.rise.musique.ui
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.animation.core.animateFloat
@@ -117,7 +119,8 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
 @Composable fun RiseApp(state: UiState, actions: Actions, initialHistoryOpen: Boolean = false, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
                        initialCollectionItem: Int = 0, initialRoute: Route? = null, initialRootItem: Int = 0, initialShare: Boolean = false, initialPlayerFraction: Float? = null) {
   val targets = remember { FlyTargets() }
-  Box(Modifier.fillMaxSize()) {
+  val haze = remember { dev.chrisbanes.haze.HazeState() }
+  Box(Modifier.fillMaxSize()) { CompositionLocalProvider(LocalHaze provides haze) {
     RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute, initialRootItem)
     UndoBar(state, actions, Modifier.align(Alignment.BottomCenter))
     state.fly?.let { FlyOverlay(it, targets) }
@@ -126,6 +129,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
     if (state.settingsOpen) SettingsSheet(state, actions)
     if (state.statsOpen) StatsSheet(state, actions)
+    }
     if (state.cutOpen) CutSheet(state, actions)
     state.video?.let { VideoPlayerScreen(it, actions.video, state.pip, Modifier.fillMaxSize()) }
     if (state.eqOpen) EqSheet(state, actions)
@@ -192,6 +196,8 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val backdropAlpha = transition.animateFloat({ Motion.enter(Motion.Long) }, label = "backdrop") { if (it.route.isDetail) 1f else 0f }
   val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
   Box(Modifier.fillMaxSize().background(c.background)) {
+   // Tudo que fica atrás da barra e do mini player é a fonte do desfoque (a barra é irmã, não filha).
+   Box(Modifier.fillMaxSize().glassSource(LocalHaze.current)) {
     // Telas de detalhe: fundo vivo fixo cobrindo a tela inteira, entrando em fade junto com a transição.
     lastDetail?.let { d -> if (screen.route.isDetail || transition.isRunning) {
       val art = when (d) { is Route.Artist -> artistArt(state, d.name)
@@ -207,7 +213,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       androidx.compose.animation.SharedTransitionLayout(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalShared provides this) {
           transition.AnimatedContent(Modifier.fillMaxSize(), transitionSpec = {
-            if (initialState.tab != targetState.tab) EnterTransition.None togetherWith ExitTransition.None
+            if (initialState.tab != targetState.tab) Motion.tabSwitch(Tabs.indexOf(targetState.tab) - Tabs.indexOf(initialState.tab))
             else Motion.pageEnter togetherWith Motion.pageExit using SizeTransform(clip = false) }) { sc ->
             CompositionLocalProvider(LocalAnimScope provides this) {
               val clean = state.copy(historyFilter = "", mediaFilter = "Tudo", albumFilter = "", historyView = "Tudo")
@@ -251,6 +257,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
           }
         }
       }
+   }
       NavigationDock(tab, navActions, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
         .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) })
@@ -261,19 +268,33 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
 @Composable private fun NavigationDock(tab: String, a: Actions, modifier: Modifier) {
   val c = MaterialTheme.colorScheme
   val haptics = rememberHaptics()
-  // Barra de vidro: translúcida, com borda de luz em cima.
-  val edge = androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.onSurface.copy(alpha = .22f), c.onSurface.copy(alpha = .04f)))
   val accent = accentColor()
+  val dark = c.background.luminance() < .5f
+  val idx = Tabs.indexOf(tab).coerceAtLeast(0).toFloat()
+  // Pílula líquida: a borda da frente corre (mola firme), a de trás vem atrás (mola mole) → estica no caminho e assenta com um quique leve.
+  val lead = androidx.compose.animation.core.animateFloatAsState(idx, androidx.compose.animation.core.spring(.62f, 620f), label = "lead")
+  val trail = androidx.compose.animation.core.animateFloatAsState(idx, androidx.compose.animation.core.spring(.74f, 230f), label = "trail")
+  val pill = accent.copy(alpha = if (dark) .16f else .12f)
   Row(modifier.shadow(18.dp, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(.25f), spotColor = androidx.compose.ui.graphics.Color.Black.copy(.25f))
-      .clip(CircleShape).background(c.surface.copy(alpha = .9f)).border(1.dp, edge, CircleShape).padding(5.dp)) {
+      .liquidGlass(CircleShape, dark).padding(5.dp)
+      .drawBehind {
+        val w = size.width / Tabs.size; val n = (Tabs.size - 1).toFloat()
+        val l = minOf(lead.value, trail.value).coerceIn(0f, n); val r = maxOf(lead.value, trail.value).coerceIn(0f, n)
+        val stretch = (r - l).coerceIn(0f, 1f)
+        val inset = 2.dp.toPx() * (1f - stretch) ; val squash = size.height * .06f * stretch
+        drawRoundRect(pill, androidx.compose.ui.geometry.Offset(l * w + inset, squash), androidx.compose.ui.geometry.Size((r - l + 1f) * w - 2 * inset, size.height - 2 * squash),
+          androidx.compose.ui.geometry.CornerRadius(size.height / 2f))
+      }) {
     Tabs.forEach { page ->
       val on = tab == page
       val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+      val tint by androidx.compose.animation.animateColorAsState(if (on) accent else c.onSurfaceVariant, Motion.standard(), label = "tint")
+      val scale = androidx.compose.animation.core.animateFloatAsState(if (on) 1.1f else 1f, androidx.compose.animation.core.spring(.55f, 500f), label = "icon")
       Column(Modifier.weight(1f).springPress(src).clip(CircleShape)
-        .clickable(src, null) { haptics.tick(); a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        .clickable(src, null) { if (!on) haptics.tick(); a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(when (page) { "Biblioteca" -> Icons.Rounded.LibraryMusic; "Buscar" -> Icons.Rounded.Search; else -> Icons.Rounded.Home }, null,
-          tint = if (on) accent else c.onSurfaceVariant, modifier = Modifier.size(23.dp))
-        Text(page, color = if (on) accent else c.onSurfaceVariant, fontSize = 11.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+          tint = tint, modifier = Modifier.size(23.dp).graphicsLayer { val k = scale.value.coerceIn(.8f, 1.25f); scaleX = k; scaleY = k })
+        Text(page, color = tint, fontSize = 11.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
       }
     }
   }
