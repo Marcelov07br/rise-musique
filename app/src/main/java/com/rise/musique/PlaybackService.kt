@@ -85,9 +85,19 @@ class PlaybackService : MediaLibraryService() {
       override fun buildAudioSink(ctx: Context, floatOut: Boolean, params: Boolean): AudioSink =
         DefaultAudioSink.Builder(ctx).setAudioProcessors(arrayOf(mainFx, TeeAudioProcessor(com.rise.musique.AudioLevels))).build()
     }.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER) // FFmpeg: DSD, AIFF, ALAC/FLAC hi-res
+    val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+      .setBufferDurationsMs(
+        /* minBufferMs = */ 30_000,
+        /* maxBufferMs = */ 60_000,
+        /* bufferForPlaybackMs = */ 600,
+        /* bufferForPlaybackAfterRebufferMs = */ 1_500
+      )
+      .setPrioritizeTimeOverSizeThresholds(true)
+      .build()
     val player = ExoPlayer.Builder(this, renderers)
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
       .setHandleAudioBecomingNoisy(true)
+      .setLoadControl(loadControl)
       .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playerDataSource(this), RiseExtractorsFactory())).build()
     val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
     val shown = LyricPlayer(player).also { lyricPlayer = it }
@@ -188,8 +198,20 @@ class PlaybackService : MediaLibraryService() {
   /** Resolve the next streaming item's URL ahead of time (yt-dlp takes a few seconds). */
   private fun prefetchNext(p: ExoPlayer) {
     val i = p.nextMediaItemIndex; if (i == C.INDEX_UNSET) return
-    val id = Streams.idOf(p.getMediaItemAt(i).localConfiguration?.uri) ?: return
-    scope.launch(kotlinx.coroutines.Dispatchers.IO) { Streams.prefetch(id) }
+    val uri = p.getMediaItemAt(i).localConfiguration?.uri ?: return
+    val id = Streams.idOf(uri)
+    if (id != null) {
+      scope.launch(kotlinx.coroutines.Dispatchers.IO) { Streams.prefetch(id) }
+      return
+    }
+    if (uri.scheme == SpotifyImport.SCHEME) {
+      val trackUri = (uri.host ?: uri.schemeSpecificPart).removePrefix("//")
+      scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        val track = SpotifyImport.getTrack(trackUri) ?: return@launch
+        val sr = SpotifyImport.resolveToSearchResult(track) ?: return@launch
+        Engine.videoId(sr.url)?.let { Streams.prefetch(it) }
+      }
+    }
   }
   private val eqListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> EqStore.applyCurrent(this) }
 

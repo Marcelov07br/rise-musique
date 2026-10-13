@@ -31,8 +31,12 @@ import com.rise.musique.Stations
 
 /** Hero card content: what it is ("Volte a ouvir"…), its art (track cover or generated station cover), action and menu. */
 data class HeroItem(val key: String, val label: String, val title: String, val subtitle: String, val track: HistoryItem?, val station: Station?, val album: String = "", val open: () -> Unit) {
-  /** Album heroes share their cover with the album header under a hero-only key (rows use "cover-al-<album>"), so both can be on screen. */
-  val sharedKey get() = if (album.isNotBlank()) "cover-al-hero-$album" else "hero-$key"
+  /** Album and station heroes share their cover with their detail header under a hero-only key. */
+  val sharedKey get() = when {
+    album.isNotBlank() -> "cover-al-hero-$album"
+    station != null -> "cover-st-hero-${station.id}"
+    else -> "hero-$key"
+  }
 }
 
 /** Up to five heroes: back-to (most played), made-for-you stations, recently added album. */
@@ -42,7 +46,7 @@ fun heroItems(s: UiState, shown: List<HistoryItem>, stations: List<Station>, a: 
   val back = shown.firstOrNull { it.title == topName } ?: shown.firstOrNull { !it.video }
   back?.let { h -> out += HeroItem("back:${h.uri}", "Volte a ouvir", if (h.album.isNotBlank()) h.album else h.title, h.artist.ifBlank { h.meta }, h, null, h.album) {
     if (h.album.isNotBlank()) a.openAlbumFrom(h.album, "hero") else a.play(h) } }
-  stations.take(2).forEach { st -> out += HeroItem("st:${st.id}", "Feito pra você", st.name, st.subtitle, st.seeds.firstOrNull(), st) { a.playStation(st) } }
+  stations.take(2).forEach { st -> out += HeroItem("st:${st.id}", "Feito pra você", st.name, st.subtitle, st.seeds.firstOrNull(), st) { a.openStationFrom(st, "hero") } }
   shown.firstOrNull { !it.video && it.album.isNotBlank() && it.album != back?.album }?.let { h ->
     out += HeroItem("new:${h.album}", "Adicionado recentemente", h.album, h.artist, h, null, h.album) { a.openAlbumFrom(h.album, "hero") } }
   return out.take(5)
@@ -58,7 +62,7 @@ fun contentFor(bg: Color): Color = if (.2126f * bg.red + .7152f * bg.green + .07
   val w = (LocalConfiguration.current.screenWidthDp * .85f).dp.coerceAtMost(420.dp)
   var menuFor by remember { mutableStateOf<HistoryItem?>(null) }
   var pick by remember { mutableStateOf<HistoryItem?>(null) }
-  Carousel(state) { items(items, key = { it.key }) { h -> HeroCard(h, w, s.stationLoading != null && s.stationLoading == h.station?.id) { menuFor = h.track } } }
+  Carousel(state) { items(items, key = { it.key }) { h -> HeroCard(h, w, s.stationLoadingSet.contains(h.station?.id)) { menuFor = h.track } } }
   menuFor?.let { t -> TrackActionSheet(t, s, a, { menuFor = null }) { pick = t } }
   pick?.let { t -> PlaylistPicker(s.playlists.keys.sorted(), { pick = null }) { name -> a.addToPlaylist(t, name); pick = null } }
 }
@@ -71,7 +75,7 @@ fun contentFor(bg: Color): Color = if (.2126f * bg.red + .7152f * bg.green + .07
   val scrim = Tint.scrim(dom)
   Box(Modifier.width(width).aspectRatio(1f / 1.15f).weightedPress(src, 22.dp).clip(RoundedCornerShape(22.dp)).background(scrim)
       .clickable(src, null) { haptics.press(); h.open() }) {
-    if (h.station != null) StationArt(h.station, Modifier.fillMaxSize())
+    if (h.station != null) StationArt(h.station, Modifier.fillMaxSize().sharedCover(h.sharedKey))
     else if (h.track != null && h.track.art.isBlank()) Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Tint.scrim(dom).copy(alpha = 1f), Tint.soft(dom, dark = true), Tint.scrim(dom)))), contentAlignment = Alignment.Center) {
       Icon(Icons.Rounded.MusicNote, null, Modifier.size(72.dp).offset(y = (-40).dp), tint = Color.White.copy(.35f)) }
     else if (h.track != null) Cover(h.track, Modifier.fillMaxSize().sharedCover(h.sharedKey), 0.dp)
@@ -104,7 +108,7 @@ private val StationArtCache = java.util.Collections.synchronizedMap(HashMap<Stri
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   val haptics = rememberHaptics()
   Column(Modifier.width(156.dp).weightedPress(src, 16.dp).clickable(src, null) { haptics.tick(); onClick() }) {
-    Box(Modifier.size(156.dp).clip(RoundedCornerShape(14.dp))) {
+    Box(Modifier.size(156.dp).clip(RoundedCornerShape(14.dp)).sharedCover("cover-st-${st.id}")) {
       StationArt(st, Modifier.fillMaxSize())
       if (loading) Box(Modifier.matchParentSize().background(Color.Black.copy(.35f)), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(Modifier.size(32.dp), color = Color.White, strokeWidth = 3.dp) }

@@ -67,7 +67,10 @@ class MainActivity : ComponentActivity() {
         lastfmToggle = vm::lastfmToggle, openCut = vm::openCut, eqOpen = vm::eqOpen, eqChange = vm::eqChange, normalize = vm::normalize, normalizeAlbum = vm::normalizeAlbum,
         lockLyrics = vm::lockLyrics, wifiOnly = vm::wifiOnly, follow = vm::follow, undo = vm::undo, removeSearch = vm::removeSearch, searchLive = vm::searchLive, clearQueue = vm::clearQueue,
         searchKind = vm::searchKind, durationFilter = vm::durationFilter, dateFilter = vm::dateFilter, openResult = vm::openResult, artistPage = vm::artistPage, albumPage = vm::albumPage, playStreams = vm::playStreams, downloadAll = vm::downloadAll, saveStream = vm::saveStream,
-        playVideo = vm::playVideo, playStation = vm::playStation, shareSnippet = { v, ms -> vm.shareSnippet(v, ms) { startActivity(it) } }, downloadItem = vm::downloadItem, dlRemove = vm::dlRemove, dlQuery = vm::dlQuery, dlLink = vm::dlLink, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
+        playVideo = vm::playVideo, playStation = vm::playStation, loadStation = vm::loadStation, playStationTracks = vm::playStationTracks, queueStationTracks = vm::queueStationTracks,
+        loadSpotify = vm::loadSpotify, playSpotifyTracks = vm::playSpotifyTracks, downloadSpotifyTracks = vm::downloadSpotifyTracks, saveSpotifyPlaylist = vm::saveSpotifyPlaylist, deleteSpotifyPlaylist = vm::deleteSpotifyPlaylist, importSpotifyUrl = vm::importSpotifyUrl,
+        clearSpotifyRequest = vm::clearSpotifyRequest, streamQuality = vm::streamQuality,
+        shareSnippet = { v, ms -> vm.shareSnippet(v, ms) { startActivity(it) } }, downloadItem = vm::downloadItem, dlRemove = vm::dlRemove, dlQuery = vm::dlQuery, dlLink = vm::dlLink, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
         video = com.rise.musique.ui.VideoActions(close = { vm.video.close(); exitFullscreen() }, playPause = vm.video::playPause, seek = vm.video::seek, seekBy = vm.video::seekBy,
           quality = vm.video::quality, subtitle = vm.video::subtitle, fullscreen = { on -> vm.video.fullscreen(on); if (on) enterFullscreen() else exitFullscreen() },
           next = vm.video::next, pip = { enterPip() }),
@@ -114,9 +117,16 @@ class MainActivity : ComponentActivity() {
   override fun onStop() { super.onStop(); if (!isInPictureInPictureMode) vm.video.pause() }
   override fun onDestroy() { if (pipRegistered) runCatching { unregisterReceiver(pipReceiver) }; super.onDestroy() }
 
-  override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }
+  override fun onNewIntent(i: Intent) { super.onNewIntent(i); intent = i; handle(i) }
   private fun handle(i: Intent?) { when (i?.action) {
-    Intent.ACTION_SEND -> vm.onIncomingLink(i.getStringExtra(Intent.EXTRA_TEXT))
+    Intent.ACTION_SEND -> {
+      val text = i.getStringExtra(Intent.EXTRA_TEXT) ?: i.getStringExtra(Intent.EXTRA_SUBJECT) ?: i.dataString
+      vm.onIncomingLink(text)
+    }
+    Intent.ACTION_VIEW -> {
+      val data = i.dataString
+      if (!data.isNullOrBlank()) vm.onIncomingLink(data)
+    }
     Shortcuts.SHUFFLE -> { vm.page("Início"); vm.shuffleAll() }
     Shortcuts.STATIONS -> vm.page("Início")
     Shortcuts.SEARCH -> vm.page("Buscar")

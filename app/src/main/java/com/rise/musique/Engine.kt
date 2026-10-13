@@ -77,10 +77,17 @@ object Engine {
     stream to CutInfo.storyboard(JSONObject(out.lineSequence().first { it.trimStart().startsWith("{") }))
   }
 
-  suspend fun audioStream(url: String): Stream = withContext(Dispatchers.IO) {
+  suspend fun audioStream(url: String, quality: String = "Alta"): Stream = withContext(Dispatchers.IO) {
     if (!updated) updateMutex.withLockSafe { }  // wait for an in-flight startup update
+    val formatOption = when (quality) {
+      "Econômica" -> "ba[abr<=96]/ba[abr<=128]/ba[ext=m4a]/ba/b"
+      "Normal" -> "ba[abr<=160]/ba[ext=m4a]/ba/b"
+      else -> "ba[ext=m4a]/ba[acodec^=mp4a]/ba/b"
+    }
     val out = runInterruptible { YoutubeDL.getInstance().execute(YoutubeDLRequest(url).apply {
-      addOption("-f", "ba[ext=m4a]/ba[acodec^=mp4a]/ba/b"); addOption("-j"); addOption("--no-playlist")
+      addOption("-f", formatOption)
+      addOption("-j")
+      addOption("--no-playlist")
       addOption("--no-warnings")
     }) }.out
     parseStream(out).also { streamHeaders[it.url] = it.headers }
