@@ -30,9 +30,11 @@ object Streams {
     Regex("[?&/]expire[=/](\\d+)").find(url)?.groupValues?.get(1)?.toLongOrNull()?.times(1000) ?: (now + 5 * 60_000)
   fun fresh(r: Resolved?, now: Long = System.currentTimeMillis()) = r != null && r.expiresAtMs - now > 60_000
 
+  @Volatile var streamQuality: String = "Alta"
+
   fun resolve(id: String, force: Boolean = false): Resolved {
     if (!force) resolved[id]?.takeIf { fresh(it) }?.let { return it }
-    val s = runBlocking { Engine.audioStream("https://music.youtube.com/watch?v=$id") }
+    val s = runBlocking { Engine.audioStream("https://music.youtube.com/watch?v=$id", streamQuality) }
     return Resolved(s.url, s.headers, expiryOf(s.url), s.formatId, s.ext).also { resolved[id] = it }
   }
   fun known(id: String) = resolved[id]
@@ -58,11 +60,27 @@ object Streams {
   }.getOrDefault(false)
 }
 
-/** Opens `rise-stream://` by resolving it, and transparently re-resolves once when googlevideo answers 403/410 (expired URL). */
+/** Opens `rise-stream://` and `rise-spotify://` by resolving it, and transparently re-resolves once when googlevideo answers 403/410 (expired URL). */
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class StreamDataSource(private val http: HttpDataSource) : BaseDataSource(true) {
   private var opened: DataSpec? = null
   override fun open(spec: DataSpec): Long {
+    val uri = spec.uri
+    if (uri.scheme == SpotifyImport.SCHEME) {
+      val trackUri = (uri.host ?: uri.schemeSpecificPart).removePrefix("//")
+      val track = SpotifyImport.getTrack(trackUri)
+        ?: throw java.io.IOException("Música do Spotify não encontrada: $trackUri")
+      val sr = runBlocking { SpotifyImport.resolveToSearchResult(track) }
+        ?: throw java.io.IOException("Áudio não encontrado no YouTube Music para: ${track.title} - ${track.artist}")
+      val id = Engine.videoId(sr.url)
+        ?: throw java.io.IOException("ID de vídeo do YouTube inválido para: ${sr.url}")
+      fun real(r: Streams.Resolved) = spec.buildUpon().setUri(Uri.parse(r.url))
+        .setHttpRequestHeaders(spec.httpRequestHeaders + r.headers.filterKeys { !it.equals("Accept-Encoding", true) }).build()
+      return try { http.open(real(Streams.resolve(id))) } catch (e: HttpDataSource.InvalidResponseCodeException) {
+        if (e.responseCode != 403 && e.responseCode != 410) throw e
+        http.close(); http.open(real(Streams.resolve(id, force = true)))
+      }.also { opened = spec }
+    }
     val id = Streams.idOf(spec.uri) ?: return http.open(spec).also { opened = spec }
     fun real(r: Streams.Resolved) = spec.buildUpon().setUri(r.url).setHttpRequestHeaders(spec.httpRequestHeaders + r.headers.filterKeys { !it.equals("Accept-Encoding", true) }).build()
     return try { http.open(real(Streams.resolve(id))) } catch (e: HttpDataSource.InvalidResponseCodeException) {
@@ -84,11 +102,14 @@ class StreamDataSource(private val http: HttpDataSource) : BaseDataSource(true) 
   }
 }
 
-/** Player data sources: local files/content, http with yt-dlp headers, and cached `rise-stream://` items. */
+/** Player data sources: local files/content, http with yt-dlp headers, and cached `rise-stream://` / `rise-spotify://` items. */
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 fun playerDataSource(ctx: Context): DataSource.Factory {
   val stream = CacheDataSource.Factory().setCache(Streams.cache(ctx)).setUpstreamDataSourceFactory(StreamDataSource.Factory(ctx))
-    .setCacheKeyFactory { spec -> Streams.idOf(spec.uri)?.let(Streams::cacheKey) ?: spec.key ?: spec.uri.toString() }
+    .setCacheKeyFactory { spec ->
+      if (spec.uri.scheme == SpotifyImport.SCHEME) "sp:" + (spec.uri.host ?: spec.uri.schemeSpecificPart).removePrefix("//")
+      else Streams.idOf(spec.uri)?.let(Streams::cacheKey) ?: spec.key ?: spec.uri.toString()
+    }
     .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
   val other = streamDataSource(ctx)
   return DataSource.Factory { RoutingDataSource(stream.createDataSource(), other.createDataSource()) }
@@ -98,7 +119,11 @@ fun playerDataSource(ctx: Context): DataSource.Factory {
 private class RoutingDataSource(private val stream: DataSource, private val other: DataSource) : DataSource {
   private var cur: DataSource? = null
   override fun addTransferListener(l: TransferListener) { stream.addTransferListener(l); other.addTransferListener(l) }
-  override fun open(spec: DataSpec): Long { val d = if (spec.uri.scheme == Streams.SCHEME) stream else other; cur = d; return d.open(spec) }
+  override fun open(spec: DataSpec): Long {
+    val d = if (spec.uri.scheme == Streams.SCHEME || spec.uri.scheme == SpotifyImport.SCHEME) stream else other
+    cur = d
+    return d.open(spec)
+  }
   override fun read(b: ByteArray, o: Int, l: Int) = (cur ?: throw java.io.IOException("Fonte fechada")).read(b, o, l)
   override fun getUri() = cur?.uri
   override fun getResponseHeaders() = cur?.responseHeaders ?: emptyMap()

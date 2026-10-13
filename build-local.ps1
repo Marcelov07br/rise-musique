@@ -1,6 +1,12 @@
 param([switch]$Test)
 $ErrorActionPreference = 'Stop'
-$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-17.0.16.8-hotspot'
+if (-not (Test-Path -LiteralPath "$env:JAVA_HOME")) {
+    if (Test-Path 'C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot') {
+        $env:JAVA_HOME = 'C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot'
+    } elseif (Test-Path 'C:\Program Files\Eclipse Adoptium\jdk-17.0.16.8-hotspot') {
+        $env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-17.0.16.8-hotspot'
+    }
+}
 $env:ANDROID_HOME = 'C:\Android\android-sdk'
 $env:JAVA_TOOL_OPTIONS = '-Djdk.net.unixdomain.tmpdir=C:\nonexistent-rise-sockets'
 $credentialsPath = Join-Path $PSScriptRoot 'signing\credentials.json'

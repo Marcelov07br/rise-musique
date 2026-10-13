@@ -31,6 +31,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   val c = MaterialTheme.colorScheme
   val shown = visibleHistory(s)
   var importMenu by remember { mutableStateOf(false) }
+  var showSpotify by remember { mutableStateOf(false) }
   var sortMenu by remember { mutableStateOf(false) }
   var rename by remember { mutableStateOf<String?>(null) }
   var deletePlaylist by remember { mutableStateOf<String?>(null) }
@@ -54,13 +55,38 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
         DropdownMenu(importMenu, { importMenu = false }) {
           DropdownMenuItem({ Text("Escolher arquivos") }, { importMenu = false; a.importFiles() }, leadingIcon = { Icon(Icons.Rounded.AudioFile, null) })
           DropdownMenuItem({ Text("Escolher uma pasta") }, { importMenu = false; a.importFolder() }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) })
+          DropdownMenuItem({ Text("Importar do Spotify") }, { importMenu = false; showSpotify = true }, leadingIcon = { Icon(Icons.Rounded.QueueMusic, null, tint = androidx.compose.ui.graphics.Color(0xFF1DB954)) })
         }
       }
     } }
     if (!homeTab) item { OutlinedTextField(s.historyFilter, a.historyFilter, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(20.dp),
       placeholder = { Text("Buscar na sua coleção") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
       trailingIcon = { if (s.historyFilter.isNotBlank()) IconButton({ a.historyFilter("") }) { Icon(Icons.Rounded.Close, "Limpar busca") } }) }
-    if (!homeTab) item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (!homeTab) item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+      item(key = "sp-import-chip") {
+        AssistChip(
+          onClick = { showSpotify = true },
+          label = { Text("Importar do Spotify", fontSize = 13.sp) },
+          leadingIcon = { Icon(Icons.Rounded.QueueMusic, null, Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color(0xFF1DB954)) },
+          shape = CircleShape
+        )
+      }
+      items(s.savedSpotifyPlaylists, key = { "sp-chip:" + it.id }) { pl ->
+        var menu by remember { mutableStateOf(false) }
+        Box {
+          FilterChip(
+            selected = false,
+            onClick = { a.openSpotify(pl) },
+            label = { Text(pl.title, maxLines = 1) },
+            leadingIcon = { Icon(Icons.Rounded.QueueMusic, null, Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color(0xFF1DB954)) },
+            trailingIcon = { Icon(Icons.Rounded.MoreHoriz, "Opções", Modifier.size(20.dp).clickable { menu = true }) }
+          )
+          DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem({ Text("Abrir playlist") }, { menu = false; a.openSpotify(pl) })
+            DropdownMenuItem({ Text("Remover da biblioteca") }, { menu = false; a.deleteSpotifyPlaylist(pl.id) })
+          }
+        }
+      }
       items(listOf("Tudo", "Favoritos") + s.playlists.keys.sorted()) { name ->
         var menu by remember { mutableStateOf(false) }
         Box {
@@ -112,7 +138,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
         CoverCard(h, h.title, h.artist.ifBlank { h.meta }, "cover-tr-${h.uri}") { if (h.video) a.playLocalVideo(h) else a.play(h) } } } }
       if (stations.isNotEmpty()) {
         item(key = "stations-title") { SectionTitle("Estações feitas pra você") }
-        item(key = "stations") { Carousel(stationRow) { items(stations, key = { it.id }) { st -> StationCard(st, s.stationLoading == st.id) { a.playStation(st) } } } }
+        item(key = "stations") { Carousel(stationRow) { items(stations, key = { it.id }) { st -> StationCard(st, s.stationLoadingSet.contains(st.id)) { a.openStation(st) } } } }
       }
     }
     if (shown.isNotEmpty() && !home && !browse) item { Text("${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
@@ -133,9 +159,17 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       } }
     }
     val lists = if (home) s.playlists.entries.sortedBy { it.key }.map { (name, uris) -> Triple(name, uris.size, uris.firstNotNullOfOrNull { u -> s.history.firstOrNull { it.uri == u && it.art.isNotBlank() } }) } else emptyList()
-    if (lists.isNotEmpty()) {
+    if (lists.isNotEmpty() || (home && s.savedSpotifyPlaylists.isNotEmpty())) {
       item(key = "lists-title") { SectionTitle("Suas playlists") }
       item(key = "lists") { Carousel(playlistRow) {
+        items(s.savedSpotifyPlaylists, key = { "sp:" + it.id }) { pl ->
+          CoverCard(
+            HistoryItem(pl.title, "", "sp:${pl.id}", pl.art, "Spotify"),
+            pl.title,
+            "${pl.tracks.size} faixas · Spotify",
+            "cover-sp-${pl.id}"
+          ) { a.openSpotify(pl) }
+        }
         items(lists, key = { it.first }) { (name, n, cover) ->
           CoverCard(cover ?: HistoryItem(name, "", "pl:$name"), name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-pl-$name") { a.openPlaylist(name) } }
       } }
@@ -157,6 +191,16 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   }
   deletePlaylist?.let { name -> AlertDialog({ deletePlaylist = null }, title = { Text("Apagar $name?") }, text = { Text("Os arquivos de música serão preservados.") },
     confirmButton = { TextButton({ a.deletePlaylist(name); deletePlaylist = null }) { Text("Apagar playlist") } }, dismissButton = { TextButton({ deletePlaylist = null }) { Text("Cancelar") } }) }
+  if (showSpotify) {
+    SpotifyImportDialog(
+      onDismiss = { showSpotify = false },
+      onImport = { url ->
+        a.importSpotifyUrl(url) {
+          showSpotify = false
+        }
+      }
+    )
+  }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

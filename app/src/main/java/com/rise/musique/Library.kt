@@ -16,6 +16,11 @@ object Library {
 
   fun playlists(c: Context): Map<String, List<String>> = load(c).optJSONObject("pl")?.let { pl ->
     pl.keys().asSequence().associateWith { k -> pl.getJSONArray(k).let { a -> (0 until a.length()).map(a::getString) } } } ?: emptyMap()
+  @Synchronized fun createPlaylist(c: Context, name: String) {
+    require(name.isNotBlank() && name !in setOf("Tudo", "Favoritos")) { "Escolha outro nome para a playlist" }
+    val o = load(c); val pl = o.optJSONObject("pl") ?: JSONObject()
+    if (!pl.has(name)) pl.put(name, JSONArray())
+    o.put("pl", pl); save(c, o) }
   @Synchronized fun addToPlaylist(c: Context, name: String, uri: String) {
     require(name.isNotBlank() && name !in setOf("Tudo", "Favoritos")) { "Escolha outro nome para a playlist" }
     val o = load(c); val pl = o.optJSONObject("pl") ?: JSONObject()

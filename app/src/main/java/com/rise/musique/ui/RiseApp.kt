@@ -67,7 +67,13 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val stationLoading: String? = null, val dlItems: List<SearchResult> = emptyList(), val dlQuery: String = "", val dlLoading: Boolean = false, val dlRequest: Int = 0, val snippetBusy: Boolean = false,
   val undo: UndoInfo? = null, val popular: Map<String, List<SearchResult>> = emptyMap(), val popularLoading: Set<String> = emptySet(), val hidden: Set<String> = emptySet(),
   val artistPages: Map<String, com.rise.musique.ArtistPage> = emptyMap(), val artistLoading: Set<String> = emptySet(), val artistFailed: Set<String> = emptySet(),
-  val albumPages: Map<String, com.rise.musique.AlbumPage> = emptyMap(), val albumLoading: Set<String> = emptySet(), val artistPhotos: Map<String, String> = emptyMap())
+  val albumPages: Map<String, com.rise.musique.AlbumPage> = emptyMap(), val albumLoading: Set<String> = emptySet(), val artistPhotos: Map<String, String> = emptyMap(),
+  val stationPages: Map<String, com.rise.musique.StationPage> = emptyMap(), val stationLoadingSet: Set<String> = emptySet(),
+  val spotifyPlaylists: Map<String, com.rise.musique.SpotifyPlaylist> = emptyMap(), val spotifyLoading: Set<String> = emptySet(),
+  val spotifyResolving: Set<String> = emptySet(), val spotifyResolvedTracks: Map<String, SearchResult> = emptyMap(),
+  val spotifyRequest: com.rise.musique.SpotifyPlaylist? = null,
+  val savedSpotifyPlaylists: List<com.rise.musique.SpotifyPlaylist> = emptyList(),
+  val streamQuality: String = "Alta")
 
 /** Snackbar with Desfazer; the real action runs only after the timeout. */
 data class UndoInfo(val id: Long, val message: String)
@@ -107,7 +113,16 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val dlQuery: (String) -> Unit = {}, val dlLink: (String) -> Unit = {},
   val artistPage: (String) -> Unit = {}, val albumPage: (String) -> Unit = {}, val playStreams: (List<SearchResult>, Int, Boolean) -> Unit = { _, _, _ -> },
   val downloadAll: (List<SearchResult>) -> Unit = {}, val openRemoteAlbum: (SearchResult, String) -> Unit = { _, _ -> }, val openAlbumFrom: (String, String) -> Unit = { _, _ -> },
-  val openArtistFrom: (String, String) -> Unit = { _, _ -> }, val shareSnippet: (Boolean, Long) -> Unit = { _, _ -> }, val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {})
+  val openArtistFrom: (String, String) -> Unit = { _, _ -> }, val shareSnippet: (Boolean, Long) -> Unit = { _, _ -> }, val voiceStart: () -> Unit = {}, val voiceStop: () -> Unit = {},
+  val openStation: (com.rise.musique.Station) -> Unit = {}, val openStationFrom: (com.rise.musique.Station, String) -> Unit = { _, _ -> },
+  val loadStation: (com.rise.musique.Station) -> Unit = {}, val playStationTracks: (List<com.rise.musique.StationItem>, Int, Boolean) -> Unit = { _, _, _ -> },
+  val queueStationTracks: (List<com.rise.musique.StationItem>) -> Unit = {},
+  val openSpotify: (com.rise.musique.SpotifyPlaylist) -> Unit = {}, val openSpotifyFrom: (com.rise.musique.SpotifyPlaylist, String) -> Unit = { _, _ -> },
+  val loadSpotify: (String, String) -> Unit = { _, _ -> }, val playSpotifyTracks: (List<com.rise.musique.SpotifyTrack>, Int, Boolean) -> Unit = { _, _, _ -> },
+  val downloadSpotifyTracks: (com.rise.musique.SpotifyPlaylist, List<com.rise.musique.SpotifyTrack>) -> Unit = { _, _ -> },
+  val saveSpotifyPlaylist: (com.rise.musique.SpotifyPlaylist) -> Unit = {}, val deleteSpotifyPlaylist: (String) -> Unit = {},
+  val importSpotifyUrl: (String, ((com.rise.musique.SpotifyPlaylist) -> Unit)?) -> Unit = { _, _ -> },
+  val clearSpotifyRequest: () -> Unit = {}, val streamQuality: (String) -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -149,7 +164,7 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   return seek to androidx.compose.animation.core.rememberTransition(seek, label = "screen")
 }
 
-private val Route?.isDetail get() = this is Route.Album || this is Route.Playlist || this is Route.Artist || this is Route.Smart || this is Route.RemoteAlbum
+private val Route?.isDetail get() = this is Route.Album || this is Route.Playlist || this is Route.Artist || this is Route.Smart || this is Route.RemoteAlbum || this is Route.Station || this is Route.Spotify
 
 @OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable private fun RiseContent(state: UiState, actions: Actions, initialHistoryOpen: Boolean, targets: FlyTargets, initialCollectionItem: Int = 0,
@@ -184,6 +199,11 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
     openArtistFrom = { n, src -> nav.push(tab, Route.Artist(n, src)) }, openPlaylist = { nav.push(tab, Route.Playlist(it)) }, openArtist = { nav.push(tab, Route.Artist(it)) },
     openDownloads = { if (nav.stack(tab).lastOrNull() != Route.Downloads) nav.push(tab, Route.Downloads) },
     openSmart = { k, v -> nav.push(tab, Route.Smart(k, v)) },
+    openStation = { st -> nav.push(tab, Route.Station(st.id, st.name, st.subtitle, st.kind, st.hue)); actions.loadStation(st) },
+    openStationFrom = { st, src -> nav.push(tab, Route.Station(st.id, st.name, st.subtitle, st.kind, st.hue, src)); actions.loadStation(st) },
+    openSpotify = { sp -> nav.push(tab, Route.Spotify(sp.id, sp.type, sp.title, sp.art, sp.subtitle)) },
+    openSpotifyFrom = { sp, src -> nav.push(tab, Route.Spotify(sp.id, sp.type, sp.title, sp.art, sp.subtitle, src)) },
+    importSpotifyUrl = { url, cb -> actions.importSpotifyUrl(url) { pl -> nav.push(tab, Route.Spotify(pl.id, pl.type, pl.title, pl.art, pl.subtitle)); cb?.invoke(pl) } },
     albumFilter = { if (it.isBlank()) nav.pop(tab) else nav.push(tab, Route.Album(it)) },
     historyView = { if (it in state.playlists) nav.push(tab, Route.Playlist(it)) else actions.historyView(it) },
     page = { t -> if (t == "Downloads") { if (nav.stack(tab).lastOrNull() != Route.Downloads) nav.push(tab, Route.Downloads); return@copy }
@@ -193,6 +213,13 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       else actions.page(target) }) }
   // Link compartilhado / botão de download de um item: abre a página Downloads na aba atual.
   LaunchedEffect(state.dlRequest) { if (state.dlRequest > 0) navActions.openDownloads() }
+  // Link do Spotify compartilhado: navega diretamente para a tela da playlist
+  LaunchedEffect(state.spotifyRequest) {
+    state.spotifyRequest?.let { sp ->
+      navActions.openSpotify(sp)
+      actions.clearSpotifyRequest()
+    }
+  }
   var lastDetail by remember { mutableStateOf<Route?>(initialRoute?.takeIf { it.isDetail }) }
   if (screen.route.isDetail && lastDetail != screen.route) lastDetail = screen.route
   val backdropAlpha = transition.animateFloat({ Motion.enter(Motion.Long) }, label = "backdrop") { if (it.route.isDetail) 1f else 0f }
@@ -207,6 +234,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
         is Route.Smart -> smartFolder(state, d.kind, d.value)?.tracks?.firstOrNull { it.art.isNotBlank() }?.art.orEmpty()
         is Route.RemoteAlbum -> state.albumPages[d.id]?.art?.ifBlank { null } ?: d.art
         is Route.Playlist -> state.playlists[d.name].orEmpty().firstNotNullOfOrNull { u -> state.history.firstOrNull { it.uri == u && it.art.isNotBlank() }?.art }.orEmpty()
+        is Route.Spotify -> state.spotifyPlaylists[d.id]?.art?.ifBlank { null } ?: d.art
         else -> "" }
       CollectionBackdrop(art, collapseOf(nav.list(d.key, initialCollectionItem)),
         Modifier.fillMaxSize().graphicsLayer { alpha = (backdropAlpha.value * (1f - dismiss.value)).coerceIn(0f, 1f) })
@@ -226,6 +254,8 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
                 is Route.Smart -> smartFolder(clean, r.kind, r.value).let { f -> if (f != null) CollectionScreen(clean, navActions, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss, f)
                   else Box(Modifier.fillMaxSize()) { EmptyState(androidx.compose.material.icons.Icons.Rounded.AutoAwesome, "Coleção vazia", "As faixas mudaram desde a última análise.") } }
                 is Route.Artist -> ArtistScreen(clean, navActions, r.name, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss, src = r.src)
+                is Route.Station -> StationScreen(clean, navActions, r, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
+                is Route.Spotify -> SpotifyScreen(clean, navActions, r, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
                 Route.Downloads -> DownloadPage(state, navActions, nav.list(r.key), pop, Modifier.fillMaxSize().background(c.background))
                 null -> Column(Modifier.fillMaxSize()) {
                   val rootList = nav.list("root:${sc.tab}", initialRootItem)

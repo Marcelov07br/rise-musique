@@ -10,10 +10,21 @@
   <application android:name=".RiseApplication" android:extractNativeLibs="true" android:label="Rise Musique" android:theme="@style/Theme.Rise.Splash" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher">
     <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc"/>
     <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
+      android:label="Rise Musique"
       android:supportsPictureInPicture="true" android:resizeableActivity="true"
       android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|density">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
       <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="http"/>
+        <data android:scheme="https"/>
+        <data android:host="open.spotify.com"/>
+        <data android:pathPrefix="/playlist/"/>
+        <data android:pathPrefix="/album/"/>
+      </intent-filter>
     </activity>
     <activity android:name=".QuickDownloadActivity" android:exported="true" android:label="Baixar com Rise"
       android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="">

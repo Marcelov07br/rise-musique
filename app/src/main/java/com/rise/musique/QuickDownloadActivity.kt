@@ -12,6 +12,16 @@ class QuickDownloadActivity : Activity() {
     val text = intent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
     val url = Regex("https?://\\S+").find(text)?.value
     if (url == null) { Toast.makeText(this, "Nenhum link encontrado", Toast.LENGTH_SHORT).show(); finish(); return }
+    if (SpotifyImport.isSpotifyUrl(url)) {
+      startActivity(Intent(this, MainActivity::class.java).apply {
+        action = Intent.ACTION_SEND
+        putExtra(Intent.EXTRA_TEXT, text)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+      })
+      Toast.makeText(this, "Abrindo playlist no Rise Musique…", Toast.LENGTH_SHORT).show()
+      finish()
+      return
+    }
     val p = getSharedPreferences("rise", 0)
     val mode = runCatching { Mode.valueOf(p.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
     val quality = p.getString("quality_${mode.name}", mode.qualities.last())!!

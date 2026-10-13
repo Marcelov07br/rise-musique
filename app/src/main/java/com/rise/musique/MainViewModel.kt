@@ -37,7 +37,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     lastfmUser = LastFm.user(app), lastfmOn = LastFm.enabled(app), lastfmConfigured = LastFm.configured, sort = prefs.getString("sort", "Recentes")!!,
     recentSearches = recentSearches(), format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app),
     normalize = prefs.getBoolean("normalize", true), normalizeAlbum = prefs.getBoolean("normalizeAlbum", false), lockLyrics = prefs.getBoolean("lockLyrics", false),
-    wifiOnly = prefs.getBoolean("wifiOnly", false), followed = FollowStore.all(app), artistPhotos = loadPhotos(app.getSharedPreferences("rise", 0))).let { st -> val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
+    wifiOnly = prefs.getBoolean("wifiOnly", false), followed = FollowStore.all(app), artistPhotos = loadPhotos(app.getSharedPreferences("rise", 0)),
+    savedSpotifyPlaylists = SpotifyStore.load(app),
+    streamQuality = prefs.getString("stream_quality", "Alta") ?: "Alta").let { st ->
+      val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
+      Streams.streamQuality = st.streamQuality
       st.copy(mode = m, quality = prefs.getString("quality_${m.name}", m.qualities.last())!!) })
     private set
 
@@ -90,9 +94,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }.onFailure { state = state.copy(status = "Não foi possível autorizar essa pasta. Escolha outra pasta.") } }
 
   fun onIncomingLink(text: String?) {
-    val link = text?.let { Regex("https?://\\S+").find(it)?.value } ?: return
+    if (text.isNullOrBlank()) return
+    if (SpotifyImport.isSpotifyUrl(text)) {
+      onIncomingSpotify(text)
+      return
+    }
+    val link = Regex("https?://\\S+").find(text)?.value ?: return
     if (link == lastLink) return
     lastLink = link; dlLink(link); state = state.copy(dlRequest = state.dlRequest + 1)
+  }
+
+  fun onIncomingSpotify(link: String) {
+    state = state.copy(status = "Carregando do Spotify…")
+    viewModelScope.launch {
+      val res = SpotifyImport.fetch(link)
+      res.onSuccess { pl ->
+        state = state.copy(
+          spotifyPlaylists = state.spotifyPlaylists + (pl.id to pl),
+          spotifyRequest = pl,
+          status = "Playlist carregada: ${pl.title}"
+        )
+        prewarmSpotifyPlaylist(pl.tracks)
+      }.onFailure { err ->
+        if (err is CancellationException) throw err
+        state = state.copy(status = err.message ?: "Não foi possível carregar do Spotify")
+      }
+    }
+  }
+
+  fun clearSpotifyRequest() {
+    state = state.copy(spotifyRequest = null)
   }
 
   /** Share a 9:16 card (any track) or a 15 s MP4 with audio (local files only) of the range starting at [startMs]. */
@@ -386,6 +417,242 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
+  fun loadStation(st: Station) {
+    if (state.stationPages.containsKey(st.id) || st.id in state.stationLoadingSet) return
+    state = state.copy(stationLoadingSet = state.stationLoadingSet + st.id)
+    viewModelScope.launch {
+      runCatching {
+        val radios = coroutineScope { st.seeds.take(3).map { h -> async { runCatching {
+          val seed = MusicSearch.search(SearchQuery(listOf(h.artist, h.title).filter(String::isNotBlank).joinToString(" "), SearchKind.Songs)).items.firstOrNull()
+            ?: return@runCatching emptyList<SearchResult>()
+          Engine.radio(seed.url, 25) }.getOrDefault(emptyList()) } }.awaitAll() }
+        val known = state.history.map { it.title.lowercase() }.toSet()
+        val streams = StationQueue.interleave(radios).filter { st.kind != "discover" || it.title.lowercase() !in known }.take(40)
+        val mixed = StationQueue.mix(streams, if (st.mixLocal) st.seeds else emptyList())
+        val items = mixed.mapNotNull { e -> when (e) {
+          is SearchResult -> StationItem(searchResult = e)
+          is HistoryItem -> StationItem(historyItem = e)
+          else -> null
+        } }
+        state = state.copy(stationPages = state.stationPages + (st.id to StationPage(st, items)), stationLoadingSet = state.stationLoadingSet - st.id)
+      }.onFailure { if (it is CancellationException) throw it
+        state = state.copy(stationLoadingSet = state.stationLoadingSet - st.id, status = "Não deu pra carregar a estação agora. Confira a conexão.") }
+    }
+  }
+
+  fun playStationTracks(items: List<StationItem>, start: Int, shuffle: Boolean) {
+    val pl = items.mapNotNull { item ->
+      val sr = item.searchResult; val hi = item.historyItem
+      when {
+        sr != null -> streamItem(sr)?.let { it to ("stream:" + sr.url) }
+        hi != null -> uriOf(hi)?.let { u -> MediaItem.Builder().setMediaId(hi.uri).setUri(u).setMediaMetadata(meta(hi.title, hi.artist.ifBlank { hi.meta }, hi.art, hi.album)).build() to hi.uri }
+        else -> null
+      }
+    }
+    if (pl.isEmpty()) { state = state.copy(status = "Sem faixas para tocar"); return }
+    stopPreview()
+    val idx = if (shuffle) pl.indices.random() else start.coerceIn(0, pl.lastIndex)
+    val (firstItem, _) = pl[idx]
+    val isStream = items.getOrNull(idx)?.searchResult != null
+    state = state.copy(now = NowPlaying(firstItem.mediaId, firstItem.mediaMetadata.title?.toString().orEmpty(),
+      firstItem.mediaMetadata.artist?.toString().orEmpty(), firstItem.mediaMetadata.artworkUri?.toString().orEmpty(), loading = true, streaming = isStream))
+    withPlayer { p -> p.setMediaItems(pl.map { it.first }, idx, 0); p.shuffleModeEnabled = shuffle; p.prepare(); p.play() }
+  }
+
+  fun queueStationTracks(items: List<StationItem>) {
+    val queue = items.mapNotNull { item ->
+      val sr = item.searchResult; val hi = item.historyItem
+      when {
+        sr != null -> streamItem(sr)
+        hi != null -> uriOf(hi)?.let { u -> MediaItem.Builder().setMediaId(hi.uri).setUri(u).setMediaMetadata(meta(hi.title, hi.artist.ifBlank { hi.meta }, hi.art, hi.album)).build() }
+        else -> null
+      }
+    }
+    if (queue.isEmpty()) return
+    withPlayer { p -> p.addMediaItems(queue) }
+    state = state.copy(status = "${queue.size} faixas adicionadas à fila")
+  }
+
+  fun loadSpotify(type: String, id: String) {
+    if (state.spotifyPlaylists.containsKey(id) || id in state.spotifyLoading) return
+    state = state.copy(spotifyLoading = state.spotifyLoading + id)
+    viewModelScope.launch {
+      val res = SpotifyImport.fetch("https://open.spotify.com/embed/$type/$id")
+      res.onSuccess { pl ->
+        state = state.copy(spotifyLoading = state.spotifyLoading - id, spotifyPlaylists = state.spotifyPlaylists + (id to pl))
+        prewarmSpotifyPlaylist(pl.tracks)
+      }.onFailure { err ->
+        if (err is CancellationException) throw err
+        state = state.copy(spotifyLoading = state.spotifyLoading - id, status = err.message ?: "Erro ao carregar do Spotify")
+      }
+    }
+  }
+
+  fun importSpotifyUrl(url: String, onLoaded: ((SpotifyPlaylist) -> Unit)? = null) {
+    state = state.copy(status = "Carregando do Spotify…")
+    viewModelScope.launch {
+      val res = SpotifyImport.fetch(url)
+      res.onSuccess { pl ->
+        state = state.copy(
+          spotifyPlaylists = state.spotifyPlaylists + (pl.id to pl),
+          status = "Playlist carregada: ${pl.title}"
+        )
+        prewarmSpotifyPlaylist(pl.tracks)
+        onLoaded?.invoke(pl)
+      }.onFailure { err ->
+        if (err is CancellationException) throw err
+        state = state.copy(status = err.message ?: "Não foi possível carregar do Spotify")
+      }
+    }
+  }
+
+  private fun prewarmSpotifyPlaylist(tracks: List<SpotifyTrack>) {
+    viewModelScope.launch(Dispatchers.IO) {
+      tracks.take(8).forEach { t ->
+        if (t.uri !in state.spotifyResolvedTracks && SpotifyImport.findLocalMatch(t, state.history) == null) {
+          val r = SpotifyImport.resolveToSearchResult(t)
+          if (r != null) {
+            state = state.copy(spotifyResolvedTracks = state.spotifyResolvedTracks + (t.uri to r))
+            Engine.videoId(r.url)?.let { Streams.prefetch(it) }
+          }
+        }
+      }
+    }
+  }
+
+  fun playSpotifyTracks(tracks: List<SpotifyTrack>, start: Int, shuffle: Boolean) {
+    if (tracks.isEmpty()) return
+    tracks.forEach { SpotifyImport.registerTrack(it) }
+    stopPreview()
+
+    val idx = if (shuffle) tracks.indices.random() else start.coerceIn(0, tracks.lastIndex)
+    val target = tracks[idx]
+
+    val items = tracks.map { t ->
+      val local = SpotifyImport.findLocalMatch(t, state.history)
+      val localUri = local?.let { uriOf(it) }
+      if (localUri != null) {
+        MediaItem.Builder()
+          .setMediaId(local.uri)
+          .setUri(localUri)
+          .setMediaMetadata(meta(t.title, t.artist, local.art))
+          .build()
+      } else {
+        val cachedSr = state.spotifyResolvedTracks[t.uri] ?: SpotifyImport.getCachedSearchResult(t.uri)
+        val uri = if (cachedSr != null && Streams.uriFor(cachedSr.url) != null) {
+          Streams.uriFor(cachedSr.url)!!
+        } else {
+          Uri.parse("${SpotifyImport.SCHEME}://${t.uri.removePrefix("spotify:")}")
+        }
+        val art = cachedSr?.thumb.orEmpty()
+        MediaItem.Builder()
+          .setMediaId(if (cachedSr != null) "stream:" + cachedSr.url else "spotify:" + t.uri)
+          .setUri(uri)
+          .setMediaMetadata(meta(t.title, t.artist, art))
+          .build()
+      }
+    }
+
+    val firstItem = items[idx]
+    val isStream = !firstItem.mediaId.startsWith("content://") && !firstItem.mediaId.startsWith("file://")
+    state = state.copy(
+      now = NowPlaying(
+        key = firstItem.mediaId,
+        title = firstItem.mediaMetadata.title?.toString() ?: target.title,
+        artist = firstItem.mediaMetadata.artist?.toString() ?: target.artist,
+        art = firstItem.mediaMetadata.artworkUri?.toString().orEmpty(),
+        loading = true,
+        streaming = isStream,
+        index = idx,
+        count = items.size
+      )
+    )
+
+    withPlayer { p ->
+      p.setMediaItems(items, idx, 0)
+      p.shuffleModeEnabled = shuffle
+      p.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
+      p.prepare()
+      p.play()
+    }
+
+    viewModelScope.launch(Dispatchers.IO) {
+      if (SpotifyImport.getCachedSearchResult(target.uri) == null && SpotifyImport.findLocalMatch(target, state.history) == null) {
+        SpotifyImport.resolveToSearchResult(target)?.let { r ->
+          state = state.copy(spotifyResolvedTracks = state.spotifyResolvedTracks + (target.uri to r))
+        }
+      }
+      // Pré-resolve buscas de áudio de forma sequencial e leve (apenas HTTP innertube, sem gargalo de CPU)
+      val toResolve = (idx + 1 until minOf(idx + 7, tracks.size)).map { tracks[it] } +
+        (maxOf(0, idx - 2) until idx).map { tracks[it] }
+      toResolve.forEach { t ->
+        if (t.uri !in state.spotifyResolvedTracks && SpotifyImport.getCachedSearchResult(t.uri) == null && SpotifyImport.findLocalMatch(t, state.history) == null) {
+          SpotifyImport.resolveToSearchResult(t)?.let { r ->
+            state = state.copy(spotifyResolvedTracks = state.spotifyResolvedTracks + (t.uri to r))
+          }
+        }
+      }
+    }
+  }
+
+  fun downloadSpotifyTracks(playlist: SpotifyPlaylist, tracks: List<SpotifyTrack>) {
+    if (tracks.isEmpty()) return
+    viewModelScope.launch {
+      state = state.copy(status = "Localizando ${tracks.size} faixas para download…")
+      val toDownload = mutableListOf<SearchResult>()
+      withContext(Dispatchers.IO) {
+        tracks.forEach { t ->
+          ensureActive()
+          if (SpotifyImport.findLocalMatch(t, state.history) == null) {
+            val r = state.spotifyResolvedTracks[t.uri] ?: SpotifyImport.getCachedSearchResult(t.uri) ?: SpotifyImport.resolveToSearchResult(t)
+            if (r != null) {
+              toDownload.add(r)
+              state = state.copy(spotifyResolvedTracks = state.spotifyResolvedTracks + (t.uri to r))
+            }
+          }
+        }
+      }
+      if (toDownload.isNotEmpty()) {
+        saveSpotifyPlaylist(playlist)
+        downloadAll(toDownload)
+        state = state.copy(status = "${toDownload.size} faixas adicionadas aos Downloads!")
+      } else {
+        saveSpotifyPlaylist(playlist)
+        state = state.copy(status = "Todas as faixas desta playlist já estão na biblioteca!")
+      }
+    }
+  }
+
+  fun saveSpotifyPlaylist(playlist: SpotifyPlaylist) {
+    runCatching {
+      SpotifyStore.savePlaylist(ctx, playlist)
+      state = state.copy(
+        savedSpotifyPlaylists = SpotifyStore.load(ctx),
+        status = "Playlist salva na Biblioteca!"
+      )
+    }.onFailure {
+      state = state.copy(status = it.message.orEmpty())
+    }
+  }
+
+  fun deleteSpotifyPlaylist(id: String) {
+    runCatching {
+      SpotifyStore.removePlaylist(ctx, id)
+      state = state.copy(
+        savedSpotifyPlaylists = SpotifyStore.load(ctx),
+        status = "Playlist removida da Biblioteca"
+      )
+    }.onFailure {
+      state = state.copy(status = it.message.orEmpty())
+    }
+  }
+
+  fun streamQuality(q: String) {
+    prefs.edit().putString("stream_quality", q).apply()
+    Streams.streamQuality = q
+    state = state.copy(streamQuality = q)
+  }
+
   fun saveStream() {
     val n = state.now ?: return; if (!n.streaming) return
     val url = n.key.removePrefix("stream:"); val id = Engine.videoId(url) ?: return
@@ -454,7 +721,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     if (deadline != state.sleepAt) state = state.copy(sleepAt = deadline)
     val n = state.now ?: p.currentMediaItem?.let { item ->
       NowPlaying(item.mediaId, item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(),
-        item.mediaMetadata.artworkUri?.toString().orEmpty(), isPreview = item.mediaId.startsWith("preview:"), streaming = item.mediaId.startsWith("stream:"))
+        item.mediaMetadata.artworkUri?.toString().orEmpty(), isPreview = item.mediaId.startsWith("preview:"),
+        streaming = item.mediaId.startsWith("stream:") || item.mediaId.startsWith("spotify:"))
     } ?: return
     val item = p.currentMediaItem
     if (item == null) { if (!n.loading && !n.isPreview) state = state.copy(now = null); return }
@@ -462,7 +730,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val key = item.mediaId.removePrefix("preview:")
     var now = n.copy(key = key, title = m.title?.toString() ?: n.title, artist = m.artist?.toString() ?: n.artist,
       art = m.artworkUri?.toString() ?: "", playing = p.isPlaying, position = p.currentPosition.coerceAtLeast(0),
-      duration = p.duration.takeIf { it > 0 } ?: n.duration, isPreview = preview, streaming = item.mediaId.startsWith("stream:"),
+      duration = p.duration.takeIf { it > 0 } ?: n.duration, isPreview = preview,
+      streaming = item.mediaId.startsWith("stream:") || item.mediaId.startsWith("spotify:"),
       loading = p.playbackState == Player.STATE_BUFFERING, hasNext = p.hasNextMediaItem(), hasPrev = p.hasPreviousMediaItem(),
       repeat = p.repeatMode, shuffle = p.shuffleModeEnabled, index = p.currentMediaItemIndex, count = p.mediaItemCount,
       quality = p.sessionExtras.getString(PlaybackService.QUALITY).orEmpty())

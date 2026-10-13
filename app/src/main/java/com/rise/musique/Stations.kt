@@ -12,6 +12,20 @@ data class Station(val id: String, val name: String, val subtitle: String, val k
   val mixLocal get() = kind != "discover"
 }
 
+data class StationItem(
+  val searchResult: com.rise.musique.ui.SearchResult? = null,
+  val historyItem: HistoryItem? = null
+) {
+  val title: String get() = searchResult?.title ?: historyItem?.title.orEmpty()
+  val subtitle: String get() = searchResult?.channel ?: historyItem?.artist?.ifBlank { historyItem.meta }.orEmpty()
+  val duration: Int get() = searchResult?.duration ?: ((historyItem?.duration ?: 0L) / 1000).toInt()
+  val thumb: String get() = searchResult?.thumb ?: historyItem?.art.orEmpty()
+  val isLocal: Boolean get() = historyItem != null
+  val key: String get() = if (searchResult != null) "stream:${searchResult.url}" else (historyItem?.uri ?: "")
+}
+
+data class StationPage(val station: Station, val items: List<StationItem>)
+
 object Stations {
   /** From listening stats (top artists), mood buckets of the library, plus Descobertas. Visible for tests. */
   fun build(history: List<HistoryItem>, stats: StatsSummary?, info: Map<String, TrackInfo>): List<Station> {
