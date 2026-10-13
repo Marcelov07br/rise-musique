@@ -1,6 +1,6 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.20.2 (11/10/2026) — linha principal `main`
+## Estado atual: 0.21.0 (13/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
@@ -54,6 +54,8 @@
 - `Lossless.kt` (0.20) — tags/capa ID3 de DSF/DFF/AIFF na importação; APE/WavPack → FLAC com o binário FFmpeg do youtubedl-android (`nativeLibraryDir/libffmpeg.so`, `LD_LIBRARY_PATH` = pasta com `libavcodec.so` em `noBackupFilesDir/youtubedl-android`). TAK recusado (o FFmpeg do yt-dlp não tem demuxer TAK).
 - `androidx/media3/decoder/ffmpeg/*.java` (0.20) — cópia da extensão FFmpeg do Media3 1.5.1 (Apache 2.0) com `getCodecName` estendido para os MIMEs acima. `jniLibs/arm64-v8a/libffmpegJNI.so` = build nosso (ver "Decoder FFmpeg"). `PlaybackService`/`Crossfade` usam `EXTENSION_RENDERER_MODE_PREFER` + `RiseExtractorsFactory`.
 - `ArtistBrowse.kt` (0.20) — innertube `browse` (WEB_REMIX) do canal do artista e de álbuns `MPREb_…`: `ArtistPage` (foto, bio, ouvintes, Top músicas, Álbuns, Singles, Vídeos, Parecidos) e `AlbumPage` (faixas). Cache bruto em `cacheDir/ytm/*.json` por 24 h + memória. Nome→canal via busca de artistas (ou id já conhecido dos "parecidos"). Fixtures reais em `app/src/test/resources/ytm/*.json.gz`.
+- `SpotifyImport.kt` / `SpotifyStore.kt` (0.21, contribuição do colega) — lê playlist/álbum público pela página embed `open.spotify.com/embed/<tipo>/<id>` (`__NEXT_DATA__`, sem credenciais/API do Spotify); `spotify.link` segue redirect. Faixas viram URIs `rise-spotify://<id>` resolvidas no `StreamDataSource` via busca no YTM (`resolveToSearchResult`). Salvas em `filesDir/spotify_playlists.json`. Intent VIEW para `open.spotify.com/playlist|album`. Frágil: depende do HTML do embed.
+- Qualidade de streaming (0.21): `Streams.streamQuality` (pref `stream_quality`: Econômica/Normal/Alta) → formato do yt-dlp em `Engine.audioStream`. `PlaybackService` com `DefaultLoadControl` (buffer 30–60 s, início 600 ms).
 ### UI (`ui/`)
 - `LiquidGlass.kt` (0.20.1) — `LocalHaze` (HazeState criado no `RiseApp`), `glassSource` no conteúdo; a barra e o mini são desenhados no nível do `RiseApp` (slot `LocalDock`) — dentro da árvore do `RiseContent` o Haze não desenhava nada (barra transparente, 0.20.2), `liquidGlass(shape, dark)`: Haze 1.3.1 (blur 26dp, grão, tint; fallback tingido < API 31) + borda especular/sombra interna. Pílula das abas: duas molas (frente firme, trás mole) desenhadas em `drawBehind`; troca de aba `Motion.tabSwitch`.
 - `RiseApp.kt` — raiz: `NavState` (pilha por aba), `SeekableTransitionState` (transição interrompível + volta preditiva), barra flutuante (`NavigationDock`), topo com título colapsável, `MainPane` (Buscar), `ResultCard`.
@@ -67,6 +69,7 @@
 - `RemoteAlbum.kt` (0.20) — álbum do YouTube Music (`Route.RemoteAlbum`): faixas em streaming (`playStreams`), "Baixar tudo" (`downloadAll` → página Downloads), download por faixa.
 - `PlayerSheet.kt` (reescrito em 0.20) — layout fixo de tela cheia; abrir/fechar só em graphicsLayer (translationY + `SheetShape` como recorte, capa com translação/escala a partir do canto). `Animatable` com limites 0..1; só limiares viram `derivedStateOf`. `PlayerProbe` conta recomposições (teste `PlayerRecompositionTest`). O toque que abre fica na faixa do mini (a camada cobre a tela inteira, mas o recorte deixa os toques passarem).
 - Chaves de capa compartilhada: linhas `cover-al-<álbum>`, destaque do Início `cover-al-hero-<álbum>` (`Route.Album(name, src="hero")`), álbuns remotos `cover-ra-<id>`, artista `cover-ar-<nome>` / parecidos `cover-ar-similar-<nome>`.
+- `StationScreen.kt` (0.21) — tocar numa estação abre a lista (`Route.Station`, `loadStation`/`StationPage`). `SpotifyScreen.kt` (`Route.Spotify`) + `SpotifyImportDialog.kt` (AlertDialog padrão e verde do Spotify — destoa do vidro; candidato a refazer no estilo da casa).
 - `SearchParts.kt` — filtros (chip "Filtros" → folha), voz, esqueleto, resultados de coleção.
 - `SettingsSheet.kt` (+ Sobre em `About.kt`), `EqSheet.kt`, `StatsSheet.kt`, `RecapSheet.kt`, `VideoPlayer.kt`, `TrackActions.kt`, `UpdateDialog.kt`, `Visuals.kt` (GlassBox, paleta, arte viva).
 ### Recursos
@@ -92,6 +95,7 @@
 - `app/lint.xml` ignora `UnsafeOptInUsageError` só no código copiado do Media3.
 
 ## Lacunas conhecidas / não testado no aparelho
+- 0.21 (código do colega, sem testes novos nem snapshots): importação do Spotify com links reais, página de estação, qualidade Econômica/Normal, seletor de qualidade de download em Ajustes (opções 128k/192k/320k podem não bater com as qualidades por modo). Revisão: removido o fallback dele que assinava release com chave debug se o keystore faltasse.
 - 0.20.1: desfoque real só aparece no aparelho (Paparazzi não renderiza RenderEffect direito); custo de GPU do Haze em rolagem; sem lente AGSL (ficou só borda/realce).
 - 0.20: tocar DSF/DFF/AIFF de verdade no aparelho (decoder nativo nunca rodou aqui); som do DSD (nível/ruído), busca (seek) em DSD, AIFF 24-bit; conversão APE/WavPack→FLAC pelo binário do yt-dlp (caminho das libs); selo diz "PCM 16" porque o sink atual é 16-bit (float desligado pelo nosso processador de efeitos).
 - 0.20: perfil do artista com dados reais (artistas sem "Singles"/"Vídeos", nomes ambíguos → canal errado), Ken Burns + parallax + esticão no aparelho, foto do artista na Biblioteca, álbum remoto tocando/baixando tudo, transição destaque→álbum.
