@@ -45,7 +45,7 @@ class DownloadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
         // Rede/servidor: tenta de novo com espera crescente (WorkManager), mantendo o arquivo parcial.
         if (DownloadRetry.shouldRetry(it.message, runAttemptCount)) return@withLock Result.retry()
         java.io.File(applicationContext.filesDir, "dl/$id").deleteRecursively()
-        Result.failure(workDataOf("err" to (it.message?.lineSequence()?.lastOrNull { l -> l.isNotBlank() }?.take(140) ?: "erro"))) })
+        ErrorLog.w("download", "download falhou", it); Result.failure(workDataOf("err" to NetErrors.friendly(it).take(140))) })
   }
   companion object {
     const val CH = "downloads"; const val TAG = "rise"

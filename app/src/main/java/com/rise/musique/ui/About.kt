@@ -54,7 +54,7 @@ fun releaseNotes(ctx: android.content.Context): String = runCatching { ctx.asset
   }
 }
 
-@Composable fun AboutContent(version: String, notes: String, openReleases: () -> Unit, back: () -> Unit) {
+@Composable fun AboutContent(version: String, notes: String, openReleases: () -> Unit, exportLog: () -> Unit = {}, back: () -> Unit) {
   val c = MaterialTheme.colorScheme
   Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp).navigationBarsPadding(),
     verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -70,6 +70,7 @@ fun releaseNotes(ctx: android.content.Context): String = runCatching { ctx.asset
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surfaceVariant.copy(alpha = .6f)).padding(16.dp)) {
       if (notes.isBlank()) Text("Notas indisponíveis.", color = c.onSurfaceVariant) else Notes(notes) }
     PillButton("Todas as versões", openReleases, Modifier.fillMaxWidth(), Icons.Rounded.OpenInNew, filled = false)
+    PillButton("Exportar registro de erro", exportLog, Modifier.fillMaxWidth(), Icons.Rounded.Share, filled = false)
     Text("Código aberto", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
     Credits.forEach { (name, why, lic) ->
       Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -237,7 +237,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun follow(name: String) { FollowStore.toggle(ctx, name, state.artistPhotos[name].orEmpty()); state = state.copy(followed = FollowStore.all(ctx)) }
   fun refreshTrackInfo() { viewModelScope.launch { val m = withContext(Dispatchers.IO) { TrackInfoStore.all(ctx) }; state = state.copy(trackInfo = m) } }
 
-  fun removeSearch(q: String) { val list = recentSearches() - q; prefs.edit().putString("searches", org.json.JSONArray(list).toString()).apply(); state = state.copy(recentSearches = list) }
+  private fun saveSearches(list: List<String>) { prefs.edit().putString("searches", org.json.JSONArray(list).toString()).apply(); state = state.copy(recentSearches = list) }
+  fun removeSearch(q: String) { val before = recentSearches(); withUndo("Busca removida", { saveSearches(before - q) }, { saveSearches(before) }, {}) }
   /** Live (debounced) search: same as search() but doesn't write the query into the history. */
   fun searchLive() = search(record = false)
 
@@ -281,7 +282,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun prepareDownload(r: SearchResult) { stopPreview()
     state = state.copy(page = "Buscar", query = r.title, results = listOf(r), selected = setOf(r.url), isPlaylist = false, moreResults = false, radioOf = null) }
 
-  fun clearSearches() { prefs.edit().remove("searches").apply(); state = state.copy(recentSearches = emptyList()) }
+  fun clearSearches() { val before = recentSearches(); withUndo("Buscas recentes apagadas", { saveSearches(emptyList()) }, { saveSearches(before) }, {}) }
+  /** Destructive library edit with Desfazer: runs now, Desfazer puts the snapshot back (0.24). */
+  private fun libUndo(message: String, f: () -> Unit) { val before = Library.data(ctx)
+    withUndo(message, { lib(null, f) }, { runCatching { Library.restore(ctx, before) }; state = state.copy(playlists = Library.playlists(ctx), savedSpotifyPlaylists = SpotifyStore.load(ctx)) }, {}) }
   /** Song radio: similar tracks from YouTube Music's mix for this song; shown as selectable results with previews. */
   fun radio(r: SearchResult) = startRadio(r.title) { Engine.radio(r.url) }
   /** Radio from a local track: find it on YouTube first (artist + title), then load its mix. */
@@ -321,12 +325,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     searchJob = viewModelScope.launch {
       runCatching { if (link) SearchPage(Engine.search(query), null)
           else runCatching { MusicSearch.search(q) }.getOrElse { if (it is CancellationException) throw it; SearchPage(Engine.search(query), null) } }
-        .onSuccess { page -> val r = page.items.also { ensureActive() }; searchFetched = r.size; searchNext = page.next; searchQ = q.takeIf { !link }
+        .onSuccess { page -> val r = page.items.also { ensureActive() }; searchFetched = r.size; ArtPrefetch.ahead(ctx, r.map { it.thumb }, 12); searchNext = page.next; searchQ = q.takeIf { !link }
           state = state.copy(searching = false, results = r,
           selected = if (r.size == 1 && r[0].playable) setOf(r[0].url) else emptySet(), isPlaylist = Engine.isPlaylist(query) || query.contains("/browse/"),
           moreResults = page.next != null || (link.not() && r.size == 10 && searchQ == null), status = if (r.isEmpty()) "Nada encontrado" else "") }
         .onFailure { if (it is CancellationException) throw it
-          state = state.copy(searching = false, status = "Erro na busca: ${it.message?.lineSequence()?.lastOrNull()?.take(100)}") }
+          state = state.copy(searching = false, status = SearchErrorPrefix + NetErrors.friendly(it)); ErrorLog.w("search", "busca falhou", it) }
     }
   }
   fun moreResults() {
@@ -641,16 +645,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  fun deleteSpotifyPlaylist(id: String) {
-    runCatching {
-      SpotifyStore.removePlaylist(ctx, id)
-      state = state.copy(
-        savedSpotifyPlaylists = SpotifyStore.load(ctx),
-        status = "Playlist removida da Biblioteca"
-      )
-    }.onFailure {
-      state = state.copy(status = it.message.orEmpty())
-    }
+  fun deleteSpotifyPlaylist(id: String) = libUndo("Playlist removida da Biblioteca") {
+    SpotifyStore.removePlaylist(ctx, id)
+    state = state.copy(savedSpotifyPlaylists = SpotifyStore.load(ctx))
   }
 
   fun streamQuality(q: String) {
@@ -753,7 +750,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       val track = p.getMediaItemAt(i); val md = track.mediaMetadata
       HistoryItem(md.title?.toString().orEmpty(), "", track.mediaId, md.artworkUri?.toString().orEmpty(), md.artist?.toString().orEmpty())
     }
-    state = state.copy(now = now, playbackQueue = queue)
+    // Keep the old list instance when nothing changed (poll runs every 250 ms); prefetch covers only on real changes.
+    val q = if (queue == state.playbackQueue) state.playbackQueue else queue.also { ArtPrefetch.ahead(ctx, it.drop(now.index + 1).map { h -> h.art }) }
+    state = state.copy(now = now, playbackQueue = q)
     if (!preview && lyricsFor != key && now.duration > 0) { lyricsFor = key; loadLyrics(key, now.title, now.artist, now.duration / 1000) }
   }
 
@@ -970,7 +969,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx), hidden = state.hidden - h.uri) }
   fun renamePlaylist(old: String, name: String) { runCatching { Library.renamePlaylist(ctx, old, name.trim()) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx), historyView = if (state.historyView == old) name.trim() else state.historyView) }
-    .onFailure { state = state.copy(status = it.message.orEmpty()) } }
+    .onFailure { ErrorLog.w("lib", "falha na biblioteca", it); state = state.copy(status = it.message.orEmpty()) } }
   fun movePlaylist(name: String, from: Int, to: Int) { runCatching { Library.moveTrack(ctx, name, from, to) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx)) }.onFailure { state = state.copy(status = it.message.orEmpty()) } }
 
@@ -978,12 +977,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.LIKE_SYNC, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY) } }
   fun addToPlaylist(h: HistoryItem, name: String) { runCatching { Library.addToPlaylist(ctx, name.trim(), h.uri, Library.trackFor(h)) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Adicionada a ${name.trim()}") }
-    .onFailure { state = state.copy(status = it.message.orEmpty()) } }
-  fun removeFromPlaylist(h: HistoryItem) { Library.removeFromPlaylist(ctx, state.historyView, h.uri); state = state.copy(playlists = Library.playlists(ctx)) }
-  fun deletePlaylist(n: String) { Library.deletePlaylist(ctx, n); state = state.copy(playlists = Library.playlists(ctx), historyView = "Tudo") }
+    .onFailure { ErrorLog.w("lib", "falha na biblioteca", it); state = state.copy(status = it.message.orEmpty()) } }
+  fun removeFromPlaylist(h: HistoryItem) { val list = state.historyView
+    libUndo("Removida de $list") { Library.removeFromPlaylist(ctx, list, h.uri); state = state.copy(playlists = Library.playlists(ctx)) } }
+  fun deletePlaylist(n: String) = libUndo("Playlist “$n” apagada") { Library.deletePlaylist(ctx, n); state = state.copy(playlists = Library.playlists(ctx), historyView = "Tudo") }
   // ---- 0.23 library ----
   private fun lib(ok: String? = null, f: () -> Unit) { runCatching(f).onSuccess { if (ok != null) state = state.copy(status = ok) }
-    .onFailure { state = state.copy(status = it.message.orEmpty()) } }
+    .onFailure { ErrorLog.w("lib", "falha na biblioteca", it); state = state.copy(status = it.message.orEmpty()) } }
   fun libraryTab(t: String) { state = state.copy(libraryTab = t) }
   fun createPlaylist(name: String, tracks: List<HistoryItem>) = lib("Playlist “${name.trim()}” criada") {
     require(name.trim() !in state.playlists) { "Já existe uma playlist com esse nome" }
@@ -995,7 +995,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     lib("Capa atualizada") { Library.setCover(ctx, name, uri.toString()) } }
   fun resetCover(name: String) = lib("Capa automática") { Library.setCover(ctx, name, "") }
   fun reorderPlaylists(from: Int, to: Int) = lib { Library.movePlaylist(ctx, from, to) }
-  fun toggleAlbum(a: LibAlbum) = lib { val on = Library.toggleAlbum(ctx, a); state = state.copy(status = if (on) "Álbum salvo na biblioteca" else "Álbum removido da biblioteca") }
+  fun toggleAlbum(a: LibAlbum) = if (Library.data(ctx).albums.any { it.id == a.id }) libUndo("Álbum removido da biblioteca") { Library.toggleAlbum(ctx, a) } else lib { val on = Library.toggleAlbum(ctx, a); state = state.copy(status = if (on) "Álbum salvo na biblioteca" else "Álbum removido da biblioteca") }
   fun likeStream(r: SearchResult) { val t = Library.streamTrack(r) ?: return
     Library.toggleFavorite(ctx, t.key, t); state = state.copy(status = if (t.key in Library.favorites(ctx)) "Curtida" else "Removida das curtidas")
     withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.LIKE_SYNC, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY) } }

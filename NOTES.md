@@ -1,11 +1,26 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.23.0 (14/10/2026) — linha principal `main`
+## Estado atual: 0.24.0 (14/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
 - Teste real é no celular do Marce (Samsung SM-S948B, Android 17). Emulador não roda aqui. Paparazzi = única verificação visual.
 - Marce lê português. Rodadas: Marce aprova uma lista → implementar tudo → testes, snapshots (olhar!), build, bump, notas em PT, commit, push, publicar.
+
+## 0.24.0 (polimento) — o que mudou
+- Login do Google adiado (estudo em `docs/ESTUDO-LOGIN.md`, não versionado).
+- `ErrorLog.kt`: log em anel `filesDir/log/app.log` (256 KB, corta a metade antiga em quebra de linha), `ErrorLog.i/w/e`; handler de crash também grava nele; `report()` = crash.txt + ApplicationExitInfo (API 30+) + log + `logcat -d --pid`; `export()` → `cacheDir/share/` + FileProvider + chooser. Botão "Exportar registro de erro" em Sobre (`AboutContent(exportLog=)`).
+- `NetErrors.kt`: mensagens humanas de rede (sem conexão / demorou / última linha). Busca com erro → status `SearchErrorPrefix…` → `EmptyState` "Tentar de novo" (banner de status escondido nesse caso). `DownloadWorker` usa `NetErrors.friendly` e loga.
+- Desfazer: `libUndo` (snapshot de `Library.data` → `Library.restore`) em removeFromPlaylist, deletePlaylist, toggleAlbum (remoção), deleteSpotifyPlaylist; buscas recentes (remover/limpar) com Desfazer.
+- `Motion.spring(stiffness, damping)`: mola única, ζ padrão 0.8 (`Bounce`), travada em ≥ 0.6 (`PopBounce`, só toques em graphicsLayer). `Motion.place` para animateItem. Todas as molas soltas da UI passaram a usar isso.
+- `Haptics` agora usa `View.performHapticFeedback` (CLOCK_TICK / CONTEXT_CLICK / CONFIRM no API 30+) — mais sutil que LongPress; `confirm()` ao soltar o player.
+- Fila: rolagem automática na borda (`QueueMotion.edgeSpeed`, borda 56 dp, até 22 px/quadro; `travel` absorve a rolagem). A playlist (`Modifier.reorderable`) ainda NÃO tem.
+- `ArtPrefetch.kt`: pré-carrega no Coil as próximas capas da fila e da busca. `poll()` mantém a mesma instância de `playbackQueue` quando nada mudou.
+- `SkeletonRows` (SearchParts) no lugar de spinners em Artista, Álbum remoto, Estação e Spotify. `Tokens.kt`: `Space`/`TypeScale` (aplicados no que foi mexido; resto migra aos poucos).
+- Vidro: tint 0.42→0.55 (escuro) e 0.5→0.62 (claro). Downloads: progresso animado, erro em cor de erro, "Tentar todos".
+- Baseline Profile: já existia `src/main/baseline-prof.txt` (escrito à mão); acrescentado Haze. Sem Macrobenchmark (sem aparelho/emulador no box).
+- Testes: `Round24Test` (borda, erros de rede, anel do log, prefetch, mola travada) + snapshots `Round24`.
+- Não testado no aparelho: sensação da rolagem na borda, hápticos no Samsung, logcat/ExitInfo reais no arquivo exportado, 120 Hz/partida a frio (sem medição).
 
 ## Ambiente (computador do bot / box)
 - `export JAVA_HOME=~/jdk ANDROID_HOME=~/android` (JDK 17, SDK em ~/android). Projeto em `/workspace/rise-musique`.

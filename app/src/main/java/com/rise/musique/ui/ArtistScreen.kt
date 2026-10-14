@@ -143,9 +143,7 @@ internal fun SearchResult.asItem() = HistoryItem(title, subtitle, url, thumb, ch
       // Top músicas (YouTube Music) — ou, sem conexão, as mais tocadas da busca.
       item(key = "top-title") { Section("Top músicas") }
       when {
-        popular.isEmpty() && (loadingPage || name in s.popularLoading) -> item(key = "top-loading") { Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
-          CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onSurface); Spacer(Modifier.width(12.dp))
-          Text("Buscando o artista no YouTube Music…", color = c.onSurfaceVariant, fontSize = 14.sp) } }
+        popular.isEmpty() && (loadingPage || name in s.popularLoading) -> item(key = "top-loading") { SkeletonRows("Buscando o artista no YouTube Music…") }
         popular.isEmpty() -> item(key = "top-empty") { EmptyState(Icons.Rounded.CloudOff, "Nada do YouTube agora", "Confira a conexão e abra o artista de novo.") }
         else -> itemsIndexed(popular.take(10), key = { _, r -> "p:" + r.url }) { i, r ->
           var menu by remember { mutableStateOf(false) }

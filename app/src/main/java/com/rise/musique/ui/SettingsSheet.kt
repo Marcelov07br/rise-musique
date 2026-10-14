@@ -100,7 +100,8 @@ val SettingsSections = listOf(
     var query by remember { mutableStateOf(initialQuery) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     if (about) { androidx.activity.compose.BackHandler { about = false }
-      AboutContent(BuildConfig.VERSION_NAME, remember { releaseNotes(ctx) }, { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ReleasesUrl))) }) { about = false }
+      AboutContent(BuildConfig.VERSION_NAME, remember { releaseNotes(ctx) }, { runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ReleasesUrl))) } },
+        { runCatching { com.rise.musique.ErrorLog.export(ctx) } }) { about = false }
       return }
     androidx.activity.compose.BackHandler(section != null) { section = null }
     val entries = settingEntries(s, a) { about = true }
@@ -108,9 +109,9 @@ val SettingsSections = listOf(
     val c = MaterialTheme.colorScheme
     androidx.compose.animation.AnimatedContent(section, label = "settings", transitionSpec = {
       val dir = if (targetState != null) 1 else -1
-      (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.spring(0.86f, 380f, androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { it / 5 * dir } +
+      (androidx.compose.animation.slideInHorizontally(Motion.spring(Motion.SpringMedium, threshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { it / 5 * dir } +
         androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220, 40))) togetherWith
-        (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.spring(0.9f, 420f, androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { -it / 8 * dir } +
+        (androidx.compose.animation.slideOutHorizontally(Motion.spring(420f, threshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { -it / 8 * dir } +
           androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140))) using androidx.compose.animation.SizeTransform(clip = false)
     }) { sec ->
       Column(Modifier.fillMaxWidth().padding(24.dp).verticalScroll(rememberScrollState()).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {

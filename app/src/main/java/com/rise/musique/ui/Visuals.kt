@@ -15,11 +15,9 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -96,11 +94,14 @@ private val PaletteCache = java.util.Collections.synchronizedMap(object : Linked
 }
 
 /** Haptics wrapper: light tick for toggles/drags, stronger for play/pause and skips. */
-class Haptics(private val h: androidx.compose.ui.hapticfeedback.HapticFeedback) {
-  fun tick() = h.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-  fun press() = h.performHapticFeedback(HapticFeedbackType.LongPress)
+/** 0.24: subtle View haptics (respect the system setting): tick = clock tick, press = context click, confirm = gesture settled. */
+class Haptics(private val v: android.view.View?) {
+  private fun fire(c: Int) { v?.performHapticFeedback(c) }
+  fun tick() = fire(android.view.HapticFeedbackConstants.CLOCK_TICK)
+  fun press() = fire(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+  fun confirm() = fire(if (android.os.Build.VERSION.SDK_INT >= 30) android.view.HapticFeedbackConstants.CONFIRM else android.view.HapticFeedbackConstants.CONTEXT_CLICK)
 }
-@Composable fun rememberHaptics(): Haptics { val h = LocalHapticFeedback.current; return remember(h) { Haptics(h) } }
+@Composable fun rememberHaptics(): Haptics { val v = androidx.compose.ui.platform.LocalView.current; return remember(v) { Haptics(v) } }
 
 /** Thin Apple-style progress slider: 4 dp track that thickens while dragging. Values clamped to 0..1. */
 @Composable fun ThinSlider(value: Float, onChange: (Float) -> Unit, onDone: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {

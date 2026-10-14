@@ -109,11 +109,7 @@ import com.rise.musique.Stations
       }
 
       if (loading && tracks.isEmpty()) item(key = "loading") {
-        Row(Modifier.fillMaxWidth().padding(32.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-          CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = c.onSurface)
-          Spacer(Modifier.width(12.dp))
-          Text("Montando as faixas da estação…", color = c.onSurfaceVariant, fontSize = 14.sp)
-        }
+        SkeletonRows("Montando as faixas da estação…")
       } else if (tracks.isEmpty()) item(key = "empty") {
         Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
           Text("Nenhuma faixa disponível", style = MaterialTheme.typography.titleMedium)

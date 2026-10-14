@@ -68,6 +68,8 @@ object Library {
   @Synchronized fun moveTrack(c: Context, name: String, from: Int, to: Int) { update(c) { LibraryOps.move(it, name, from, to, now()) } }
   @Synchronized fun setCover(c: Context, name: String, cover: String) { update(c) { LibraryOps.setCover(it, name, cover, now()) } }
   @Synchronized fun movePlaylist(c: Context, from: Int, to: Int) { update(c) { LibraryOps.reorderPlaylists(it, from, to, now()) } }
+  /** Puts back a snapshot taken before a destructive action (Desfazer, 0.24). */
+  @Synchronized fun restore(c: Context, d: LibraryData) { write(c, d) }
   @Synchronized fun removeTrack(c: Context, key: String) { update(c) { LibraryOps.forget(it, key, now()) } }
 
   // ---- Artists / albums ----

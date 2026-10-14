@@ -94,14 +94,21 @@ import coil.compose.AsyncImage
 fun LazyListScope.queueItems(s: UiState, a: Actions) {
   listOf("Em andamento", "Precisam de atenção", "Concluídos").forEach { section ->
     val items = s.queue.filter { when (section) { "Em andamento" -> !it.completed && it.error == null; "Precisam de atenção" -> it.error != null; else -> it.completed } }.take(30)
-    if (items.isNotEmpty()) item(key = "q-$section") { Text(section, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp)) }
+    if (items.isNotEmpty()) item(key = "q-$section") { Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+      Text(section, fontSize = TypeScale.headline, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+      // 0.24: one tap retries every failed download (network errors usually fail in batches).
+      if (section == "Precisam de atenção" && items.size > 1) TextButton({ items.forEach { a.retry(it) } }, Modifier.heightIn(min = Space.touch)) {
+        Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(Space.xs)); Text("Tentar todos") } } }
     items(items, key = { it.id }) { q -> val c = MaterialTheme.colorScheme
       Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.surface).border(1.dp, c.outlineVariant, RoundedCornerShape(20.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
           Text(q.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-          Text(q.error ?: if (q.stage == "Baixando") "Baixando · ${(q.progress.coerceIn(0f, 1f) * 100).toInt()}%" else q.stage, color = c.onSurfaceVariant, fontSize = 12.sp)
+          Text(q.error ?: if (q.stage == "Baixando") "Baixando · ${(q.progress.coerceIn(0f, 1f) * 100).toInt()}%" else q.stage,
+            color = if (q.error != null) c.error else c.onSurfaceVariant, fontSize = TypeScale.caption, maxLines = 2, overflow = TextOverflow.Ellipsis)
           if (!q.completed && q.error == null) { Spacer(Modifier.height(10.dp))
-            if (q.stage == "Baixando") LinearProgressIndicator({ q.progress.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().clip(CircleShape))
+            // Progress glides between worker updates instead of jumping.
+            val p by androidx.compose.animation.core.animateFloatAsState(q.progress.coerceIn(0f, 1f), Motion.settle(), label = "dl")
+            if (q.stage == "Baixando") LinearProgressIndicator({ p.coerceIn(0f, 1f) }, Modifier.fillMaxWidth().clip(CircleShape))
             else if (q.running) LinearProgressIndicator(Modifier.fillMaxWidth().clip(CircleShape))
           }
         }

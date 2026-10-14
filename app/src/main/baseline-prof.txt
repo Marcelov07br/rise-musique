@@ -9,3 +9,4 @@ HSPLandroidx/compose/animation/**->**(**)**
 HSPLandroidx/compose/material3/**->**(**)**
 HSPLandroidx/media3/session/**->**(**)**
 HSPLcoil/**->**(**)**
+HSPLdev/chrisbanes/haze/**->**(**)**

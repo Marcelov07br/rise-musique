@@ -72,9 +72,7 @@ import coil.compose.AsyncImage
           }
         }
       }
-      if (page == null) item(key = "loading") { Row(Modifier.fillMaxWidth().padding(24.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        if (r.id in s.albumLoading || androidx.compose.ui.platform.LocalInspectionMode.current.not()) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onSurface)
-        Spacer(Modifier.width(12.dp)); Text("Carregando as faixas…", color = c.onSurfaceVariant, fontSize = 14.sp) } }
+      if (page == null) item(key = "loading") { SkeletonRows("Carregando as faixas…") }
       itemsIndexed(tracks, key = { _, t -> "t:" + t.url }) { i, t ->
         val playing = s.now?.key == "stream:" + t.url
         val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }

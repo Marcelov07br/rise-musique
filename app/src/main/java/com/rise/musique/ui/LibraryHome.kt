@@ -119,7 +119,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
         item(key = "fy-title") { Column { SectionTitle("Feito pra você")
           Text("Das suas curtidas e da sua biblioteca · puxe para renovar", color = c.onSurfaceVariant, fontSize = 13.sp) } }
         item(key = "fy") { Carousel(forYouRow) { items(s.forYou, key = { it.id }) { st ->
-          Box(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(320), placementSpec = androidx.compose.animation.core.spring(0.82f, 380f, androidx.compose.ui.unit.IntOffset.VisibilityThreshold),
+          Box(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(320), placementSpec = Motion.place,
               fadeOutSpec = androidx.compose.animation.core.tween(180))) {
             StationCard(st, s.stationLoadingSet.contains(st.id)) { a.openStation(st) } } } } }
       }

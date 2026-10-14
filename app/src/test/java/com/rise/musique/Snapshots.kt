@@ -278,3 +278,10 @@ class Round23 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
   @Test fun streamMenuLike() = p.snapshot { SyncImages(); RiseTheme(true) { androidx.compose.material3.Surface { StreamActionContent("Da Funk", "Daft Punk", res("cover.jpg"), {}, {}, {}, {}, {}, {}, true, {}) } } }
   @Test fun settingsIntegrations() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SettingsContent(UiState(), Actions(), initialSection = "Integrações") } } }
 }
+
+class Round24 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  @Test fun aboutExportLog() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { AboutContent("0.24.0", "- Registro de erro exportável", {}, {}) {} } } }
+  @Test fun searchOffline() = p.snapshot { RiseTheme(true) { RiseApp(UiState(page = "Buscar", query = "Marisa Monte",
+    status = SearchErrorPrefix + "Sem conexão com a internet. Confira o Wi-Fi ou os dados móveis."), Actions()) } }
+  @Test fun skeleton() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SkeletonRows("Carregando as faixas…") } } }
+}

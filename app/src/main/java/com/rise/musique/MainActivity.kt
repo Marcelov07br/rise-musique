@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
         pickCover = { coverFor = it; coverPicker.launch(arrayOf("image/*")) }, resetCover = vm::resetCover, reorderPlaylists = vm::reorderPlaylists,
         toggleAlbum = vm::toggleAlbum, libraryTab = vm::libraryTab, likeStream = vm::likeStream, addStreamToPlaylist = vm::addStreamToPlaylist,
         exportLibrary = { libExporter.launch("rise-musique-biblioteca-${java.time.LocalDate.now()}.json") }, importLibrary = { libImporter.launch(arrayOf("application/json", "*/*")) },
-        shareSnippet = { v, ms -> vm.shareSnippet(v, ms) { startActivity(it) } }, downloadItem = vm::downloadItem, dlRemove = vm::dlRemove, dlQuery = vm::dlQuery, dlLink = vm::dlLink, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
+        shareSnippet = { v, ms -> vm.shareSnippet(v, ms) { runCatching { startActivity(it) }.onFailure { e -> ErrorLog.w("share", "sem app para compartilhar", e) } } }, downloadItem = vm::downloadItem, dlRemove = vm::dlRemove, dlQuery = vm::dlQuery, dlLink = vm::dlLink, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
         video = com.rise.musique.ui.VideoActions(close = { vm.video.close(); exitFullscreen() }, playPause = vm.video::playPause, seek = vm.video::seek, seekBy = vm.video::seekBy,
           quality = vm.video::quality, subtitle = vm.video::subtitle, fullscreen = { on -> vm.video.fullscreen(on); if (on) enterFullscreen() else exitFullscreen() },
           next = vm.video::next, pip = { enterPip() }),

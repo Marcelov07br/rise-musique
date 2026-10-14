@@ -290,7 +290,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
                       val v = ((collapse.value - .55f) / .45f).coerceIn(0f, 1f); alpha = v; translationY = (1f - v) * 12.dp.toPx() },
                       style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                   }
-                  if (state.status.isNotBlank() && state.status != "Nada encontrado") Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
+                  if (state.status.isNotBlank() && state.status != "Nada encontrado" && !(state.page == "Buscar" && state.status.startsWith(com.rise.musique.SearchErrorPrefix))) Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 4.dp), color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                   when (sc.tab) {
                     "Buscar" -> MainPane(state, navActions, targets, null, Modifier.weight(1f).fillMaxWidth(), rootList, collapse)
                     "Biblioteca" -> LibraryHome(state.copy(albumFilter = "", historyView = state.historyView.takeIf { it !in state.playlists } ?: "Tudo"), navActions,
@@ -322,8 +322,8 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val dark = c.background.luminance() < .5f
   val idx = Tabs.indexOf(tab).coerceAtLeast(0).toFloat()
   // Pílula líquida: a borda da frente corre (mola firme), a de trás vem atrás (mola mole) → estica no caminho e assenta com um quique leve.
-  val lead = androidx.compose.animation.core.animateFloatAsState(idx, androidx.compose.animation.core.spring(.62f, 620f), label = "lead")
-  val trail = androidx.compose.animation.core.animateFloatAsState(idx, androidx.compose.animation.core.spring(.74f, 230f), label = "trail")
+  val lead = androidx.compose.animation.core.animateFloatAsState(idx, Motion.spring(Motion.SpringFirm, Motion.PopBounce), label = "lead")
+  val trail = androidx.compose.animation.core.animateFloatAsState(idx, Motion.spring(Motion.SpringSoft), label = "trail")
   val pill = accent.copy(alpha = if (dark) .16f else .12f)
   // Mesmo vidro do mini player: o desfoque (hazeEffect) fica num nó sem camada de sombra por cima; a sombra é um irmão atrás.
   Box(modifier) {
@@ -341,7 +341,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       val on = tab == page
       val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
       val tint by androidx.compose.animation.animateColorAsState(if (on) accent else c.onSurfaceVariant, Motion.standard(), label = "tint")
-      val scale = androidx.compose.animation.core.animateFloatAsState(if (on) 1.1f else 1f, androidx.compose.animation.core.spring(.55f, 500f), label = "icon")
+      val scale = androidx.compose.animation.core.animateFloatAsState(if (on) 1.1f else 1f, Motion.spring(500f, Motion.PopBounce), label = "icon")
       Column(Modifier.weight(1f).springPress(src).clip(CircleShape)
         .clickable(src, null) { if (!on) haptics.tick(); a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(when (page) { "Biblioteca" -> Icons.Rounded.LibraryMusic; "Buscar" -> Icons.Rounded.Search; else -> Icons.Rounded.Home }, null,
@@ -431,6 +431,8 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       if (state.results.isEmpty() && !state.searching) {
         if (q.isNotBlank() && state.status == "Nada encontrado" && local.isEmpty) item(key = "none") {
           EmptyState(Icons.Rounded.SearchOff, "Nada encontrado para “$q”", "Confira a grafia, tente o nome do artista ou cole um link.") }
+        else if (q.isNotBlank() && state.status.startsWith(com.rise.musique.SearchErrorPrefix)) item(key = "error") {
+          EmptyState(Icons.Rounded.CloudOff, "Não deu para buscar", state.status.removePrefix(com.rise.musique.SearchErrorPrefix), "Tentar de novo") { a.search() } }
         else if (q.isBlank()) item(key = "hint") { Text("Toque num resultado para ouvir na hora. Para guardar, use o botão de download de cada item.",
           color = c.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) }
         if (q.isBlank() && state.recentSearches.isNotEmpty()) {

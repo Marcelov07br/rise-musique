@@ -193,17 +193,7 @@ private val SpotifyGreen = Color(0xFF1DB954)
       }
 
       if (loading || playlist == null) {
-        item(key = "loading") {
-          Row(
-            Modifier.fillMaxWidth().padding(24.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = c.onSurface)
-            Spacer(Modifier.width(12.dp))
-            Text("Carregando faixas do Spotify…", color = c.onSurfaceVariant, fontSize = 14.sp)
-          }
-        }
+        item(key = "loading") { SkeletonRows("Carregando faixas do Spotify…") }
       }
 
       itemsIndexed(tracks, key = { _, t -> "st:" + t.uri }) { i, t ->

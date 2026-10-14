@@ -1,4 +1,6 @@
 package com.rise.musique.ui
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -91,6 +93,11 @@ import com.rise.musique.SearchKind
       Box(shade.fillMaxWidth(.5f).height(12.dp).clip(CircleShape).background(c.surfaceVariant))
     }
   }
+}
+
+/** 0.24: skeleton block instead of a lone spinner while a list loads; [label] stays for TalkBack. */
+@Composable fun SkeletonRows(label: String, count: Int = 5, kind: SearchKind = SearchKind.Songs) {
+  Column(Modifier.fillMaxWidth().semantics { contentDescription = label }) { repeat(count) { SkeletonRow(kind) } }
 }
 
 /** Listening card: mic disc that grows with the voice level, live transcript, cancel. */

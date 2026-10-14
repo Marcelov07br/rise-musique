@@ -29,19 +29,27 @@ object Motion {
   /** Layout / settle after a gesture: critically damped, carries velocity, never overshoots. */
   fun <T> settle(stiffness: Float = 260f) = spring<T>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = stiffness)
   /** Small presses only: stiff with a hint of bounce. */
-  fun <T> press() = spring<T>(dampingRatio = 0.8f, stiffness = Spring.StiffnessHigh)
+  fun <T> press() = spring<T>(Spring.StiffnessHigh)
+  // 0.24: uma mola só para o app inteiro. Quique travado em ζ ≥ 0.8 (layout/transições); toques pequenos em graphicsLayer podem ir até ζ 0.6.
+  const val Bounce = 0.8f; const val PopBounce = 0.6f
+  const val SpringSoft = 220f; const val SpringMedium = 380f; const val SpringFirm = 620f
+  /** The shared spring: [Bounce] damping (clamped so it never goes bouncier), only stiffness varies. */
+  fun <T> spring(stiffness: Float = SpringMedium, damping: Float = Bounce, threshold: T? = null) =
+    androidx.compose.animation.core.spring(dampingRatio = damping.coerceIn(PopBounce, 1f), stiffness = stiffness, visibilityThreshold = threshold)
+  /** Item placement in lazy lists (reorders, inserts). */
+  val place = spring(SpringMedium, threshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)
   /** Fling threshold for drag-to-dismiss, px/s. */
   const val FlingVelocity = 1200f
   // 0.19: abrir/fechar coleções mais lento e elegante, com um quique leve.
   /** Total time the seekable screen transition plays (linear clock, so the children's springs keep their own shape). */
   const val OpenMs = 720; const val CloseMs = 560; const val Stagger = 80
   /** Shared cover bounds: soft spring with a slight overshoot (ζ 0.8). Opening is softer than closing. */
-  fun <T> coverOpen() = spring<T>(dampingRatio = 0.8f, stiffness = 210f)
-  fun <T> coverClose() = spring<T>(dampingRatio = 0.8f, stiffness = 300f)
+  fun <T> coverOpen() = spring<T>(210f)
+  fun <T> coverClose() = spring<T>(300f)
   fun <T> clock(close: Boolean) = tween<T>(if (close) CloseMs else OpenMs, easing = LinearEasing)
   /** Content follows the cover ~80 ms later: fade + small rise on a gentle spring (translation only, never layout). */
   val pageEnter: EnterTransition = fadeIn(tween(420, delayMillis = Stagger, easing = Standard)) +
-    slideInVertically(spring(dampingRatio = 0.8f, stiffness = 230f)) { it / 28 }
+    slideInVertically(spring(230f, threshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { it / 28 }
   val pageExit: ExitTransition = fadeOut(tween(240, easing = EmphasizedAccelerate))
 }
 
@@ -77,7 +85,7 @@ val LocalAnimScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
 /** Title/controls: fade + slight rise on enter, quick fade on exit. */
 @Composable fun Modifier.enterRise(): Modifier {
   val v = LocalAnimScope.current ?: return this
-  return with(v) { this@enterRise.animateEnterExit(enter = fadeIn(tween(420, delayMillis = Motion.Stagger * 2, easing = Motion.Standard)) + slideInVertically(spring(0.8f, 230f)) { it / 8 },
+  return with(v) { this@enterRise.animateEnterExit(enter = fadeIn(tween(420, delayMillis = Motion.Stagger * 2, easing = Motion.Standard)) + slideInVertically(Motion.spring(230f, threshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { it / 8 },
     exit = fadeOut(Motion.exit())) }
 }
 
@@ -85,6 +93,6 @@ val LocalAnimScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
 fun Motion.tabSwitch(dir: Int): androidx.compose.animation.ContentTransform {
   val d = if (dir >= 0) 1 else -1
   return (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240, 60, androidx.compose.animation.core.FastOutSlowInEasing)) +
-    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.spring(.9f, 380f, androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { (it * .06f).toInt() * d }) togetherWith
+    androidx.compose.animation.slideInHorizontally(Motion.spring(Motion.SpringMedium, threshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)) { (it * .06f).toInt() * d }) togetherWith
     androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140, easing = androidx.compose.animation.core.FastOutSlowInEasing))
 }

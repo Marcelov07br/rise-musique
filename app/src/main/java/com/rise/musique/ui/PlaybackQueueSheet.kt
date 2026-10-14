@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -35,12 +36,18 @@ object QueueMotion {
   /** Hold time before a row lifts for dragging (~1 s, so scrolling and swiping never lift by accident). */
   const val LiftMs = 1000L
   val RowHeight = 68.dp
-  fun <T> lift() = spring<T>(dampingRatio = 0.6f, stiffness = 520f)
-  fun <T> settle() = spring<T>(dampingRatio = 0.78f, stiffness = 420f)
-  val place = spring(dampingRatio = 0.82f, stiffness = 380f, visibilityThreshold = IntOffset.VisibilityThreshold)
+  fun <T> lift() = Motion.spring<T>(520f, Motion.PopBounce)
+  fun <T> settle() = Motion.spring<T>(420f)
+  val place = Motion.place
   /** Index the dragged row lands on, given its start index and the finger's total travel. */
   fun target(start: Int, travelPx: Float, rowPx: Float, size: Int) =
     (start + kotlin.math.round(travelPx / rowPx).toInt()).coerceIn(0, (size - 1).coerceAtLeast(0))
+  /** Auto-scroll speed (px per frame) while a lifted row sits within [edge] of the viewport edge; ramps up to [max] (0.24). */
+  fun edgeSpeed(top: Float, bottom: Float, viewStart: Float, viewEnd: Float, edge: Float, max: Float = 22f): Float = when {
+    edge <= 0f -> 0f
+    bottom > viewEnd - edge -> max * ((bottom - (viewEnd - edge)) / edge).coerceIn(0f, 1f)
+    top < viewStart + edge -> -max * (((viewStart + edge) - top) / edge).coerceIn(0f, 1f)
+    else -> 0f }
 }
 
 /** One row of "A seguir" with a key stable across moves (same track twice gets #1, #2). */
@@ -74,6 +81,19 @@ fun queueEntries(upcoming: List<HistoryItem>): List<QueueEntry> { val seen = Has
   val scope = rememberCoroutineScope()
   val openedAt = remember { System.currentTimeMillis() }
   val latest by rememberUpdatedState(shown)
+  val listState = rememberLazyListState()
+  val edgePx = with(LocalDensity.current) { 56.dp.toPx() }
+  fun reorder(key: String) { val list = dragList ?: return
+    val from = list.indexOfFirst { it.key == key }; val to = QueueMotion.target(dragStart, travel, rowPx, list.size)
+    if (from >= 0 && to != from) { dragList = list.toMutableList().apply { add(to, removeAt(from)) }; haptics.tick() } }
+  // 0.24: dragging a lifted row near the top/bottom edge scrolls the list; travel absorbs the scroll so the row stays under the finger.
+  LaunchedEffect(dragKey) { val key = dragKey ?: return@LaunchedEffect
+    while (dragKey == key) { androidx.compose.runtime.withFrameNanos { }
+      val info = listState.layoutInfo; val item = info.visibleItemsInfo.firstOrNull { it.key == key } ?: continue
+      val idx = (dragList ?: break).indexOfFirst { it.key == key }.takeIf { it >= 0 } ?: break
+      val top = item.offset + travel - (idx - dragStart) * rowPx
+      val v = QueueMotion.edgeSpeed(top, top + item.size, info.viewportStartOffset.toFloat(), (info.viewportEndOffset - info.afterContentPadding).toFloat(), edgePx)
+      if (v != 0f) { val used = listState.scrollBy(v); if (used != 0f) { travel += used; reorder(key) } } } }
   Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
     Text("Fila de reprodução", Modifier.padding(horizontal = 24.dp), style = MaterialTheme.typography.titleLarge)
     if (current != null) Row(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -95,7 +115,7 @@ fun queueEntries(upcoming: List<HistoryItem>): List<QueueEntry> { val seen = Has
     else Text("Segure 1 s para arrastar · deslize → tocar em seguida, ← remover", Modifier.padding(horizontal = 24.dp),
       fontSize = 12.sp, color = c.onSurfaceVariant)
     Spacer(Modifier.height(6.dp))
-    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp), rememberLazyListState(), contentPadding = PaddingValues(bottom = 72.dp)) {
+    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp), listState, contentPadding = PaddingValues(bottom = 72.dp)) {
       itemsIndexed(shown, key = { _, e -> e.key }) { i, e ->
         val lifted = e.key == dragKey
         val elevated = lifted || e.key == settlingKey
@@ -131,11 +151,7 @@ fun queueEntries(upcoming: List<HistoryItem>): List<QueueEntry> { val seen = Has
                   val start = latest.indexOfFirst { it.key == e.key }.takeIf { it >= 0 } ?: return@awaitEachGesture
                   haptics.press(); dragList = latest; dragStart = start; travel = 0f; dragKey = e.key
                   drag(down.id) { ch ->
-                    ch.consume(); travel += ch.positionChange().y
-                    val list = dragList ?: return@drag
-                    val from = list.indexOfFirst { it.key == e.key }
-                    val to = QueueMotion.target(dragStart, travel, rowPx, list.size)
-                    if (from >= 0 && to != from) { dragList = list.toMutableList().apply { add(to, removeAt(from)) }; haptics.tick() }
+                    ch.consume(); travel += ch.positionChange().y; reorder(e.key)
                   }
                   val list = dragList.orEmpty(); val to = list.indexOfFirst { it.key == e.key }
                   val rest = travel - (to - dragStart) * rowPx

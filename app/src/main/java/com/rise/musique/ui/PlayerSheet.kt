@@ -94,6 +94,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         .drawBehind { drawRect(surface.copy(alpha = (pf() * 1.6f).coerceIn(0f, 1f))) }
         .draggable(dragState, Orientation.Vertical, onDragStarted = { haptics.tick() }, onDragStopped = { v ->
           val target = when { v < -Motion.FlingVelocity -> 1f; v > Motion.FlingVelocity -> 0f; else -> if (f.value > .5f) 1f else 0f }
+          haptics.confirm()
           f.animateTo(target, bouncy, initialVelocity = -v / (fullH - miniH)) })) {
       SideEffect { PlayerProbe.sheetBody++ }
 
@@ -274,7 +275,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   val list = androidx.compose.foundation.lazy.rememberLazyListState()
   LaunchedEffect(cur) { list.animateScrollToItem((cur - 2).coerceAtLeast(0)) }
   androidx.compose.foundation.lazy.LazyColumn(m, state = list, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-    items(lines.size) { i -> val l = lines[i]
+    items(lines.size, key = { it }, contentType = { "line" }) { i -> val l = lines[i]
       val dist = kotlin.math.abs(i - cur).coerceAtMost(4)
       // Linha ativa: maior e nítida; as outras menores, apagadas e desfocadas conforme a distância.
       val focus by animateFloatAsState(if (i == cur) 1f else 0f, Motion.settle(169f), label = "focus")
@@ -387,7 +388,7 @@ val LocalSleep = androidx.compose.runtime.compositionLocalOf { 0L }
     Spacer(Modifier.height(8.dp))
     if (next.isEmpty()) Text("Nada na fila", color = Color.White.copy(.6f))
     androidx.compose.foundation.lazy.LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-      items(next.size) { i -> val h = next[i]
+      items(next.size, key = { i -> next[i].uri + "#" + i }) { i -> val h = next[i]
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { a.playQueue(now.index + 1 + i) }.padding(6.dp),
           verticalAlignment = Alignment.CenterVertically) {
           Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Color.White.copy(.1f))) {

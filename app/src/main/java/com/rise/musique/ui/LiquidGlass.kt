@@ -30,7 +30,7 @@ fun Modifier.glassSource(state: HazeState?) = if (state != null) hazeSource(stat
  */
 @Composable fun Modifier.liquidGlass(shape: Shape, dark: Boolean): Modifier {
   val haze = LocalHaze.current
-  val tint = if (dark) Color(0xFF1C1C20).copy(alpha = .42f) else Color.White.copy(alpha = .5f)
+  val tint = if (dark) Color(0xFF1C1C20).copy(alpha = .55f) else Color.White.copy(alpha = .62f)
   val base = clip(shape)
   val blurred = if (haze != null) base.hazeEffect(haze, HazeStyle(backgroundColor = if (dark) Color.Black else Color.White, tints = listOf(HazeTint(tint)),
     blurRadius = 26.dp, noiseFactor = .09f, fallbackTint = HazeTint((if (dark) Color(0xFF1C1C20) else Color.White).copy(alpha = .9f))))
