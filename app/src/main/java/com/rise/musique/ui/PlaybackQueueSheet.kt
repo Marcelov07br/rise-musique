@@ -120,7 +120,7 @@ fun queueEntries(upcoming: List<HistoryItem>): List<QueueEntry> { val seen = Has
         val lifted = e.key == dragKey
         val elevated = lifted || e.key == settlingKey
         val queueIndex = cur + 1 + entries.indexOfFirst { it.key == e.key }.coerceAtLeast(0)
-        val appear = remember { Animatable(if (!StaticPreview.on && System.currentTimeMillis() - openedAt < 400) 0f else 1f) }
+        val appear = remember { Animatable(if (!StaticPreview.on && !ReduceMotion.user && System.currentTimeMillis() - openedAt < 400) 0f else 1f) }
         LaunchedEffect(Unit) { if (appear.value < 1f) { delay(minOf(i, 8) * 35L); appear.animateTo(1f, QueueMotion.settle()) } }
         val dismiss = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
           when (v) {

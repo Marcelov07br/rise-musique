@@ -84,7 +84,7 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val search: () -> Unit = {}, val select: (SearchResult) -> Unit = {}, val preview: (SearchResult) -> Unit = {},
   val selectAll: () -> Unit = {}, val format: (String) -> Unit = {}, val cut: (Boolean, String, String) -> Unit = { _, _, _ -> },
   val cancel: (QueueItem) -> Unit = {}, val retry: (QueueItem) -> Unit = {}, val dismiss: (QueueItem) -> Unit = {},
-  val play: (HistoryItem) -> Unit = {}, val playPause: () -> Unit = {}, val seek: (Long) -> Unit = {}, val closePlayer: () -> Unit = {},
+  val play: (HistoryItem) -> Unit = {}, val playPause: () -> Unit = {}, val seek: (Long) -> Unit = {}, val closePlayer: () -> Unit = {}, val likeNow: () -> Unit = {},
   val next: () -> Unit = {}, val prev: () -> Unit = {}, val shuffle: () -> Unit = {},
   val favorite: (HistoryItem) -> Unit = {}, val addToPlaylist: (HistoryItem, String) -> Unit = { _, _ -> }, val removeFromPlaylist: (HistoryItem) -> Unit = {},
   val deletePlaylist: (String) -> Unit = {}, val historyFilter: (String) -> Unit = {}, val historyView: (String) -> Unit = {},
@@ -149,13 +149,15 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
   val targets = remember { FlyTargets() }
   val haze = remember { dev.chrisbanes.haze.HazeState() }
   val dock = remember { mutableStateOf<(@Composable (Modifier) -> Unit)?>(null) }
-  Box(Modifier.fillMaxSize()) { CompositionLocalProvider(LocalHaze provides haze, LocalDock provides dock) {
+  val tilt = rememberTilt(active = true)
+  Box(Modifier.fillMaxSize()) { CompositionLocalProvider(LocalHaze provides haze, LocalDock provides dock, LocalTilt provides tilt) {
     RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute, initialRootItem)
     dock.value?.invoke(Modifier.align(Alignment.BottomCenter))
     UndoBar(state, actions, Modifier.align(Alignment.BottomCenter))
     state.fly?.let { FlyOverlay(it, targets) }
     state.now?.let { CompositionLocalProvider(LocalSleep provides state.sleepAt) { PlayerSheet(it, actions, initialExpanded, initialLyrics, state.playbackQueue,
-      local = !it.streaming && !it.isPreview && state.history.any { h -> h.uri == it.key }, snippetBusy = state.snippetBusy, initialShare = initialShare, initialFraction = initialPlayerFraction) } }
+      local = !it.streaming && !it.isPreview && state.history.any { h -> h.uri == it.key }, snippetBusy = state.snippetBusy, initialShare = initialShare, initialFraction = initialPlayerFraction,
+      liked = it.key in state.favorites || com.rise.musique.Library.keyFor(it.key) in state.favorites) } }
     if (state.queueOpen) PlaybackQueueSheet(state, actions)
     if (state.settingsOpen) SettingsSheet(state, actions)
     if (state.statsOpen) StatsSheet(state, actions)
@@ -327,8 +329,8 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val pill = accent.copy(alpha = if (dark) .16f else .12f)
   // Mesmo vidro do mini player: o desfoque (hazeEffect) fica num nó sem camada de sombra por cima; a sombra é um irmão atrás.
   Box(modifier) {
-  Box(Modifier.matchParentSize().shadow(18.dp, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(.25f), spotColor = androidx.compose.ui.graphics.Color.Black.copy(.25f)))
-  Row(Modifier.fillMaxWidth().liquidGlass(CircleShape, dark).padding(5.dp)
+  Box(Modifier.matchParentSize().glassTilt(LocalTilt.current).shadow(18.dp, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(.25f), spotColor = androidx.compose.ui.graphics.Color.Black.copy(.25f)))
+  Row(Modifier.fillMaxWidth().glassTilt(LocalTilt.current).liquidGlass(CircleShape, dark).padding(5.dp)
       .drawBehind {
         val w = size.width / Tabs.size; val n = (Tabs.size - 1).toFloat()
         val l = minOf(lead.value, trail.value).coerceIn(0f, n); val r = maxOf(lead.value, trail.value).coerceIn(0f, n)

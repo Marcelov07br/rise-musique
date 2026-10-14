@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
         selectAll = vm::selectAll, format = vm::onFormat, cut = vm::onCut, cancel = vm::cancel, retry = vm::retry, dismiss = vm::dismiss,
         open = { h -> vm.openIntent(h, false)?.let(::startActivity) }, share = { h -> vm.openIntent(h, true)?.let(::startActivity) },
         delete = vm::delete, play = vm::play, playPause = vm::playPause, seek = vm::seek, closePlayer = vm::closePlayer, next = vm::next, prev = vm::prev, shuffle = vm::shuffle,
-        favorite = vm::favorite, addToPlaylist = vm::addToPlaylist, removeFromPlaylist = vm::removeFromPlaylist, deletePlaylist = vm::deletePlaylist,
+        favorite = vm::favorite, likeNow = vm::likeNow, addToPlaylist = vm::addToPlaylist, removeFromPlaylist = vm::removeFromPlaylist, deletePlaylist = vm::deletePlaylist,
         historyFilter = vm::historyFilter, historyView = vm::historyView, sleep = vm::sleep,
         exportBackup = { exporter.launch("rise-musique-backup.json") }, importBackup = { importer.launch(arrayOf("application/json", "*/*")) },
         updates = { updates.check(true) }, page = vm::page, repeat = vm::repeat, showQueue = vm::showQueue,

@@ -1,11 +1,20 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.24.0 (14/10/2026) — linha principal `main`
+## Estado atual: 0.25.0 (14/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
 - Teste real é no celular do Marce (Samsung SM-S948B, Android 17). Emulador não roda aqui. Paparazzi = única verificação visual.
 - Marce lê português. Rodadas: Marce aprova uma lista → implementar tudo → testes, snapshots (olhar!), build, bump, notas em PT, commit, push, publicar.
+
+## 0.25.0 (movimento imersivo) — o que mudou
+- `ui/Immersive.kt`: `ReduceMotion` (pref `rise/reduceMotion` + escala de animação do sistema = 0; `rememberReduceMotion()`), `LikeButton` (partículas pré-calculadas em `LikeBurst`, sem alocação no desenho; háptico `tick`), `PlayPauseMorph` (Path reutilizado, `PlayMorph` pontos 2 quadriláteros), `RollingText` (odômetro por dígito), `Tilt`/`rememberTilt` (TYPE_GRAVITY a ~16 Hz, só com o app RESUMED, sem economia de bateria e sem Reduzir movimento; suavizado por mola) + `Modifier.glassTilt` (≤2,2°, só graphicsLayer) + `LocalTilt`; `CoverFlight` (origem da capa tocada em coordenadas da janela; `BoundsHolder`/`trackBounds`; `LocalCoverAnchor` = capa do topo do álbum para linhas numeradas).
+- Player: coração ao lado do título (`Actions.likeNow` → comando `rise.like` do serviço, mesmo caminho da notificação); capa em voo desenhada fora do recorte do cartão; arrastar esquece a origem (vai para o mini); troca de faixa esquece a origem. Fechar por botão/voltar volta a capa para a lista. Arremesso da capa: vizinha (fila ±1) visível atrás, capa nova sobe com `depth`. Molas do player migradas para `Motion.spring` (limites 0..1 seguram a passada).
+- Letra: linha atual escala 0.84→1.04 + sombra branca (brilho); rolagem com `animateScrollBy` + mola, centralizando a 38% da altura.
+- `liquidGlass` agora em `drawWithCache` (pincéis criados só quando muda o tamanho); brilho especular transladado pela inclinação.
+- Ken Burns e a cascata da fila (já existente) desligam com Reduzir movimento.
+- Testes: `Round25Test` + snapshots `Round25` (player curtido/pausado, Aparência, micro detalhes).
+- Não testado no aparelho: sensação do voo da capa (coordenadas da janela supõem tela edge-to-edge), parallax/consumo do sensor, partículas, odômetro a 120 Hz, brilho da letra. Baseline Profile só o arquivo à mão (curinga cobre o app); sem Macrobenchmark.
 
 ## 0.24.0 (polimento) — o que mudou
 - Login do Google adiado (estudo em `docs/ESTUDO-LOGIN.md`, não versionado).

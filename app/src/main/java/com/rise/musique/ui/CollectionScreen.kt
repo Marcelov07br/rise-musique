@@ -78,13 +78,15 @@ internal val TopBarHeight = 64.dp
   val haptics = rememberHaptics()
   val back = { haptics.tick(); onBack() }
   val collapseState = rememberUpdatedState(collapseOf(list)); val collapse = collapseState.value
-  Box(modifier.dragToDismiss(dismiss, onBack)) {
+  val anchor = remember { BoundsHolder() }
+  Box(modifier.dragToDismiss(dismiss, onBack)) { CompositionLocalProvider(LocalCoverAnchor provides if (isAlbum) anchor else null) {
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = TopBarHeight, bottom = bottomSpace(s))) {
       item(key = "header") {
         Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
           .graphicsLayer { alpha = (1f - collapse * 1.2f).coerceIn(0f, 1f) }, horizontalAlignment = Alignment.CenterHorizontally) {
           val corner = morphCorner(14.dp, 8.dp)?.value ?: 8.dp
-          Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
+          DisposableEffect(Unit) { onDispose { anchor.rect = null } }
+          Box(Modifier.size(208.dp).trackBounds(anchor).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
             .sharedCover(smart?.key ?: if (isAlbum) "cover-al-${if (src.isNotBlank()) "$src-" else ""}$title" else "cover-pl-$title")) {
             if (playlist != null && (playlist.cover.isNotBlank() || playlistArts(s, playlist).size >= 4)) PlaylistArt(s, playlist, Modifier.fillMaxSize(), corner)
             else if (hero != null) Cover(hero, Modifier.fillMaxSize().kenBurns(hero.art.isNotBlank()), corner)
@@ -143,7 +145,7 @@ internal val TopBarHeight = 64.dp
       else itemsIndexed(reorder.shown(tracks), key = { _, h -> h.uri }) { i, h -> PlaylistTrack(s, a, reorder, title, tracks, h, i, rowPx) }
     }
     DetailTopBar(title, collapse, back) { haptics.press(); tracks.firstOrNull()?.let { a.playList(tracks, it) } }
-  }
+  } }
   if (adding) AddTracksSheet(s, title, { adding = false }) { a.addAllToPlaylist(title, it) }
   if (renaming) { var name by remember { mutableStateOf(title) }
     AlertDialog({ renaming = false }, shape = RoundedCornerShape(28.dp), title = { Text("Renomear playlist") }, text = { OutlinedTextField(name, { name = it.take(80) }, singleLine = true, shape = CircleShape) },

@@ -197,13 +197,15 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   Box {
     val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val bg = MaterialTheme.colorScheme.background
+    val coverAt = remember { BoundsHolder() }; val anchor = LocalCoverAnchor.current
     Row(Modifier.fillMaxWidth().then(if (gesture != null) Modifier.graphicsLayer { scaleX = 1f + .035f * lift; scaleY = scaleX
           shadowElevation = 18.dp.toPx() * lift.coerceIn(0f, 1f); shape = RoundedCornerShape(16.dp); clip = lift > 0.01f }.background(bg).then(gesture)
         else Modifier.weightedPress(press, 16.dp).clip(RoundedCornerShape(16.dp)).combinedClickable(press, null,
-          onClick = { if (h.video) a.playLocalVideo(h) else if (queue != null) a.playList(queue, h) else a.play(h) }, onLongClick = { menu = true }))
+          onClick = { if (!h.video) CoverFlight.launch(if (number != null) anchor?.rect else coverAt.rect, h.uri, h.art)
+            if (h.video) a.playLocalVideo(h) else if (queue != null) a.playList(queue, h) else a.play(h) }, onLongClick = { menu = true }))
         .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
       if (number != null) Text("$number", Modifier.width(36.dp), color = c.onSurfaceVariant, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-      else Cover(h, Modifier.size(60.dp))
+      else Cover(h, Modifier.size(60.dp).trackBounds(coverAt))
       Spacer(Modifier.width(14.dp))
       Column(Modifier.weight(1f)) {
         Text(h.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)

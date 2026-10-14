@@ -5,6 +5,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -35,14 +37,23 @@ fun Modifier.glassSource(state: HazeState?) = if (state != null) hazeSource(stat
   val blurred = if (haze != null) base.hazeEffect(haze, HazeStyle(backgroundColor = if (dark) Color.Black else Color.White, tints = listOf(HazeTint(tint)),
     blurRadius = 26.dp, noiseFactor = .09f, fallbackTint = HazeTint((if (dark) Color(0xFF1C1C20) else Color.White).copy(alpha = .9f))))
     else base.drawWithContent { drawRect(if (dark) Color(0xFF1C1C20).copy(alpha = .9f) else Color.White.copy(alpha = .9f)); drawContent() }
-  return blurred.drawWithContent {
-    drawContent()
+  val tilt = LocalTilt.current
+  // 0.25: tudo é criado em drawWithCache (só muda com o tamanho); por quadro só lemos a inclinação e transladamos o brilho.
+  return blurred.drawWithCache {
     val o = shape.createOutline(size, layoutDirection, this)
-    // Banda de refração junto à borda (lente) + brilho especular em cima.
-    drawOutline(o, Brush.verticalGradient(0f to Color.White.copy(if (dark) .10f else .35f), .35f to Color.Transparent, .8f to Color.Transparent,
-      1f to Color.Black.copy(if (dark) .22f else .08f)))
-    drawOutline(o, Brush.radialGradient(listOf(Color.White.copy(if (dark) .09f else .2f), Color.Transparent), center = Offset(size.width * .3f, 0f), radius = size.width * .45f))
-    drawOutline(o, Brush.verticalGradient(listOf(Color.White.copy(if (dark) .38f else .9f), Color.White.copy(.06f), Color.White.copy(if (dark) .16f else .4f))),
-      style = Stroke(1.dp.toPx()))
+    val band = Brush.verticalGradient(0f to Color.White.copy(if (dark) .10f else .35f), .35f to Color.Transparent, .8f to Color.Transparent,
+      1f to Color.Black.copy(if (dark) .22f else .08f))
+    val r = size.width * .45f
+    val glow = Brush.radialGradient(listOf(Color.White.copy(if (dark) .09f else .2f), Color.Transparent), center = Offset(size.width * .3f, 0f), radius = r)
+    val rim = Brush.verticalGradient(listOf(Color.White.copy(if (dark) .38f else .9f), Color.White.copy(.06f), Color.White.copy(if (dark) .16f else .4f)))
+    val stroke = Stroke(1.dp.toPx())
+    onDrawWithContent {
+      drawContent()
+      // Banda de refração junto à borda (lente) + brilho especular em cima, que desliza com a inclinação do aparelho.
+      drawOutline(o, band)
+      val dx = (tilt?.x?.value ?: 0f) * size.width * .25f; val dy = (tilt?.y?.value ?: 0f) * size.height * .5f
+      if (dx == 0f && dy == 0f) drawOutline(o, glow) else translate(dx, dy) { drawCircle(glow, r, Offset(size.width * .3f, 0f)) }
+      drawOutline(o, rim, style = stroke)
+    }
   }
 }

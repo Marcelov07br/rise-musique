@@ -975,6 +975,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   fun favorite(h: HistoryItem) { Library.toggleFavorite(ctx, h.uri, Library.trackFor(h)); state = state.copy(favorites = Library.favorites(ctx))
     withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.LIKE_SYNC, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY) } }
+  /** Coração do player: o serviço alterna a curtida da faixa atual (mesmo caminho da notificação) e devolve o favStamp. */
+  fun likeNow() { withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.LIKE, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY) } }
   fun addToPlaylist(h: HistoryItem, name: String) { runCatching { Library.addToPlaylist(ctx, name.trim(), h.uri, Library.trackFor(h)) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Adicionada a ${name.trim()}") }
     .onFailure { ErrorLog.w("lib", "falha na biblioteca", it); state = state.copy(status = it.message.orEmpty()) } }

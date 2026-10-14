@@ -285,3 +285,12 @@ class Round24 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
     status = SearchErrorPrefix + "Sem conexão com a internet. Confira o Wi-Fi ou os dados móveis."), Actions()) } }
   @Test fun skeleton() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SkeletonRows("Carregando as faixas…") } } }
 }
+
+class Round25 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  @Test fun playerLiked() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np, favorites = setOf("x")), Actions(), initialExpanded = true) } }
+  @Test fun playerPaused() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np.copy(playing = false)), Actions(), initialExpanded = true) } }
+  @Test fun settingsAppearance() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SettingsContent(UiState(), Actions(), initialSection = "Aparência") } } }
+  @Test fun microDetails() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { Row(Modifier.padding(24.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+    LikeButton(true, {}); LikeButton(false, {}); PlayPauseMorph(true, androidx.compose.ui.graphics.Color.White, Modifier.size(40.dp))
+    PlayPauseMorph(false, androidx.compose.ui.graphics.Color.White, Modifier.size(40.dp)); RollingText("1:14", androidx.compose.ui.graphics.Color.White, 16.sp) } } } }
+}

@@ -30,7 +30,7 @@ val SettingsSections = listOf(
   SettingsSection("Reprodução", "Transições, automix, fila inteligente, letra", Icons.Rounded.PlayCircle),
   SettingsSection("Áudio", "Equalizador, volume, qualidade online", Icons.Rounded.GraphicEq),
   SettingsSection("Downloads", "Wi-Fi, qualidade e formato", Icons.Rounded.Download),
-  SettingsSection("Aparência", "Tema claro ou escuro", Icons.Rounded.Palette),
+  SettingsSection("Aparência", "Tema, reduzir movimento", Icons.Rounded.Palette),
   SettingsSection("Integrações", "Last.fm, importar arquivos, backup", Icons.Rounded.Extension),
   SettingsSection("Sobre", "Estatísticas, atualizações, novidades", Icons.Rounded.Info))
 
@@ -66,6 +66,11 @@ val SettingsSections = listOf(
     SettingEntry("Aparência", "Tema", "escuro claro sistema modo noturno") {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Tema", style = MaterialTheme.typography.titleMedium)
         PillSelector(listOf("Sistema", "Escuro", "Claro"), s.theme, { it }, a.theme, Modifier.fillMaxWidth()) } },
+    SettingEntry("Aparência", "Reduzir movimento", "animação parallax giroscópio partículas acessibilidade movimento") {
+      val ctx = androidx.compose.ui.platform.LocalContext.current
+      ReduceMotion.load(ctx)
+      ToggleRow("Reduzir movimento", "Desliga o parallax do vidro, as partículas e os movimentos grandes (capa voando, profundidade, odômetro). Também segue \"remover animações\" do sistema.",
+        ReduceMotion.user) { ReduceMotion.set(ctx, it) } },
     SettingEntry("Integrações", "Last.fm", "scrobble conta") {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Last.fm", style = MaterialTheme.typography.titleMedium); LastFmRow(s, a) } },
     SettingEntry("Integrações", "Biblioteca", "importar arquivos pasta capas informações metadados") {

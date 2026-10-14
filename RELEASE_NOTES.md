@@ -1,14 +1,12 @@
-# Rise Musique 0.24.0
+# Rise Musique 0.25.0
 
-Versão de acabamento: sem recursos grandes novos, foco em estabilidade, fluidez e detalhes.
+Versão de movimento imersivo: o app inteiro responde ao toque e ao gesto, sempre com a mesma mola suave.
 
-- **Exportar registro de erro** (Ajustes → Sobre): junta o último crash, os motivos de encerramento do app (Android 11+), o registro interno e o logcat do app num arquivo e abre o Compartilhar.
-- **Fila**: ao arrastar uma faixa até a borda de cima ou de baixo, a lista rola sozinha.
-- **Desfazer em mais lugares**: tirar faixa da playlist, apagar playlist, remover álbum salvo, remover playlist do Spotify e apagar buscas recentes.
-- **Sem internet?** A busca mostra uma tela clara com "Tentar de novo"; downloads com falha explicam o motivo em português e ganharam "Tentar todos".
-- Progresso dos downloads anda suave, sem saltos.
-- **Carregamento elegante**: artista, álbum online, estação e Spotify mostram um esqueleto das faixas em vez de um círculo girando.
-- **Animações**: uma mola só para o app todo (quique leve e limitado); vibrações mais sutis e um toque ao abrir/fechar o player.
-- Capas da fila e da busca são pré-carregadas; listas do player com chaves estáveis (menos trabalho a cada quadro).
-- Vidro da barra e do mini um pouco mais opaco para o texto ficar sempre legível.
-- Menos chances de travar: abrir links/compartilhar sem app compatível não derruba mais o app.
+- **Curtir no player**: coração grande ao lado do título; ao curtir, um pequeno estouro de partículas e uma vibração leve. Sincroniza com a biblioteca e com o coração da notificação.
+- **Capa que voa**: tocar numa música da lista leva a capa até o player, e ela volta para o lugar ao fechar. Nas páginas de álbum, as faixas saem da capa do topo.
+- **Player no gesto**: arrastar para baixo encolhe e arredonda o player até virar o mini, acompanhando o dedo; soltar no meio termina com a mola e dá para pegar de novo a qualquer momento.
+- **Troca de faixa com profundidade**: ao arrastar a capa para o lado, a próxima (ou a anterior) aparece atrás e sobe para o lugar.
+- **Letra imersiva**: a linha atual cresce e brilha, as outras ficam desfocadas, e a rolagem acompanha a música com mola.
+- **Vidro com profundidade**: a barra de abas e o mini player inclinam de leve com o movimento do celular, e o brilho do vidro se desloca. Só funciona com o app aberto, com o sensor em taxa baixa, e desliga na economia de bateria.
+- **Detalhes**: o botão tocar/pausar se transforma de uma forma na outra; os números do tempo rolam como um odômetro; a fila entra em cascata.
+- **Reduzir movimento** (Ajustes → Aparência): desliga o parallax, as partículas e os movimentos grandes. Também respeita "remover animações" do sistema.

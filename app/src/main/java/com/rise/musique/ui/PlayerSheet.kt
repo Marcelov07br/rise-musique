@@ -26,12 +26,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.util.lerp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-private val bouncy = Motion.settle<Float>(247f) // sem quique; carrega a velocidade do dedo
+// 0.25: a mola única (ζ0.8, quique travado); os limites 0..1 do Animatable cortam qualquer passada. Carrega a velocidade do dedo.
+private val bouncy = Motion.spring<Float>(247f)
 private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 60) }
 
 /**
@@ -40,7 +43,8 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
  * soltar assenta com mola. O voltar com prévia (Android 14+) encolhe a tela seguindo o gesto.
  */
 @Composable fun PlayerSheet(now: NowPlaying, a: Actions, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
-                            queue: List<HistoryItem> = emptyList(), local: Boolean = false, snippetBusy: Boolean = false, initialShare: Boolean = false, initialFraction: Float? = null) {
+                            queue: List<HistoryItem> = emptyList(), local: Boolean = false, snippetBusy: Boolean = false, initialShare: Boolean = false, initialFraction: Float? = null, liked: Boolean = false) {
+  val reduce = rememberReduceMotion()
   val c = MaterialTheme.colorScheme
   var share by remember { mutableStateOf(initialShare) }
   if (share) ShareSheet(now, local, snippetBusy, a) { share = false }
@@ -65,8 +69,15 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   val settled by remember { derivedStateOf { f.value > .9f } }
   SideEffect { PlayerProbe.sheet++ }
 
+  // 0.25: capa tocada numa lista voa até o player (CoverFlight). Troca de faixa esquece a origem.
+  var flightKey by remember { mutableStateOf<String?>(null) }
+  LaunchedEffect(CoverFlight.request) { val r = CoverFlight.request
+    if (r != 0L && r != CoverFlight.handled && CoverFlight.origin != null) { CoverFlight.handled = r; flightKey = null; f.animateTo(1f, Motion.coverOpen()) } }
+  LaunchedEffect(now.key) { if (CoverFlight.origin != null) { if (flightKey == null) flightKey = now.key else if (flightKey != now.key) CoverFlight.forget() } }
+  val collapse: () -> Unit = { scope.launch { f.animateTo(0f, if (CoverFlight.origin != null) Motion.coverClose() else bouncy); if (f.value <= 0f) CoverFlight.forget() } }
+
   PredictiveBackHandler(enabled = expanded) { progress ->
-    try { progress.collect { back = it.progress }; scope.launch { f.animateTo(0f, bouncy) }; back = 0f }
+    try { progress.collect { back = it.progress }; collapse(); back = 0f }
     catch (e: CancellationException) { animate(back, 0f, animationSpec = bouncy) { v, _ -> back = v } }
   }
 
@@ -92,7 +103,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           shape = SheetShape(lerp(margin, 0f, p), lerp(miniH, fullH, p).coerceIn(miniH, fullH), (lerp(34f, 0f, p) + b * 36f) * density.density)
           clip = true }
         .drawBehind { drawRect(surface.copy(alpha = (pf() * 1.6f).coerceIn(0f, 1f))) }
-        .draggable(dragState, Orientation.Vertical, onDragStarted = { haptics.tick() }, onDragStopped = { v ->
+        .draggable(dragState, Orientation.Vertical, onDragStarted = { CoverFlight.forget(); haptics.tick() }, onDragStopped = { v ->
           val target = when { v < -Motion.FlingVelocity -> 1f; v > Motion.FlingVelocity -> 0f; else -> if (f.value > .5f) 1f else 0f }
           haptics.confirm()
           f.animateTo(target, bouncy, initialVelocity = -v / (fullH - miniH)) })) {
@@ -100,7 +111,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 
       // Mini player de vidro: cópia desfocada da capa + véu translúcido + borda de luz (só a faixa do mini, sem relayout).
       if (showGlass) Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(68.dp).graphicsLayer { alpha = (1f - pf()).coerceIn(0f, 1f) }
-        .liquidGlass(RoundedCornerShape(34.dp), c.background.luminance() < .5f))
+        .glassTilt(LocalTilt.current).liquidGlass(RoundedCornerShape(34.dp), c.background.luminance() < .5f))
       // Fundo vivo: degradê em malha com as cores da capa, se movendo devagar.
       if (showBg) Box(Modifier.fillMaxSize().graphicsLayer { alpha = pf() }) {
         LivingArtwork(now.art, Modifier.fillMaxSize(), dim = .2f)
@@ -127,9 +138,12 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       // Capa: o mesmo elemento cresce do mini até o tamanho cheio.
       val artAlphaS = animateFloatAsState(if (showLyrics && !wide && settled) 0f else 1f, Motion.standard(), label = "art")
       // Capa que respira: cheia no play, recua no pause, sempre com mola.
-      val breathS = animateFloatAsState(if (now.playing || !expanded) 1f else 0.84f, Motion.settle(169f), label = "breath")
+      val breathS = animateFloatAsState(if (now.playing || !expanded || reduce) 1f else 0.84f, Motion.spring(169f), label = "breath")
       // Capa arremessável: arrasta na horizontal; forte o bastante troca de faixa, fraco volta com mola.
       val throwX = remember { Animatable(0f) }
+      // Profundidade da troca: a capa nova sobe de trás (0 = afundada, 1 = no lugar).
+      val depth = remember { Animatable(1f) }
+      val flying by remember { derivedStateOf { CoverFlight.origin != null } }
       val maxWpx = fullW
       val artColor = Color(0xFFBEBEC4)
       /** Shared mini→full transform for the cover and its ring: translation + scale only (origin top-left). */
@@ -143,14 +157,24 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         scaleX = s; scaleY = s
       }
       if (expanded && !(showLyrics && !wide)) AudioRing(Modifier.offset(fullX, fullY).size(artFull)
-        .graphicsLayer { artMove(breathS.value); alpha = artAlphaS.value }, artColor, now.playing)
+        .graphicsLayer { artMove(breathS.value); alpha = if (flying) 0f else artAlphaS.value }, artColor, now.playing)
       var tapHint by remember { mutableStateOf<Pair<Long, Int>?>(null) }
       val interactive = settled && !showLyrics
+      // Capa seguinte/anterior visível atrás enquanto a atual é arrastada (profundidade).
+      if (interactive && !reduce) for (dir in intArrayOf(1, -1)) {
+        val behind = queue.getOrNull(now.index + dir)?.art.orEmpty()
+        if (behind.isNotBlank()) Box(Modifier.offset(fullX, fullY).size(artFull).graphicsLayer {
+            val d = (-dir * throwX.value / (maxWpx * .5f)).coerceIn(0f, 1f); artMove(.86f + .08f * d); alpha = d * artAlphaS.value
+            shape = RoundedCornerShape((28f * density.density / (.86f + .08f * d)).coerceAtLeast(0f)); clip = true }) {
+          AsyncImage(behind, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+      }
       Box(Modifier.offset(fullX, fullY).size(artFull)
           .graphicsLayer {
             val p = pf(); val k = lerp(miniArt / artFullPx, 1f, p)
-            artMove(lerp(1f, breathS.value, p) * (1f - kotlin.math.abs(throwX.value) / maxWpx * .15f))
-            rotationZ = throwX.value / maxWpx * 14f; alpha = artAlphaS.value
+            val dp = depth.value
+            artMove(lerp(1f, breathS.value, p) * (1f - kotlin.math.abs(throwX.value) / maxWpx * .15f) * lerp(.86f, 1f, dp))
+            rotationZ = throwX.value / maxWpx * 10f; rotationY = -throwX.value / maxWpx * 16f; cameraDistance = 16f * density.density
+            alpha = if (flying) 0f else artAlphaS.value * lerp(.3f, 1f, dp)
             // Cantos e sombra compensados pela escala, pra parecerem 12dp no mini e 28dp no cheio.
             shape = RoundedCornerShape((lerp(12f, 28f, p) * density.density / k.coerceAtLeast(.05f)).coerceAtLeast(0f))
             clip = true; shadowElevation = lerp(0f, 24f, p) * density.density }
@@ -162,13 +186,13 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
               val go = if (throwX.value < -maxWpx / 3 || v < -1800f) 1 else if (throwX.value > maxWpx / 3 || v > 1800f) -1 else 0
               val canGo = (go == 1 && now.hasNext) || (go == -1 && now.hasPrev)
               if (go != 0 && canGo) {
-                haptics.press(); throwX.animateTo(-go * maxWpx * 1.3f, Motion.settle(325f))
+                haptics.press(); throwX.animateTo(-go * maxWpx * 1.3f, Motion.spring(325f, 1f))
                 if (go == 1) a.next() else a.prev()
-                throwX.snapTo(go * maxWpx * 1.1f)
+                if (reduce) throwX.snapTo(0f) else { depth.snapTo(0f); throwX.snapTo(0f); depth.animateTo(1f, Motion.spring(Motion.SpringSoft)); return@draggable }
               }
-              throwX.animateTo(0f, Motion.settle(208f))
+              throwX.animateTo(0f, Motion.spring(208f))
             }) else Modifier).background(c.outline), contentAlignment = Alignment.Center) {
-        if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize().kenBurns(now.playing && interactive), contentScale = ContentScale.Crop)
+        if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize().kenBurns(now.playing && interactive && !reduce), contentScale = ContentScale.Crop)
         else Icon(Icons.Rounded.MusicNote, null, tint = c.onSurfaceVariant, modifier = Modifier.fillMaxSize(.4f))
         tapHint?.let { (id, dir) -> SeekRipple(id, dir) }
       }
@@ -177,7 +201,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       // O toque para abrir fica só na faixa do mini (a camada é do tamanho da tela; semântica/acessibilidade com os limites certos).
       if (showMini) Row(Modifier.fillMaxWidth().height(68.dp)
         .clickable(enabled = collapsed, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
-          scope.launch { f.animateTo(1f, Motion.enter(Motion.Medium)) } }
+          scope.launch { f.animateTo(1f, Motion.coverOpen()) } }
         .graphicsLayer { alpha = (1f - pf() / .6f).coerceIn(0f, 1f) }.padding(start = 86.dp, end = 24.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -189,12 +213,23 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
         IconButton(a.closePlayer) { Icon(Icons.Rounded.Close, "Fechar", tint = c.onSurfaceVariant) }
       }
 
+      // Capa em voo (lista → player e de volta): fora do recorte do cartão, desenhada em cima.
+      if (flying && showBg) { val o = CoverFlight.origin
+        if (o != null) Box(Modifier.offset(fullX, fullY).size(artFull).graphicsLayer {
+            val p = pf(); val k = lerp(o.width / artFullPx, 1f, p).coerceAtLeast(.05f)
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+            translationX = lerp(o.left, fullXPx, p) - fullXPx; translationY = lerp(o.top - lerp(miniTop, 0f, p), fullYPx, p) - fullYPx
+            scaleX = k; scaleY = k
+            shape = RoundedCornerShape((lerp(14f, 28f, p) * density.density / k).coerceAtLeast(0f)); clip = true; shadowElevation = lerp(0f, 24f, p) * density.density }
+          .background(c.outline)) { AsyncImage(CoverFlight.art.ifBlank { now.art }, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+      }
+
       // Conteúdo do player cheio (surge ao expandir).
       val rise = with(density) { 40.dp.toPx() }
       if (showFull) Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = if (wide) maxW / 2 - 12.dp else 0.dp)
           .graphicsLayer { val p = pf(); alpha = ((p - .4f) / .6f).coerceIn(0f, 1f); translationY = lerp(rise, 0f, p) }.padding(horizontal = 28.dp)) {
         Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
-          IconButton({ scope.launch { f.animateTo(0f, bouncy) } }) { Icon(Icons.Rounded.KeyboardArrowDown, "Recolher", tint = Color.White) }
+          IconButton(collapse) { Icon(Icons.Rounded.KeyboardArrowDown, "Recolher", tint = Color.White) }
           Spacer(Modifier.weight(1f))
           Box(Modifier.size(width = 36.dp, height = 5.dp).clip(CircleShape).background(Color.White.copy(.35f)))
           Spacer(Modifier.weight(1f))
@@ -208,20 +243,25 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           if (showLyrics) LyricsView(now, a, Modifier.fillMaxSize().padding(top = 8.dp, bottom = 8.dp))
         }
         Column(Modifier.wrapContentHeight(Alignment.Top, unbounded = true).onSizeChanged { val h = with(density) { it.height.toDp() }; if (!wide && kotlin.math.abs((h - controlsH).value) > 1f) controlsH = h }) {
-        Text(now.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 32.sp, letterSpacing = (-.5f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(if (now.isPreview) "Trecho · ${now.artist}" else now.artist, color = Color.White.copy(.62f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Column(Modifier.weight(1f)) {
+            Text(now.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 32.sp, letterSpacing = (-.5f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(if (now.isPreview) "Trecho · ${now.artist}" else now.artist, color = Color.White.copy(.62f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          }
+          if (!now.isPreview) { Spacer(Modifier.width(12.dp)); LikeButton(liked, a.likeNow, size = 52.dp) }
+        }
         if (now.streaming) { Spacer(Modifier.height(10.dp)); StreamBar(now, a) }
         Spacer(Modifier.height(18.dp))
         var drag by remember { mutableStateOf<Float?>(null) }
         val dur = now.duration.coerceAtLeast(1)
         ThinSlider(drag ?: (now.position.toFloat() / dur), { drag = it }, { drag?.let { a.seek((it * dur).toLong()) }; drag = null })
         val shownPos = drag?.let { (it * dur).toLong() } ?: now.position
-        Row(verticalAlignment = Alignment.CenterVertically) { Text(fmtMs(shownPos), color = Color.White.copy(.6f), fontSize = 12.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) { RollingText(fmtMs(shownPos), Color.White.copy(.6f), 12.sp)
           Spacer(Modifier.weight(1f))
           if (now.quality.isNotBlank()) Text(now.quality, color = Color.White.copy(.55f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp))
           Spacer(Modifier.weight(1f))
-          Text("-" + fmtMs((now.duration - shownPos).coerceAtLeast(0)), color = Color.White.copy(.6f), fontSize = 12.sp) }
+          RollingText("-" + fmtMs((now.duration - shownPos).coerceAtLeast(0)), Color.White.copy(.6f), 12.sp, forward = false) }
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
           SideButton(Icons.Rounded.SkipPrevious, "Anterior", Modifier.weight(1f), a.prev)
@@ -252,8 +292,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   Box(m.then(if (pill) Modifier.height(h) else Modifier.size(h)).springPress(src).clip(CircleShape).background(bg)
       .clickable(src, null) { haptics.press(); a.playPause() }, contentAlignment = Alignment.Center) {
     if (now.loading) CircularProgressIndicator(Modifier.size(h * .4f), color = fg, strokeWidth = 2.dp)
-    else AnimatedContent(now.playing, label = "pp") { pl ->
-      Icon(if (pl) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (pl) "Pausar" else "Tocar", tint = fg, modifier = Modifier.size(h * .45f)) }
+    else PlayPauseMorph(now.playing, fg, Modifier.size(h * .45f).semantics { contentDescription = if (now.playing) "Pausar" else "Tocar" })
   }
 }
 
@@ -273,20 +312,29 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       color = Color.White.copy(.6f), fontSize = 16.sp) }; return }
   val cur = lines.indexOfLast { it.ms <= now.position + 250 }.coerceAtLeast(0)
   val list = androidx.compose.foundation.lazy.rememberLazyListState()
-  LaunchedEffect(cur) { list.animateScrollToItem((cur - 2).coerceAtLeast(0)) }
+  val reduce = rememberReduceMotion()
+  // A rolagem segue a música com a mola única: centraliza a linha atual (salta direto se ela estiver fora da tela).
+  LaunchedEffect(cur) {
+    val info = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == cur }
+    if (info == null || reduce) list.scrollToItem((cur - 2).coerceAtLeast(0))
+    else { val vp = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
+      list.animateScrollBy((info.offset + info.size / 2f) - vp * .38f, Motion.spring(Motion.SpringSoft, 1f)) }
+  }
   androidx.compose.foundation.lazy.LazyColumn(m, state = list, verticalArrangement = Arrangement.spacedBy(18.dp)) {
     items(lines.size, key = { it }, contentType = { "line" }) { i -> val l = lines[i]
       val dist = kotlin.math.abs(i - cur).coerceAtMost(4)
       // Linha ativa: maior e nítida; as outras menores, apagadas e desfocadas conforme a distância.
-      val focus by animateFloatAsState(if (i == cur) 1f else 0f, Motion.settle(169f), label = "focus")
+      val focus by animateFloatAsState(if (i == cur) 1f else 0f, Motion.spring(169f), label = "focus")
       val fz = focus.coerceIn(0f, 1f)
       val blurDp = if (Build.VERSION.SDK_INT >= 31) (dist * 1.6f * (1f - fz)).dp else 0.dp
       Text(l.text.ifBlank { "♪" }, Modifier.fillMaxWidth()
-        .graphicsLayer { val sc = .86f + .14f * fz; scaleX = sc; scaleY = sc; alpha = .32f + .68f * fz
+        .graphicsLayer { val sc = .84f + .2f * fz; scaleX = sc; scaleY = sc; alpha = .32f + .68f * fz
           transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
         .then(if (blurDp > 0.dp) Modifier.blur(blurDp, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier)
         .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { a.seek(l.ms) },
-        color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 34.sp)
+        color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, lineHeight = 34.sp,
+        // Brilho da linha atual: sombra branca difusa que acende com o foco.
+        style = if (fz > .01f) androidx.compose.ui.text.TextStyle(shadow = Shadow(Color.White.copy(alpha = .55f * fz), blurRadius = 28f * fz)) else androidx.compose.ui.text.TextStyle.Default)
     }
   }
 }

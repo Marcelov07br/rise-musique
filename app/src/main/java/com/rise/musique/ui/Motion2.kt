@@ -19,7 +19,7 @@ object CoverMotion {
   fun allowed(ctx: Context): Boolean {
     val scale = runCatching { Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) }.getOrDefault(1f)
     val saver = (ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
-    return scale > 0f && !saver && !StaticPreview.on
+    return scale > 0f && !saver && !StaticPreview.on && !ReduceMotion.user
   }
   /** Pure path of the drift for a phase 0..1 (visible for tests): scale, x, y (fractions of the size). */
   fun at(t: Float): Triple<Float, Float, Float> {
