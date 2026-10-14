@@ -1,4 +1,10 @@
 package com.rise.musique.ui
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
+import com.rise.musique.ui.glass.backdrop.drawBackdrop
+import com.rise.musique.ui.glass.backdrop.effects.lens
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.FlowRow
@@ -148,10 +154,13 @@ val sampleResults = listOf(SearchResult("a", "Música de exemplo (Clipe Oficial)
 @Composable fun RiseApp(state: UiState, actions: Actions, initialHistoryOpen: Boolean = false, initialExpanded: Boolean = false, initialLyrics: Boolean = false,
                        initialCollectionItem: Int = 0, initialRoute: Route? = null, initialRootItem: Int = 0, initialShare: Boolean = false, initialPlayerFraction: Float? = null) {
   val targets = remember { FlyTargets() }
-  val haze = remember { dev.chrisbanes.haze.HazeState() }
+  // 0.28: camada que o vidro do Square amostra (sem captura em pré-visualização/Paparazzi → filme translúcido).
+  val inspection = androidx.compose.ui.platform.LocalInspectionMode.current
+  val layer = com.rise.musique.ui.glass.backdrop.backdrops.rememberLayerBackdrop()
+  val backdrop = if (inspection) null else layer
   val dock = remember { mutableStateOf<(@Composable (Modifier) -> Unit)?>(null) }
   val tilt = rememberTilt(active = true)
-  Box(Modifier.fillMaxSize()) { CompositionLocalProvider(LocalHaze provides haze, LocalDock provides dock, LocalTilt provides tilt) {
+  Box(Modifier.fillMaxSize()) { CompositionLocalProvider(com.rise.musique.ui.glass.LocalAppBackdrop provides backdrop, LocalDock provides dock, LocalTilt provides tilt) {
     RiseContent(state, actions, initialHistoryOpen, targets, initialCollectionItem, initialRoute, initialRootItem)
     dock.value?.invoke(Modifier.align(Alignment.BottomCenter))
     UndoBar(state, actions, Modifier.align(Alignment.BottomCenter))
@@ -243,7 +252,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
   Box(Modifier.fillMaxSize().background(c.background)) {
    // Tudo que fica atrás da barra e do mini player é a fonte do desfoque (a barra é irmã, não filha).
-   Box(Modifier.fillMaxSize().glassSource(LocalHaze.current)) {
+   Box(Modifier.fillMaxSize().glassSource(com.rise.musique.ui.glass.LocalAppBackdrop.current)) {
     // Telas de detalhe: fundo vivo fixo cobrindo a tela inteira, entrando em fade junto com a transição.
     lastDetail?.let { d -> if (screen.route.isDetail || transition.isRunning) {
       val art = when (d) { is Route.Artist -> artistArt(state, d.name)
@@ -311,7 +320,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       }
    }
       // A barra é desenhada no nível do RiseApp (fora da árvore da fonte do desfoque, como o mini player).
-      val dockLatest = rememberUpdatedState<@Composable (Modifier) -> Unit>({ m -> NavigationDock(tab, navActions, m.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = GlassDock.VPad)
+      val dockLatest = rememberUpdatedState<@Composable (Modifier) -> Unit>({ m -> NavigationDock(tab, navActions, m.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)).padding(horizontal = 16.dp, vertical = GlassDock.VPad)
         .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
         .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) }) })
       val dockSlot = LocalDock.current
@@ -320,44 +329,72 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   }
 }
 
-@Composable private fun NavigationDock(tab: String, a: Actions, modifier: Modifier) {
+/**
+ * 0.28: dock no visual da barra do Square (github.com/Lelonio/Square, GPL-3.0): cápsula de vidro líquido com filme
+ * (`GlassFilm` branco .12/.45), "puck" da aba ativa também de vidro (lente 10/14 dp com aberração cromática, aro .35,
+ * sombra .35 e lavagem preta .5/.11 — `FoldingTabs`/`puckLayout` de ui/glass/SquareBottomBar.kt e `puckWash` de SquareApp.kt),
+ * arrastável entre as abas, folga 6/2 dp, ícones 26 dp. Adaptado: 3 abas do Rise (sem o círculo de busca separado nem a
+ * dobra por rolagem), molas `Motion.spring` (quique travado) e Reduzir movimento = salto direto; acento só no ícone/rótulo.
+ */
+@Composable internal fun NavigationDock(tab: String, a: Actions, modifier: Modifier) {
   val c = MaterialTheme.colorScheme
   val haptics = rememberHaptics()
   val accent = accentColor()
   val dark = c.background.luminance() < .5f
-  val idx = Tabs.indexOf(tab).coerceAtLeast(0).toFloat()
-  // Pílula líquida: a borda da frente corre (mola firme), a de trás vem atrás (mola mole) → estica no caminho e assenta com um quique leve.
-  val lead = androidx.compose.animation.core.animateFloatAsState(idx, Motion.spring(Motion.SpringFirm, Motion.PopBounce), label = "lead")
-  val trail = androidx.compose.animation.core.animateFloatAsState(idx, Motion.spring(Motion.SpringSoft), label = "trail")
-  // 0.27: pílula neutra (vidro mais claro) como no vidro de referência; o acento fica só no ícone/rótulo.
-  val pill = androidx.compose.ui.graphics.Color.White.copy(alpha = if (dark) .14f else .5f)
-  // Mesmo vidro do mini player: o desfoque (hazeEffect) fica num nó sem camada de sombra por cima; a sombra é um irmão atrás.
+  val reduce = rememberReduceMotion()
+  val n = Tabs.size
+  val idx = Tabs.indexOf(tab).coerceAtLeast(0)
+  val puck = remember { androidx.compose.animation.core.Animatable(idx.toFloat()) }
+  var dragging by remember { mutableStateOf(false) }
+  LaunchedEffect(idx, reduce) { if (!dragging) { if (reduce) puck.snapTo(idx.toFloat()) else puck.animateTo(idx.toFloat(), Motion.spring(Motion.SpringMedium)) } }
+  val scope = rememberCoroutineScope()
+  val backdrop = com.rise.musique.ui.glass.LocalAppBackdrop.current
+  val film = if (dark) androidx.compose.ui.graphics.Color.White.copy(alpha = .12f) else androidx.compose.ui.graphics.Color.White.copy(alpha = .45f)
+  val wash = androidx.compose.ui.graphics.Color.Black.copy(alpha = if (dark) .5f else .11f)
+  val shape = RoundedCornerShape(50)
   Box(modifier) {
-  Box(Modifier.matchParentSize().glassTilt(LocalTilt.current).shadow(GlassLook.Shadow, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(GlassLook.ShadowAlpha), spotColor = androidx.compose.ui.graphics.Color.Black.copy(GlassLook.ShadowAlpha)))
-  Row(Modifier.fillMaxWidth().height(GlassDock.RowHeight).glassTilt(LocalTilt.current).liquidGlass(CircleShape, dark).padding(5.dp)
-      .drawBehind {
-        val w = size.width / Tabs.size; val n = (Tabs.size - 1).toFloat()
-        val l = minOf(lead.value, trail.value).coerceIn(0f, n); val r = maxOf(lead.value, trail.value).coerceIn(0f, n)
-        val stretch = (r - l).coerceIn(0f, 1f)
-        val inset = 2.dp.toPx() * (1f - stretch) ; val squash = size.height * .06f * stretch
-        drawRoundRect(pill, androidx.compose.ui.geometry.Offset(l * w + inset, squash), androidx.compose.ui.geometry.Size((r - l + 1f) * w - 2 * inset, size.height - 2 * squash),
-          androidx.compose.ui.geometry.CornerRadius(size.height / 2f))
+  Box(Modifier.fillMaxWidth().height(GlassDock.RowHeight).glassTilt(LocalTilt.current)
+      .shadow(GlassLook.Shadow, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(GlassLook.AmbientAlpha), spotColor = androidx.compose.ui.graphics.Color.Black.copy(GlassLook.ShadowAlpha))
+      .liquidGlass(shape, dark).background(film, shape))
+  // Puck e abas ficam IRMÃOS do vidro da barra (um drawBackdrop dentro de outro quebrava a medição no Compose 1.7).
+  Box(Modifier.matchParentSize().padding(horizontal = 2.dp, vertical = 6.dp)
+      .pointerInput(n) {
+        detectHorizontalDragGestures(
+          onDragStart = { dragging = true },
+          onDragCancel = { dragging = false; scope.launch { puck.animateTo(Tabs.indexOf(tab).coerceAtLeast(0).toFloat(), Motion.spring(Motion.SpringMedium)) } },
+          onHorizontalDrag = { _, d -> val step = size.width / n.toFloat(); scope.launch { puck.snapTo((puck.value + d / step).coerceIn(0f, (n - 1).toFloat())) } },
+          onDragEnd = { dragging = false; val near = kotlin.math.round(puck.value).toInt().coerceIn(0, n - 1)
+            scope.launch { puck.animateTo(near.toFloat(), Motion.spring(Motion.SpringMedium)) }
+            if (Tabs[near] != tab) { haptics.tick(); a.page(Tabs[near]) } })
       }) {
+    // Puck: uma aba de largura, posto num `layout` (anda sem recompor).
+    Box(Modifier.layout { m, cs -> val w = cs.maxWidth / n; val p = m.measure(androidx.compose.ui.unit.Constraints.fixed(w.coerceAtLeast(1), cs.maxHeight.coerceAtLeast(1)))
+        layout(cs.maxWidth, cs.maxHeight) { p.place((puck.value.coerceIn(0f, (n - 1).toFloat()) * w).toInt(), 0) } }
+      ) { Box(Modifier.fillMaxSize().then(if (backdrop != null) Modifier.puckGlass(backdrop, wash) else Modifier.clip(shape).background(wash))) }
+    Row(Modifier.fillMaxSize()) {
     Tabs.forEach { page ->
       val on = tab == page
       val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-      val tint by androidx.compose.animation.animateColorAsState(if (on) accent else c.onSurfaceVariant, Motion.standard(), label = "tint")
-      val scale = androidx.compose.animation.core.animateFloatAsState(if (on) 1.1f else 1f, Motion.spring(500f, Motion.PopBounce), label = "icon")
+      val tint by androidx.compose.animation.animateColorAsState(if (on) accent else c.onSurface.copy(alpha = .78f), Motion.standard(), label = "tint")
       Column(Modifier.weight(1f).springPress(src).clip(CircleShape)
         .clickable(src, null) { if (!on) haptics.tick(); a.page(page) }.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(when (page) { "Biblioteca" -> PhIcons.Library; "Buscar" -> PhIcons.Search; else -> PhIcons.Home }, null,
-          tint = tint, modifier = Modifier.size(24.dp).graphicsLayer { val k = scale.value.coerceIn(.8f, 1.25f); scaleX = k; scaleY = k })
-        Text(page, color = tint, fontSize = 11.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+        Icon(when (page) { "Biblioteca" -> PhIcons.Library; "Buscar" -> PhIcons.Search; else -> PhIcons.Home }, null, tint = tint, modifier = Modifier.size(26.dp))
+        Text(page, color = tint, fontSize = 10.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
       }
     }
+    }
+  }
   }
 }
-}
+
+/** Puck de vidro do Square (`FoldingTabs`): lente 10/14 dp + aberração cromática, aro .35, sombra .35, lavagem. */
+private fun Modifier.puckGlass(backdrop: com.rise.musique.ui.glass.backdrop.Backdrop, wash: androidx.compose.ui.graphics.Color) =
+  if (!com.rise.musique.ui.glass.backdrop.isRenderEffectSupported()) clip(RoundedCornerShape(50)).background(wash)
+  else drawBackdrop(backdrop = backdrop, shape = { RoundedCornerShape(50) },
+    effects = { lens(10f.dp.toPx(), 14f.dp.toPx(), chromaticAberration = true) },
+    highlight = { com.rise.musique.ui.glass.backdrop.highlight.Highlight.Default.copy(alpha = 0.35f) },
+    shadow = { com.rise.musique.ui.glass.backdrop.shadow.Shadow(alpha = 0.35f) },
+    onDrawSurface = { drawRect(wash) })
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable private fun MainPane(state: UiState, a: Actions, targets: FlyTargets, onHistory: (() -> Unit)?, modifier: Modifier,

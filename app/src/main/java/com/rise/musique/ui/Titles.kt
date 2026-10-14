@@ -41,7 +41,7 @@ fun Modifier.collapsingHeight(collapse: State<Float>) = layout { m, c ->
 /** Espaço no fim das listas: barra de navegação do sistema (gestos ou 3 botões) + dock + mini player (0.27). */
 @Composable fun bottomSpace(s: UiState): androidx.compose.ui.unit.Dp {
   val nav = androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-  return nav + GlassDock.Height + (if (s.now != null) 68.dp + 8.dp else 0.dp) + 16.dp
+  return nav + GlassDock.Height + (if (s.now != null) MiniLook.Height else 0.dp) + 16.dp
 }
 
 /** Lets a horizontally scrolling row run to the screen edges past its parent's [by] padding (content still starts aligned). */

@@ -31,6 +31,10 @@ val Credits = listOf(
   Triple("Coil", "Carregamento de imagens", "Apache-2.0"),
   Triple("Palette", "Cores das capas", "Apache-2.0"),
   Triple("Kotlin e Coroutines", "Linguagem e concorrência", "Apache-2.0"),
+  Triple("Square (Lelonio/Square)", "Vidro líquido, barra de abas e mini player portados (github.com/Lelonio/Square)", "GPL-3.0"),
+  Triple("Convx", "Base do mini player flutuante do Square (github.com/cosmictaserdev-creator/Convx)", "GPL-3.0"),
+  Triple("Backdrop (Kyant0)", "Captura, desfoque, lente e aro do vidro, via Square (github.com/Kyant0/backdrop)", "Apache-2.0"),
+  Triple("Phosphor Icons", "Ícones (phosphor-icons/core)", "MIT"),
   Triple("LRCLIB", "Letras sincronizadas (serviço)", "Dados públicos"),
 )
 const val ReleasesUrl = "https://github.com/Marcelov07br/rise-musique-releases/releases"

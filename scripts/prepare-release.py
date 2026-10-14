@@ -1,4 +1,4 @@
-"""Generate only public release assets; never include signing keys or source code."""
+"""Generate public release assets; never include signing keys. The GPL source tarball is made separately with git archive."""
 import hashlib
 import json
 import re

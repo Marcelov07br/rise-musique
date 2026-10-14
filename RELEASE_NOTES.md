@@ -1,10 +1,10 @@
-# Rise Musique 0.27.0
+# Rise Musique 0.28.0
 
-Visual renovado: vidro novo na barra de abas e no mini player, e ícones novos.
+Vidro líquido de verdade na barra de abas e no mini player, e o app agora é software livre (GPL-3.0).
 
-- **Ícones novos** na barra de abas e nos controles do player (família Phosphor, preenchidos e com traço forte).
-- **Vidro refeito**: desfoque mais forte, véu mais leve e leitoso, aro de luz contínuo, borda que acende como uma lente e sombra mais curta.
-- **Mini player com o mesmo vidro da barra de abas**, alinhado logo acima dela.
-- **Respeita a barra do sistema**: a barra de abas e o mini player ficam acima da barra de gestos ou dos 3 botões, e as listas rolam por trás do vidro até o fim, sem nada escondido.
-- Botão de tocar/pausar com cantos arredondados (a animação de troca continua).
-- Tudo o que já existia continua: capa voando até o player, capas animadas, molas e "Reduzir movimento".
+- **Vidro novo, portado do app Square**: o fundo é capturado e passa por saturação, desfoque e uma lente de refração nas bordas (Android 13+), com aro de luz e sombra suave. No Android 12 fica o desfoque sem a lente; em aparelhos mais antigos, um vidro translúcido com aro.
+- **Barra de abas no estilo do Square**: cápsula de vidro com a aba ativa numa "pastilha" de vidro que dá para arrastar entre as abas.
+- **Mini player no estilo do Square**: pílula mais baixa, capa 40 dp, próxima e tocar/pausar sem fundo, fio de progresso embaixo, aperto suave e deslizar para os lados para trocar de faixa.
+- Continua acima da barra de gestos ou dos 3 botões, com os ícones Phosphor, molas com quique leve e "Reduzir movimento".
+- Capa voando até o player, capas animadas e o coração de curtir continuam iguais.
+- **Licença**: o Rise Musique passa a ser GPL-3.0. Créditos ao Square (github.com/Lelonio/Square) em Ajustes → Sobre. O código-fonte desta versão vai anexado à release.

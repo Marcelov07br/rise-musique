@@ -1,11 +1,22 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.27.0 (14/10/2026) — linha principal `main`
+## Estado atual: 0.28.0 (14/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
 - Teste real é no celular do Marce (Samsung SM-S948B, Android 17). Emulador não roda aqui. Paparazzi = única verificação visual.
 - Marce lê português. Rodadas: Marce aprova uma lista → implementar tudo → testes, snapshots (olhar!), build, bump, notas em PT, commit, push, publicar.
+
+## 0.28.0 (vidro do Square + GPL-3.0) — o que mudou
+- **Licença**: Marce aprovou relicenciar o app inteiro para **GPL-3.0** (`LICENSE` na raiz, `NOTICE.md` com créditos) para reaproveitar código do Square (github.com/Lelonio/Square, GPL-3.0). A regra "clean-room" de 0.27 deixou de valer. A GPL exige o código para quem recebe o APK: o repo de código continua **privado** (Marce decide se abre), então **toda release leva `rise-musique-<v>-source.tar.gz`** (`git archive` da tag `v<v>` do repo de código). Opções: abrir `Marcelov07br/rise-musique` ou continuar anexando o tarball.
+- Dependências conferidas: tudo Apache-2.0/MIT/Unlicense/GPL-3.0 (youtubedl-android)/LGPL-GPL (FFmpeg) → compatível. Só de teste (não distribuídas): JUnit (EPL-1.0) e org.json (JSON License).
+- **Vidro** (`ui/glass/`): `backdrop/**` = cópia da biblioteca Kyant0/backdrop (Apache-2.0) como o Square a embute; `SquareGlass.kt` = porte do `GlassEffect.kt` do Square (`squareLiquidGlass`: saturação 1,6, desfoque 2 dp, lente 19,2/28,8 dp limitada a 45 % do lado menor, aro .8 dp α .3 a 45°, `Shadow.Default`, filme `#4A4A4E→#23232A` (escuro) / `#FAFAFA` (claro) α .5, resolução reduzida conforme o desfoque). `LiquidGlass.kt` virou um adaptador (`liquidGlass(shape, dark)`); **Haze removido**. Fonte: `rememberLayerBackdrop()` no `RiseApp` + `glassSource` (= `layerBackdrop`) no conteúdo. Sem captura (pré-visualização) ou API < 31 → filme translúcido + aro; API 31–32 → sem lente (RuntimeShader é 33+).
+- Correção nossa no vendorizado: `DrawBackdropNode.updateEffects()` ignora tamanho `Unspecified` (no `onAttach` a lente lia `size` e quebrava o nó: "LayoutNode should be attached"). `InverseLayerScope`: `blendMode/colorFilter` sem `override` (Compose 1.7; o Square usa BOM 2026.06).
+- **Dock** (`NavigationDock`, agora `internal`): cápsula de vidro + filme branco .12/.45; pastilha da aba ativa = `drawBackdrop` com lente 10/14 dp + aberração cromática, aro .35, sombra .35, lavagem preta .5/.11, arrastável (`FoldingTabs`/`puckLayout`); ícones 26 dp, rótulo 10 sp; acento só no ícone/rótulo. Puck e abas são IRMÃOS do vidro da barra. Não portado: dobra por rolagem e círculo de busca separado.
+- **Mini** (`PlayerSheet`, `MiniLook`): 56 dp (capa 40/9 dp, folga 12×8, controles 40 dp), pílula, título bodyMedium + artista 70 %, próxima + play/pausa sem fundo (`PlayButton(icon=.6)`), fio de progresso 2 dp, aperto 1.04 (só graphicsLayer, sem recompor), deslizar = próxima/anterior (28 % ou arremesso; usa o `throwX` da capa). Mantido do Rise: botão fechar. Fica 8 dp acima da linha da dock (margem da dock) + inset real da barra do sistema; `bottomSpace` usa `MiniLook.Height`.
+- Créditos (Sobre): Square, Convx, Backdrop (Kyant0), Phosphor. Licenças em `assets/licenses/` (GPL-3.0, backdrop, phosphor).
+- Testes: `Round28Test` (fallback, padrões do Square, altura do mini) + snapshots `Round28` (`chromeDark/Light` = dock + mini isolados — no `RiseApp` a dock só entra no 2º quadro e o Paparazzi grava o 1º, por isso Round27 nunca mostrou a dock). Paparazzi desenha o **fallback** (não roda RenderEffect/RuntimeShader). Cópias em `/workspace/rise-musique-shots/0.28.0/`.
+- Não testado no aparelho: aparência real do desfoque/lente/aberração, custo por quadro da captura (o Square congela durante rolagem/transições; aqui não), gestos vs 3 botões, deslizar no mini vs arrastar o player.
 
 ## 0.27.0 (visual: vidro + ícones) — o que mudou
 - **Referência de design em sala limpa (clean-room)**: o visual foi inspirado nas capturas do app Square (github.com/Lelonio/Square, GPL-3.0). Só foram olhados o README, as capturas do fastlane e a lista de dependências (para identificar o conjunto de ícones). **Nenhum código, shader, recurso ou asset do Square foi copiado, portado ou parafraseado**; tudo foi escrito do zero no estilo do Rise.
@@ -61,7 +72,8 @@
 3. `./build-local.sh` → assembleRelease + lintRelease + testes + `scripts/prepare-release.py` → `delivery/v<versão>/` (APK, update.json, notas). Lint com erro aborta (ex.: APIs `@UnstableApi` do Media3 precisam de `@OptIn`).
 4. (opcional) `apksigner verify --print-certs delivery/v<v>/RiseMusique-<v>.apk` → SHA-256 `788c94b2df3707ba4f4ebdc3d8912e5dba1cc20ce6cca51be1fa89741ffa6609`.
 5. Commit + `git push origin main`.
-6. `gh release create v<v> --repo Marcelov07br/rise-musique-releases --title "Rise Musique <v>" -F delivery/v<v>/RELEASE_NOTES.md --latest delivery/v<v>/RiseMusique-<v>.apk delivery/v<v>/update.json`
+6. (GPL, desde 0.28) `git tag v<v> && git push origin v<v>` e `git archive --prefix=rise-musique-<v>/ -o delivery/v<v>/rise-musique-<v>-source.tar.gz v<v>`.
+7. `gh release create v<v> --repo Marcelov07br/rise-musique-releases --title "Rise Musique <v>" -F delivery/v<v>/RELEASE_NOTES.md --latest delivery/v<v>/RiseMusique-<v>.apk delivery/v<v>/update.json delivery/v<v>/rise-musique-<v>-source.tar.gz`
 - Atualização no app (`Updates.kt`/`UpdateRelease.kt`): lê `releases/latest`, exige tag `v<versionName>`, asset `update.json` {versionCode, versionName, asset, sha256}; confere tamanho, SHA-256, pacote, versionCode maior e mesmo certificado.
 
 ## Segredos e assinatura (nunca commitar nem imprimir)

@@ -304,3 +304,20 @@ class Round27 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
   @Test fun dockOnlySearch() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(found, Actions()) } }
   @Test fun playerControls() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(busy.copy(now = withCover.copy(shuffle = true, repeat = 1)), Actions(), initialExpanded = true) } }
 }
+
+/** 0.28: vidro/dock/mini do Square. Paparazzi não roda RenderEffect/RuntimeShader → mostra o fallback translúcido (filme + aro). */
+class Round28 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val busy = homeState.copy(history = homeLib.mapIndexed { i, h -> h.copy(art = res(if (i % 2 == 0) "cover.jpg" else "hero.jpg")) })
+  private val withCover = np.copy(art = res("cover.jpg"), title = "Bem Que Se Quis", artist = "Marisa Monte", position = 70_000, duration = 200_000)
+  @Test fun dockMiniDark() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(busy.copy(now = withCover), Actions(), initialRootItem = 2) } }
+  @Test fun dockMiniLight() = p.snapshot { SyncImages(); RiseTheme(false) { RiseApp(busy.copy(now = withCover), Actions(), initialRootItem = 2) } }
+  @Test fun dockOnlyLibrary() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(busy, Actions(), initialRootItem = 1) } }
+  @Test fun playerLiked() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(busy.copy(now = withCover, favorites = setOf(withCover.key)), Actions(), initialExpanded = true) } }
+  /** Dock + mini isolados sobre uma capa (no RiseApp a dock só entra no 2º quadro e o Paparazzi grava o 1º). */
+  @Composable private fun Chrome(dark: Boolean, tab: String) = RiseTheme(dark) { Box(Modifier.fillMaxSize().background(androidx.compose.material3.MaterialTheme.colorScheme.background)) {
+    coil.compose.AsyncImage(res("hero.jpg"), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+    PlayerSheet(withCover.copy(playing = true), Actions())
+    NavigationDock(tab, Actions(), Modifier.align(androidx.compose.ui.Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) } }
+  @Test fun chromeDark() = p.snapshot { SyncImages(); Chrome(true, "Início") }
+  @Test fun chromeLight() = p.snapshot { SyncImages(); Chrome(false, "Buscar") }
+}

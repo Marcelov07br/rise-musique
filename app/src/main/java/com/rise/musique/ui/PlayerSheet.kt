@@ -85,13 +85,14 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
     SideEffect { PlayerProbe.body++ }
     val fullH = constraints.maxHeight.toFloat()
     val fullW = constraints.maxWidth.toFloat()
-    val miniH = with(density) { 68.dp.toPx() }
+    val miniH = with(density) { MiniLook.Height.toPx() }
     val margin = with(density) { 16.dp.toPx() }
     val dragState = rememberDraggableState { d -> scope.launch { f.snapTo((f.value - d / (fullH - miniH)).coerceIn(0f, 1f)) } }
-    // Mini: cartão compacto (miniH) com margens iguais dos lados, logo acima da dock (~82dp) e da barra de gestos.
+    // Mini (0.28, medidas do Square): pílula de 56 dp com margens iguais dos lados, 8 dp acima da linha da dock
+    // (a margem de cima da dock) e sempre acima da barra do sistema (gestos ou 3 botões): navBottom = inset real.
     val navBottom = WindowInsets.navigationBars.getBottom(density).toFloat()
     val dockH = with(density) { GlassDock.Height.toPx() }
-    val miniTop = fullH - miniH - margin - navBottom - dockH
+    val miniTop = fullH - miniH - navBottom - dockH
     val surface = c.surface
 
     Box(Modifier.fillMaxSize()
@@ -100,7 +101,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           translationY = lerp(miniTop, 0f, p)
           val sc = 1f - b * 0.12f; scaleX = sc; scaleY = sc
           transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f)
-          shape = SheetShape(lerp(margin, 0f, p), lerp(miniH, fullH, p).coerceIn(miniH, fullH), (lerp(34f, 0f, p) + b * 36f) * density.density)
+          shape = SheetShape(lerp(margin, 0f, p), lerp(miniH, fullH, p).coerceIn(miniH, fullH), (lerp(MiniLook.Height.value / 2f, 0f, p) + b * 36f) * density.density)
           clip = true }
         .drawBehind { drawRect(surface.copy(alpha = (pf() * 1.6f).coerceIn(0f, 1f))) }
         .draggable(dragState, Orientation.Vertical, onDragStarted = { CoverFlight.forget(); haptics.tick() }, onDragStopped = { v ->
@@ -109,9 +110,10 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           f.animateTo(target, bouncy, initialVelocity = -v / (fullH - miniH)) })) {
       SideEffect { PlayerProbe.sheetBody++ }
 
-      // Mini player de vidro: cópia desfocada da capa + véu translúcido + borda de luz (só a faixa do mini, sem relayout).
-      if (showGlass) Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(68.dp).graphicsLayer { alpha = (1f - pf()).coerceIn(0f, 1f) }
-        .glassTilt(LocalTilt.current).liquidGlass(RoundedCornerShape(34.dp), c.background.luminance() < .5f))
+      // Mini player de vidro (0.28): o mesmo vidro líquido da dock (Square: liquidGlass da barra, aro .3) + filme GlassFilm.
+      val miniDark = c.background.luminance() < .5f
+      if (showGlass) Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(MiniLook.Height).graphicsLayer { alpha = (1f - pf()).coerceIn(0f, 1f) }
+        .glassTilt(LocalTilt.current).liquidGlass(CircleShape, miniDark).background(MiniLook.film(miniDark), CircleShape))
       // Fundo vivo: degradê em malha com as cores da capa, se movendo devagar.
       if (showBg) Box(Modifier.fillMaxSize().graphicsLayer { alpha = pf() }) {
         LivingArtwork(now.art, Modifier.fillMaxSize(), dim = .2f)
@@ -132,7 +134,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
       val fullX = if (wide) (maxW / 2 - artFull) / 2 else (maxW - artFull) / 2
       val fullY = if (wide) (maxH - artFull) / 2 else insetTop + 56.dp + (artSpace - artFull) / 2
       val artFullPx = with(density) { artFull.toPx() }; val fullXPx = with(density) { fullX.toPx() }; val fullYPx = with(density) { fullY.toPx() }
-      val miniArt = with(density) { 48.dp.toPx() }; val miniX = margin + with(density) { 10.dp.toPx() }; val miniY = with(density) { 10.dp.toPx() }
+      val miniArt = with(density) { MiniLook.Art.toPx() }; val miniX = margin + with(density) { MiniLook.PadH.toPx() }; val miniY = with(density) { MiniLook.PadV.toPx() }
       val onBg = if (expanded) Color.White else c.onSurface
 
       // Capa: o mesmo elemento cresce do mini até o tamanho cheio.
@@ -176,7 +178,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
             rotationZ = throwX.value / maxWpx * 10f; rotationY = -throwX.value / maxWpx * 16f; cameraDistance = 16f * density.density
             alpha = if (flying) 0f else artAlphaS.value * lerp(.3f, 1f, dp)
             // Cantos e sombra compensados pela escala, pra parecerem 12dp no mini e 28dp no cheio.
-            shape = RoundedCornerShape((lerp(12f, 28f, p) * density.density / k.coerceAtLeast(.05f)).coerceAtLeast(0f))
+            shape = RoundedCornerShape((lerp(MiniLook.ArtCorner.value, 28f, p) * density.density / k.coerceAtLeast(.05f)).coerceAtLeast(0f))
             clip = true; shadowElevation = lerp(0f, 24f, p) * density.density }
           .then(if (interactive) Modifier.pointerInput(now.key) { detectTapGestures(onDoubleTap = { o ->
             val dir = if (o.x < size.width / 2) -1 else 1
@@ -202,18 +204,40 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
 
       // Linha do mini player (some ao expandir).
       // O toque para abrir fica só na faixa do mini (a camada é do tamanho da tela; semântica/acessibilidade com os limites certos).
-      if (showMini) Row(Modifier.fillMaxWidth().height(68.dp)
-        .clickable(enabled = collapsed, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
-          scope.launch { f.animateTo(1f, Motion.coverOpen()) } }
-        .graphicsLayer { alpha = (1f - pf() / .6f).coerceIn(0f, 1f) }.padding(start = 86.dp, end = 24.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-          Text(now.title, color = c.onSurface, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-          Text(if (now.isPreview) "Prévia · ${now.artist}" else if (now.streaming) "${now.artist} · streaming" else now.artist, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+      // 0.28: linha do mini no desenho do FloatingMiniPlayer do Square (via Convx, GPL-3.0): capa 40 dp/9 dp, folga 12×8,
+      // título bodyMedium + artista a 70 %, próxima e play/pausa de 40 dp sem fundo, fio de progresso de 2 dp embaixo,
+      // aperto 1.04 e deslizar para os lados = próxima/anterior (limiar 28 % da largura ou arremesso). Mantido do Rise: fechar.
+      if (showMini) {
+        val pressSrc = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+        // Aperto lido só no graphicsLayer (sem recompor o player; PlayerRecompositionTest).
+        val pressA = remember { Animatable(1f) }
+        LaunchedEffect(pressSrc, reduce) { pressSrc.interactions.collect { i -> val down = i is androidx.compose.foundation.interaction.PressInteraction.Press
+          if (!reduce) launch { pressA.animateTo(if (down) 1.04f else 1f, Motion.spring(Motion.SpringMedium)) } } }
+        Box(Modifier.fillMaxWidth().height(MiniLook.Height).padding(horizontal = 16.dp)
+          .graphicsLayer { alpha = (1f - pf() / .6f).coerceIn(0f, 1f); scaleX = pressA.value; scaleY = pressA.value }
+          .then(if (collapsed && !now.isPreview) Modifier.draggable(rememberDraggableState { d -> scope.launch {
+              val next = throwX.value + d
+              if ((next < 0 && now.hasNext) || (next > 0 && now.hasPrev) || kotlin.math.abs(next) < kotlin.math.abs(throwX.value)) throwX.snapTo(next) } },
+            Orientation.Horizontal, onDragStopped = { v ->
+              val far = kotlin.math.abs(throwX.value); val th = (maxWpx - 2 * margin) * .28f
+              if (far > th || (kotlin.math.abs(v) > 1100f && far > th * .25f)) { haptics.press(); if (throwX.value < 0 && now.hasNext) a.next() else if (throwX.value > 0 && now.hasPrev) a.prev() }
+              if (reduce) throwX.snapTo(0f) else throwX.animateTo(0f, Motion.spring(Motion.SpringSoft)) }) else Modifier)
+          .clickable(enabled = collapsed, indication = null, interactionSource = pressSrc) { scope.launch { f.animateTo(1f, Motion.coverOpen()) } }) {
+          Row(Modifier.fillMaxSize().offset { androidx.compose.ui.unit.IntOffset(throwX.value.toInt(), 0) }
+            .padding(start = MiniLook.PadH + MiniLook.Art + MiniLook.Gap, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+              Text(now.title, color = c.onSurface, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(if (now.isPreview) "Prévia · ${now.artist}" else if (now.streaming) "${now.artist} · streaming" else now.artist,
+                color = c.onSurface.copy(alpha = .7f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (!now.isPreview && now.hasNext) IconButton(a.next, Modifier.size(MiniLook.Control)) { Icon(PhIcons.Next, "Próxima", tint = c.onSurface, modifier = Modifier.size(22.dp)) }
+            PlayButton(now, a, MiniLook.Control, Color.Transparent, c.onSurface, icon = .6f)
+            IconButton(a.closePlayer, Modifier.size(32.dp)) { Icon(PhIcons.Close, "Fechar", tint = c.onSurface.copy(alpha = .6f), modifier = Modifier.size(16.dp)) }
+          }
+          val dur = now.duration.coerceAtLeast(1); val prog = (now.position.toFloat() / dur).coerceIn(0f, 1f)
+          Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 14.dp).height(2.dp).clip(CircleShape).background(c.onSurface.copy(alpha = .18f))) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(prog).background(accentColor())) }
         }
-        PlayButton(now, a, 44.dp, c.primary, c.onPrimary)
-        if (!now.isPreview && now.hasNext) IconButton(a.next) { Icon(PhIcons.Next, "Próxima", tint = c.onSurface, modifier = Modifier.size(22.dp)) }
-        IconButton(a.closePlayer) { Icon(PhIcons.Close, "Fechar", tint = c.onSurfaceVariant, modifier = Modifier.size(18.dp)) }
       }
 
       // Capa em voo (lista → player e de volta): fora do recorte do cartão, desenhada em cima.
@@ -289,13 +313,13 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   }
 }
 
-@Composable private fun PlayButton(now: NowPlaying, a: Actions, h: Dp, bg: Color, fg: Color, m: Modifier = Modifier, pill: Boolean = false) {
+@Composable private fun PlayButton(now: NowPlaying, a: Actions, h: Dp, bg: Color, fg: Color, m: Modifier = Modifier, pill: Boolean = false, icon: Float = .45f) {
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   val haptics = rememberHaptics()
   Box(m.then(if (pill) Modifier.height(h) else Modifier.size(h)).springPress(src).clip(CircleShape).background(bg)
       .clickable(src, null) { haptics.press(); a.playPause() }, contentAlignment = Alignment.Center) {
     if (now.loading) CircularProgressIndicator(Modifier.size(h * .4f), color = fg, strokeWidth = 2.dp)
-    else PlayPauseMorph(now.playing, fg, Modifier.size(h * .45f).semantics { contentDescription = if (now.playing) "Pausar" else "Tocar" })
+    else PlayPauseMorph(now.playing, fg, Modifier.size(h * icon).semantics { contentDescription = if (now.playing) "Pausar" else "Tocar" })
   }
 }
 
@@ -485,3 +509,13 @@ private data class SheetShape(val inset: Float, val height: Float, val radius: F
 /** Contadores de composição do player (testes verificam que a expansão não recompõe por quadro). */
 object PlayerProbe { var sheet = 0; var body = 0; var sheetBody = 0
   fun total() = sheet + body + sheetBody; fun reset() { sheet = 0; body = 0; sheetBody = 0 } }
+
+/**
+ * 0.28: medidas do mini player do Square (ui/player/FloatingMiniPlayer.kt: "a 40dp thumbnail, 40dp controls, 12 by 8 of
+ * padding", capa com canto 9 dp, 10 dp até o texto) e filme `GlassFilm` (ui/player/PlayerScreen.kt: branco .12 no escuro, .45 no claro).
+ */
+object MiniLook {
+  val Art = 40.dp; val Control = 40.dp; val PadH = 12.dp; val PadV = 8.dp; val Gap = 10.dp; val ArtCorner = 9.dp
+  val Height get() = Art + PadV * 2
+  fun film(dark: Boolean) = Color.White.copy(alpha = if (dark) .12f else .45f)
+}

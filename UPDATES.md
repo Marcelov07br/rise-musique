@@ -1,8 +1,8 @@
 # Atualizações do Rise Musique
 
 O código fica na branch `main` de `Marcelov07br/rise-musique` (privado).
-Somente APKs, `update.json` e notas de versão ficam nas releases públicas de
-`Marcelov07br/rise-musique-releases`. Não colocar tokens no aplicativo.
+APKs, `update.json`, notas de versão e (GPL-3.0, desde 0.28.0) o tarball do código-fonte da tag
+ficam nas releases públicas de `Marcelov07br/rise-musique-releases`. Não colocar tokens no aplicativo.
 
 ## Identidade e assinatura
 
