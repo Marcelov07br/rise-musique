@@ -1,11 +1,20 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.26.0 (14/10/2026) — linha principal `main`
+## Estado atual: 0.27.0 (14/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
 - Teste real é no celular do Marce (Samsung SM-S948B, Android 17). Emulador não roda aqui. Paparazzi = única verificação visual.
 - Marce lê português. Rodadas: Marce aprova uma lista → implementar tudo → testes, snapshots (olhar!), build, bump, notas em PT, commit, push, publicar.
+
+## 0.27.0 (visual: vidro + ícones) — o que mudou
+- **Referência de design em sala limpa (clean-room)**: o visual foi inspirado nas capturas do app Square (github.com/Lelonio/Square, GPL-3.0). Só foram olhados o README, as capturas do fastlane e a lista de dependências (para identificar o conjunto de ícones). **Nenhum código, shader, recurso ou asset do Square foi copiado, portado ou parafraseado**; tudo foi escrito do zero no estilo do Rise.
+- Ícones: o Square usa **Phosphor Icons (MIT)** (`com.adamglin:phosphor-icon`). Aqui os SVGs vieram do upstream oficial `phosphor-icons/core` (assets/fill e assets/bold) e viraram `res/drawable/ph_*.xml`; licença em `assets/licenses/phosphor-LICENSE.txt`. `ui/PhIcons.kt` expõe Home/Library/Search (abas) e Play/Pause/Prev/Next/Shuffle/Repeat/RepeatOne/Close (player e mini). Fill no transporte e nas abas, Bold nos de traço. Obs.: antes desta versão o Rise NÃO tinha Phosphor (só material-icons-extended).
+- Vidro (`LiquidGlass.kt`, `GlassLook`): continua sendo Haze (não AndroidLiquidGlass/backdrop; não havia essa dependência). Desfoque 26→34 dp, véu escuro `#3C3C42` α .48 (antes `#1C1C20` α .55), claro branco α .58, ruído .06, faixa de refração na borda (traço duplo 7 dp por dentro), aro contínuo 1,2 dp, sombra 18→10 dp α .16. O conteúdo agora é desenhado por cima dos efeitos. `GlassBox` com aro também embaixo. Pílula da aba ativa neutra (branca), acento só no ícone/rótulo.
+- `PlayPauseMorph`: cantos arredondados (traço com junção redonda), mesma animação.
+- Insets: a caixa de conteúdo usa `safeDrawing.only(Top + Horizontal)` + `imePadding()`; a dock tem `navigationBarsPadding()` e altura fixa (`GlassDock.Height` = 64 + 2×8 dp), usada também pelo PlayerSheet para pôr o mini acima dela. `bottomSpace()` = inset da barra de navegação + dock + mini + 16 dp, então as listas rolam por trás do vidro até o fim.
+- Testes: snapshots `Round27` (dock+mini escuro/claro, só dock, controles do player); cópias em `/workspace/rise-musique-shots/0.27.0/`.
+- Não testado no aparelho: aparência real do desfoque (Paparazzi não renderiza RenderEffect), gestos vs 3 botões (Paparazzi tem inset 0), teclado aberto na busca com a nova margem.
 
 ## 0.26.0 (capas animadas) — o que mudou
 - Fonte: API de terceiros `https://artwork.m8tec.top` (raspa o Apple Music; sem MusicKit; pode cair). `GET /api/v1/artwork/search?artist=&album=`. Resposta real: 200 `{url, url_tall, artist, album, isCached}` com **HLS m3u8** mestre (quadrado 360–1080, H.264/HEVC, sem áudio); 404 `{"message":"No animated artwork found."}`. Sem MP4/WebP (o parser prefere MP4 se um dia vier).

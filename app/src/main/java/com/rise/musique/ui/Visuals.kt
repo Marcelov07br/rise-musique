@@ -81,7 +81,8 @@ private val PaletteCache = java.util.Collections.synchronizedMap(object : Linked
 @Composable fun GlassBox(modifier: Modifier, shape: Shape, backdrop: String? = null, dark: Boolean = true,
                          content: @Composable BoxScope.() -> Unit) {
   val tint = if (dark) Color.White.copy(alpha = .10f) else Color.White.copy(alpha = .55f)
-  val edge = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) .35f else .9f), Color.White.copy(alpha = .04f)))
+  // 0.27: aro de luz contínuo (forte em cima, volta a acender embaixo), como o vidro da dock.
+  val edge = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) .42f else .9f), Color.White.copy(alpha = .06f), Color.White.copy(alpha = if (dark) .22f else .5f)))
   Box(modifier.clip(shape)) {
     if (!backdrop.isNullOrBlank()) {
       if (Build.VERSION.SDK_INT >= 31) AsyncImage(ImageRequest.Builder(LocalContext.current).data(backdrop).size(64).build(), null, Modifier.matchParentSize().blur(40.dp).graphicsLayer { alpha = .55f }, contentScale = ContentScale.Crop)

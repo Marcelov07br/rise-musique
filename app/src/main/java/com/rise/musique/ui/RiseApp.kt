@@ -256,7 +256,9 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       CollectionBackdrop(art, collapseOf(nav.list(d.key, initialCollectionItem)),
         Modifier.fillMaxSize().graphicsLayer { alpha = (backdropAlpha.value * (1f - dismiss.value)).coerceIn(0f, 1f) })
     } }
-    Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+    // 0.27: sem a margem de baixo — as listas rolam por trás do vidro e da barra de gestos (bottomSpace soma a inset).
+    Box(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+        androidx.compose.foundation.layout.WindowInsetsSides.Top + androidx.compose.foundation.layout.WindowInsetsSides.Horizontal)).imePadding()) {
       androidx.compose.animation.SharedTransitionLayout(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalShared provides this) {
           transition.AnimatedContent(Modifier.fillMaxSize(), transitionSpec = {
@@ -309,7 +311,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       }
    }
       // A barra é desenhada no nível do RiseApp (fora da árvore da fonte do desfoque, como o mini player).
-      val dockLatest = rememberUpdatedState<@Composable (Modifier) -> Unit>({ m -> NavigationDock(tab, navActions, m.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+      val dockLatest = rememberUpdatedState<@Composable (Modifier) -> Unit>({ m -> NavigationDock(tab, navActions, m.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = GlassDock.VPad)
         .graphicsLayer { scaleX = targets.bounce.value; scaleY = targets.bounce.value }
         .onGloballyPositioned { targets.history = it.positionInRoot() + androidx.compose.ui.geometry.Offset(it.size.width / 6f, it.size.height / 2f) }) })
       val dockSlot = LocalDock.current
@@ -327,11 +329,12 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
   // Pílula líquida: a borda da frente corre (mola firme), a de trás vem atrás (mola mole) → estica no caminho e assenta com um quique leve.
   val lead = androidx.compose.animation.core.animateFloatAsState(idx, Motion.spring(Motion.SpringFirm, Motion.PopBounce), label = "lead")
   val trail = androidx.compose.animation.core.animateFloatAsState(idx, Motion.spring(Motion.SpringSoft), label = "trail")
-  val pill = accent.copy(alpha = if (dark) .16f else .12f)
+  // 0.27: pílula neutra (vidro mais claro) como no vidro de referência; o acento fica só no ícone/rótulo.
+  val pill = androidx.compose.ui.graphics.Color.White.copy(alpha = if (dark) .14f else .5f)
   // Mesmo vidro do mini player: o desfoque (hazeEffect) fica num nó sem camada de sombra por cima; a sombra é um irmão atrás.
   Box(modifier) {
-  Box(Modifier.matchParentSize().glassTilt(LocalTilt.current).shadow(18.dp, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(.25f), spotColor = androidx.compose.ui.graphics.Color.Black.copy(.25f)))
-  Row(Modifier.fillMaxWidth().glassTilt(LocalTilt.current).liquidGlass(CircleShape, dark).padding(5.dp)
+  Box(Modifier.matchParentSize().glassTilt(LocalTilt.current).shadow(GlassLook.Shadow, CircleShape, ambientColor = androidx.compose.ui.graphics.Color.Black.copy(GlassLook.ShadowAlpha), spotColor = androidx.compose.ui.graphics.Color.Black.copy(GlassLook.ShadowAlpha)))
+  Row(Modifier.fillMaxWidth().height(GlassDock.RowHeight).glassTilt(LocalTilt.current).liquidGlass(CircleShape, dark).padding(5.dp)
       .drawBehind {
         val w = size.width / Tabs.size; val n = (Tabs.size - 1).toFloat()
         val l = minOf(lead.value, trail.value).coerceIn(0f, n); val r = maxOf(lead.value, trail.value).coerceIn(0f, n)
@@ -346,9 +349,9 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
       val tint by androidx.compose.animation.animateColorAsState(if (on) accent else c.onSurfaceVariant, Motion.standard(), label = "tint")
       val scale = androidx.compose.animation.core.animateFloatAsState(if (on) 1.1f else 1f, Motion.spring(500f, Motion.PopBounce), label = "icon")
       Column(Modifier.weight(1f).springPress(src).clip(CircleShape)
-        .clickable(src, null) { if (!on) haptics.tick(); a.page(page) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(when (page) { "Biblioteca" -> Icons.Rounded.LibraryMusic; "Buscar" -> Icons.Rounded.Search; else -> Icons.Rounded.Home }, null,
-          tint = tint, modifier = Modifier.size(23.dp).graphicsLayer { val k = scale.value.coerceIn(.8f, 1.25f); scaleX = k; scaleY = k })
+        .clickable(src, null) { if (!on) haptics.tick(); a.page(page) }.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Icon(when (page) { "Biblioteca" -> PhIcons.Library; "Buscar" -> PhIcons.Search; else -> PhIcons.Home }, null,
+          tint = tint, modifier = Modifier.size(24.dp).graphicsLayer { val k = scale.value.coerceIn(.8f, 1.25f); scaleX = k; scaleY = k })
         Text(page, color = tint, fontSize = 11.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
       }
     }

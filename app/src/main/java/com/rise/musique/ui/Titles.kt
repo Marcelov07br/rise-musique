@@ -12,6 +12,8 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.ui.unit.sp
 
 val TabTitles = mapOf("Início" to "Ouvir agora", "Buscar" to "Buscar", "Biblioteca" to "Biblioteca")
@@ -36,7 +38,11 @@ fun Modifier.collapsingHeight(collapse: State<Float>) = layout { m, c ->
   layout(p.width, h) { p.placeRelative(0, h - p.height) } }.graphicsLayer { clip = true }
 
 /** Space under lists so the floating dock (and the mini player above it) never cover content. */
-@Composable fun bottomSpace(s: UiState) = if (s.now != null) 176.dp else 104.dp
+/** Espaço no fim das listas: barra de navegação do sistema (gestos ou 3 botões) + dock + mini player (0.27). */
+@Composable fun bottomSpace(s: UiState): androidx.compose.ui.unit.Dp {
+  val nav = androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+  return nav + GlassDock.Height + (if (s.now != null) 68.dp + 8.dp else 0.dp) + 16.dp
+}
 
 /** Lets a horizontally scrolling row run to the screen edges past its parent's [by] padding (content still starts aligned). */
 fun Modifier.bleed(by: androidx.compose.ui.unit.Dp) = layout { m, c ->

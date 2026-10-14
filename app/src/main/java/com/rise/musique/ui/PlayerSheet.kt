@@ -90,7 +90,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
     val dragState = rememberDraggableState { d -> scope.launch { f.snapTo((f.value - d / (fullH - miniH)).coerceIn(0f, 1f)) } }
     // Mini: cartão compacto (miniH) com margens iguais dos lados, logo acima da dock (~82dp) e da barra de gestos.
     val navBottom = WindowInsets.navigationBars.getBottom(density).toFloat()
-    val dockH = with(density) { 82.dp.toPx() }
+    val dockH = with(density) { GlassDock.Height.toPx() }
     val miniTop = fullH - miniH - margin - navBottom - dockH
     val surface = c.surface
 
@@ -212,8 +212,8 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           Text(if (now.isPreview) "Prévia · ${now.artist}" else if (now.streaming) "${now.artist} · streaming" else now.artist, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
         }
         PlayButton(now, a, 44.dp, c.primary, c.onPrimary)
-        if (!now.isPreview && now.hasNext) IconButton(a.next) { Icon(Icons.Rounded.SkipNext, "Próxima", tint = c.onSurface) }
-        IconButton(a.closePlayer) { Icon(Icons.Rounded.Close, "Fechar", tint = c.onSurfaceVariant) }
+        if (!now.isPreview && now.hasNext) IconButton(a.next) { Icon(PhIcons.Next, "Próxima", tint = c.onSurface, modifier = Modifier.size(22.dp)) }
+        IconButton(a.closePlayer) { Icon(PhIcons.Close, "Fechar", tint = c.onSurfaceVariant, modifier = Modifier.size(18.dp)) }
       }
 
       // Capa em voo (lista → player e de volta): fora do recorte do cartão, desenhada em cima.
@@ -267,14 +267,14 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
           RollingText("-" + fmtMs((now.duration - shownPos).coerceAtLeast(0)), Color.White.copy(.6f), 12.sp, forward = false) }
         Spacer(Modifier.height(24.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-          SideButton(Icons.Rounded.SkipPrevious, "Anterior", Modifier.weight(1f), a.prev)
+          SideButton(PhIcons.Prev, "Anterior", Modifier.weight(1f), a.prev)
           PlayButton(now, a, 84.dp, Color.White, Color.Black, Modifier.weight(2f), pill = true)
-          SideButton(Icons.Rounded.SkipNext, "Próxima", Modifier.weight(1f), enabled = now.hasNext, on = a.next)
+          SideButton(PhIcons.Next, "Próxima", Modifier.weight(1f), enabled = now.hasNext, on = a.next)
         }
         Spacer(Modifier.height(18.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-          ToggleIcon(Icons.Rounded.Shuffle, "Aleatório", now.shuffle, enabled = !now.isPreview, onClick = a.shuffle)
-          ToggleIcon(if (now.repeat == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+          ToggleIcon(PhIcons.Shuffle, "Aleatório", now.shuffle, enabled = !now.isPreview, onClick = a.shuffle)
+          ToggleIcon(if (now.repeat == 1) PhIcons.RepeatOne else PhIcons.Repeat,
             when (now.repeat) { 1 -> "Repetir faixa"; 2 -> "Repetir fila"; else -> "Repetição desligada" }, now.repeat != 0, enabled = !now.isPreview, onClick = a.repeat)
           ToggleIcon(Icons.Rounded.QueueMusic, "Fila de reprodução", false, enabled = !now.isPreview) { a.showQueue(true) }
           Spacer(Modifier.weight(1f))
@@ -349,7 +349,7 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   val haptics = rememberHaptics()
   GlassBox(m.height(84.dp).alpha(if (enabled) 1f else .35f).springPress(src), CircleShape) {
     Box(Modifier.matchParentSize().clickable(src, null, enabled = enabled) { haptics.press(); on() }, contentAlignment = Alignment.Center) {
-      Icon(icon, desc, tint = Color.White, modifier = Modifier.size(32.dp)) } }
+      Icon(icon, desc, tint = Color.White, modifier = Modifier.size(30.dp)) } }
 }
 
 /** Cor de destaque da capa, extraída com Palette. */

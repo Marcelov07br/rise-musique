@@ -130,6 +130,8 @@ object PlayMorph {
       for (k in 1 until 4) path.lineTo(ox + PlayMorph.point(p, b + 2 * k) * w, oy + PlayMorph.point(p, b + 2 * k + 1) * w)
       path.close() }
     drawPath(path, color)
+    // 0.27: cantos arredondados como os ícones Fill da Phosphor (traço com junção redonda por cima do preenchimento).
+    drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(w * .07f, join = androidx.compose.ui.graphics.StrokeJoin.Round))
   }
 }
 

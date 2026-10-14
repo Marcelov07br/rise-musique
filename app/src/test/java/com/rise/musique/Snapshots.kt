@@ -294,3 +294,13 @@ class Round25 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
     LikeButton(true, {}); LikeButton(false, {}); PlayPauseMorph(true, androidx.compose.ui.graphics.Color.White, Modifier.size(40.dp))
     PlayPauseMorph(false, androidx.compose.ui.graphics.Color.White, Modifier.size(40.dp)); RollingText("1:14", androidx.compose.ui.graphics.Color.White, 16.sp) } } } }
 }
+
+/** 0.27: vidro novo (dock + mini com o mesmo vidro), ícones Phosphor, listas rolando por trás do vidro. */
+class Round27 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val busy = homeState.copy(history = homeLib.mapIndexed { i, h -> h.copy(art = res(if (i % 2 == 0) "cover.jpg" else "hero.jpg")) })
+  private val withCover = np.copy(art = res("cover.jpg"), title = "Bem Que Se Quis", artist = "Marisa Monte")
+  @Test fun dockMiniDark() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(busy.copy(now = withCover), Actions(), initialRootItem = 2) } }
+  @Test fun dockMiniLight() = p.snapshot { SyncImages(); RiseTheme(false) { RiseApp(busy.copy(now = withCover), Actions(), initialRootItem = 2) } }
+  @Test fun dockOnlySearch() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(found, Actions()) } }
+  @Test fun playerControls() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(busy.copy(now = withCover.copy(shuffle = true, repeat = 1)), Actions(), initialExpanded = true) } }
+}
