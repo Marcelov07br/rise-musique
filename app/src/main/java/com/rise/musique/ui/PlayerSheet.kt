@@ -192,7 +192,10 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
               }
               throwX.animateTo(0f, Motion.spring(208f))
             }) else Modifier).background(c.outline), contentAlignment = Alignment.Center) {
-        if (now.art.isNotBlank()) AsyncImage(now.art, null, Modifier.fillMaxSize().kenBurns(now.playing && interactive && !reduce), contentScale = ContentScale.Crop)
+        // 0.26: capa animada (mesmo elemento no mini e no cheio = um decodificador só); estática durante o voo da capa e na letra.
+        if (now.art.isNotBlank()) MotionCover(now.artist, now.album, active = now.playing && !flying && !(showLyrics && !wide) && !now.isPreview,
+            priority = if (expanded) 3 else 1, modifier = Modifier.fillMaxSize()) { videoOn ->
+          AsyncImage(now.art, null, Modifier.fillMaxSize().kenBurns(now.playing && interactive && !reduce && !videoOn), contentScale = ContentScale.Crop) }
         else Icon(Icons.Rounded.MusicNote, null, tint = c.onSurfaceVariant, modifier = Modifier.fillMaxSize(.4f))
         tapHint?.let { (id, dir) -> SeekRipple(id, dir) }
       }

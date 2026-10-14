@@ -1,11 +1,20 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.25.0 (14/10/2026) — linha principal `main`
+## Estado atual: 0.26.0 (14/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
 - Teste real é no celular do Marce (Samsung SM-S948B, Android 17). Emulador não roda aqui. Paparazzi = única verificação visual.
 - Marce lê português. Rodadas: Marce aprova uma lista → implementar tudo → testes, snapshots (olhar!), build, bump, notas em PT, commit, push, publicar.
+
+## 0.26.0 (capas animadas) — o que mudou
+- Fonte: API de terceiros `https://artwork.m8tec.top` (raspa o Apple Music; sem MusicKit; pode cair). `GET /api/v1/artwork/search?artist=&album=`. Resposta real: 200 `{url, url_tall, artist, album, isCached}` com **HLS m3u8** mestre (quadrado 360–1080, H.264/HEVC, sem áudio); 404 `{"message":"No animated artwork found."}`. Sem MP4/WebP (o parser prefere MP4 se um dia vier).
+- `MotionArtwork.kt`: `MotionArtParser`, `MotionArtKey` (normaliza artista/álbum: acentos, "(Deluxe…)", " - Single", feat.), `MotionHttp` (HttpURLConnection, 5 s/8 s), `MotionArtworkRepository` (Dispatchers.IO, Mutex, cache em memória + `filesDir/motion_art.json`, até 600 entradas; TTL achou 14 d, 404 3 d, erro 30 min; tudo vira null).
+- `ui/MotionCover.kt`: `MotionArtPrefs` (pref `rise/motionArt`: 2 Sempre, 1 Só Wi-Fi padrão, 0 Não; Reduzir movimento desliga), `MotionArtworkViewModel` (StateFlow por álbum), `MotionArtPlayer` (UM ExoPlayer mudo, loop, sem foco de áudio/MediaSession, áudio desligado na seleção, ≤800 px; SimpleCache LRU 120 MB em `cacheDir/motion-art`; reivindicação por prioridade: cheio 3 > álbum 2 > mini 1; liberado 3 s sem dono; pausa em ON_STOP), `MotionCover` (TextureView center-crop por cima da capa; fade 450 ms após o 1º quadro; erro → estática; o Ken Burns de 0.18 (`kenBurns`, Motion2.kt) continua como fallback e desliga quando o vídeo está visível).
+- Uso: capa do PlayerSheet (mesmo elemento do mini e do cheio; estática durante o `CoverFlight`, na letra, em prévias e com a música pausada); topo de `CollectionScreen` (álbum local) e `RemoteAlbumScreen` (ativo 700 ms depois de entrar, para não atrapalhar a transição de capa compartilhada; para ao recolher).
+- `NowPlaying.album` (de `albumTitle`); sem álbum = sem capa animada.
+- Testes: `Round26Test` (parsing com a resposta real, MP4 preferido, normalização, cache/persistência, TTL negativo, erros/5xx/JSON quebrado, regra do ajuste). Snapshot Aparência atualizado.
+- Não testado no aparelho: vídeo HLS real (decodificação, loop sem emenda, fade), consumo de bateria/dados, troca de dono mini↔álbum, comportamento com a API fora.
 
 ## 0.25.0 (movimento imersivo) — o que mudou
 - `ui/Immersive.kt`: `ReduceMotion` (pref `rise/reduceMotion` + escala de animação do sistema = 0; `rememberReduceMotion()`), `LikeButton` (partículas pré-calculadas em `LikeBurst`, sem alocação no desenho; háptico `tick`), `PlayPauseMorph` (Path reutilizado, `PlayMorph` pontos 2 quadriláteros), `RollingText` (odômetro por dígito), `Tilt`/`rememberTilt` (TYPE_GRAVITY a ~16 Hz, só com o app RESUMED, sem economia de bateria e sem Reduzir movimento; suavizado por mola) + `Modifier.glassTilt` (≤2,2°, só graphicsLayer) + `LocalTilt`; `CoverFlight` (origem da capa tocada em coordenadas da janela; `BoundsHolder`/`trackBounds`; `LocalCoverAnchor` = capa do topo do álbum para linhas numeradas).
@@ -163,6 +172,6 @@
 - Discord: "ouvindo agora" (Rich Presence via app/OAuth) — opções a estudar.
 - Teste de EQ por dispositivo (perfis por fone Bluetooth) com o Marce.
 - Perfil do artista: "Ver tudo" das seções (browse com params), playlists do artista, shows ao vivo.
-- Capas animadas reais se aparecer fonte pública legítima.
+- Capas animadas: fonte própria/estável (hoje é API de terceiros que raspa o Apple Music).
 - Letras: tradução, karaokê por palavra; editar sincronização.
 - Downloads: playlists inteiras com seleção na página Downloads; pasta por artista/álbum.

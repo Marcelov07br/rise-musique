@@ -37,7 +37,8 @@ data class HistoryItem(val title: String, val meta: String, val uri: String = ""
 data class NowPlaying(val key: String, val title: String, val artist: String, val art: String, val playing: Boolean = false,
   val loading: Boolean = false, val position: Long = 0, val duration: Long = 0, val isPreview: Boolean = false, val streaming: Boolean = false, val saveState: String = "",
   val hasNext: Boolean = false, val hasPrev: Boolean = false, val shuffle: Boolean = false, val index: Int = 0, val count: Int = 1,
-  val repeat: Int = 0, val lyrics: List<com.rise.musique.Lyrics.Line>? = null, val lyricsState: String = "", val quality: String = "")
+  val repeat: Int = 0, val lyrics: List<com.rise.musique.Lyrics.Line>? = null, val lyricsState: String = "", val quality: String = "",
+  /** 0.26: álbum (para a capa animada); vazio quando a faixa não tem. */ val album: String = "")
 data class SearchResult(val url: String, val title: String, val channel: String, val duration: Int, val thumb: String,
   /** song, video, album, artist, playlist */ val kind: String = "video", val album: String = "", val subtitle: String = "") {
   val playable get() = kind == "song" || kind == "video"

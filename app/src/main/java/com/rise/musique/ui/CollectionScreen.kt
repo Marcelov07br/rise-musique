@@ -89,7 +89,9 @@ internal val TopBarHeight = 64.dp
           Box(Modifier.size(208.dp).trackBounds(anchor).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
             .sharedCover(smart?.key ?: if (isAlbum) "cover-al-${if (src.isNotBlank()) "$src-" else ""}$title" else "cover-pl-$title")) {
             if (playlist != null && (playlist.cover.isNotBlank() || playlistArts(s, playlist).size >= 4)) PlaylistArt(s, playlist, Modifier.fillMaxSize(), corner)
-            else if (hero != null) Cover(hero, Modifier.fillMaxSize().kenBurns(hero.art.isNotBlank()), corner)
+            else if (hero != null) { val settledIn by produceState(false) { kotlinx.coroutines.delay(700); value = true } // estática durante a transição
+              MotionCover(artist, title, active = isAlbum && settledIn && collapse < .5f, priority = 2, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(corner))) { on ->
+                Cover(hero, Modifier.fillMaxSize().kenBurns(hero.art.isNotBlank() && !on), corner) } }
             else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(.12f)), contentAlignment = Alignment.Center) {
               Icon(if (isAlbum) Icons.Rounded.Album else if (smart != null) Icons.Rounded.AutoAwesome else Icons.Rounded.QueueMusic, null, tint = Color.White.copy(.75f), modifier = Modifier.size(64.dp)) }
           }

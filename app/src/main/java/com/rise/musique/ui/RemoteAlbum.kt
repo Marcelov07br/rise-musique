@@ -50,7 +50,9 @@ import coil.compose.AsyncImage
           val corner = morphCorner(14.dp, 8.dp)?.value ?: 8.dp
           Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
             .sharedCover("cover-ra-${if (r.src.isNotBlank()) "${r.src}-" else ""}${r.id}").clip(RoundedCornerShape(corner)).background(Color.White.copy(.12f))) {
-            if (art.isNotBlank()) AsyncImage(art, null, Modifier.fillMaxSize().kenBurns(true), contentScale = ContentScale.Crop) }
+            if (art.isNotBlank()) { val settledIn by produceState(false) { kotlinx.coroutines.delay(700); value = true }
+              MotionCover(artist, page?.title?.ifBlank { null } ?: r.title, active = settledIn && collapse < .5f, priority = 2, modifier = Modifier.fillMaxSize()) { on ->
+                AsyncImage(art, null, Modifier.fillMaxSize().kenBurns(!on), contentScale = ContentScale.Crop) } } }
           Spacer(Modifier.height(16.dp))
           Column(Modifier.enterRise(), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(page?.title?.ifBlank { null } ?: r.title, color = Color.White, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)

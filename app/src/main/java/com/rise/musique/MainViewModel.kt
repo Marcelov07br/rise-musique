@@ -737,7 +737,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val m = item.mediaMetadata; val preview = item.mediaId.startsWith("preview:")
     val key = item.mediaId.removePrefix("preview:")
     var now = n.copy(key = key, title = m.title?.toString() ?: n.title, artist = m.artist?.toString() ?: n.artist,
-      art = m.artworkUri?.toString() ?: "", playing = p.isPlaying, position = p.currentPosition.coerceAtLeast(0),
+      art = m.artworkUri?.toString() ?: "", album = m.albumTitle?.toString().orEmpty(), playing = p.isPlaying, position = p.currentPosition.coerceAtLeast(0),
       duration = p.duration.takeIf { it > 0 } ?: n.duration, isPreview = preview,
       streaming = item.mediaId.startsWith("stream:") || item.mediaId.startsWith("spotify:"),
       loading = p.playbackState == Player.STATE_BUFFERING, hasNext = p.hasNextMediaItem(), hasPrev = p.hasPreviousMediaItem(),
