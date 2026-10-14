@@ -39,7 +39,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     normalize = prefs.getBoolean("normalize", true), normalizeAlbum = prefs.getBoolean("normalizeAlbum", false), lockLyrics = prefs.getBoolean("lockLyrics", false),
     wifiOnly = prefs.getBoolean("wifiOnly", false), followed = FollowStore.all(app), artistPhotos = loadPhotos(app.getSharedPreferences("rise", 0)),
     savedSpotifyPlaylists = SpotifyStore.load(app),
-    streamQuality = prefs.getString("stream_quality", "Alta") ?: "Alta").let { st ->
+    streamQuality = prefs.getString("stream_quality", "Alta") ?: "Alta", smartQueue = prefs.getBoolean(PlaybackService.SMART_QUEUE, true)).let { st ->
       val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
       Streams.streamQuality = st.streamQuality
       st.copy(mode = m, quality = prefs.getString("quality_${m.name}", m.qualities.last())!!) })
@@ -47,7 +47,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   init {
     viewModelScope.launch { state = state.copy(stats = withContext(Dispatchers.IO) { runCatching { PlayStats.summarize(PlayStats.load(app)) }.getOrNull() }) }
-    refreshTrackInfo(); LibraryScanWorker.schedule(app); if (FollowStore.all(app).isNotEmpty()) FollowWorker.schedule(app)
+    refreshForYou(); refreshTrackInfo(); LibraryScanWorker.schedule(app); if (FollowStore.all(app).isNotEmpty()) FollowWorker.schedule(app)
     viewModelScope.launch { Engine.update(app) }
     val fut = MediaController.Builder(app, SessionToken(app, ComponentName(app, PlaybackService::class.java))).buildAsync()
     controllerFuture = fut
@@ -372,8 +372,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   }
   private fun streamItem(r: SearchResult) = Streams.uriFor(r.url)?.let { u -> MediaItem.Builder().setMediaId("stream:" + r.url).setUri(u)
     .setMediaMetadata(meta(r.title, r.channel, r.thumb, r.album)).build() }
-  fun playNextStream(r: SearchResult) = streamItem(r)?.let { item -> withPlayer { p -> if (p.mediaItemCount == 0) { p.setMediaItem(item); p.prepare(); p.play() }
-    else p.addMediaItem((p.currentMediaItemIndex + 1).coerceAtMost(p.mediaItemCount), item) } }
+  fun playNextStream(r: SearchResult) = queueStream(r, true)
   /** Albums / playlists / artists from the search: albums & playlists list their tracks, artists open the artist screen. */
   fun openResult(r: SearchResult) {
     state = state.copy(query = r.url); search(false)
@@ -419,6 +418,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   fun loadStation(st: Station) {
     if (state.stationPages.containsKey(st.id) || st.id in state.stationLoadingSet) return
+    if (st.localOnly) { state = state.copy(stationPages = state.stationPages + (st.id to StationPage(st, st.seeds.map { StationItem(historyItem = it) }))); return }
     state = state.copy(stationLoadingSet = state.stationLoadingSet + st.id)
     viewModelScope.launch {
       runCatching {
@@ -716,9 +716,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     state = state.copy(now = NowPlaying(h.uri, h.title, h.artist.ifBlank { h.meta }, h.art, loading = true))
   }
 
+  private var lastFavStamp = 0L
   private fun poll() { val p = controller ?: return
     val deadline = p.sessionExtras.getLong(PlaybackService.SLEEP_AT, 0)
     if (deadline != state.sleepAt) state = state.copy(sleepAt = deadline)
+    val favStamp = p.sessionExtras.getLong(PlaybackService.FAV_STAMP, 0)
+    if (favStamp != lastFavStamp) { lastFavStamp = favStamp; if (favStamp != 0L) state = state.copy(favorites = Library.favorites(ctx)) }
     val n = state.now ?: p.currentMediaItem?.let { item ->
       NowPlaying(item.mediaId, item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(),
         item.mediaMetadata.artworkUri?.toString().orEmpty(), isPreview = item.mediaId.startsWith("preview:"),
@@ -778,6 +781,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     if (index in 0 until p.mediaItemCount) { p.removeMediaItem(index)
       if (p.mediaItemCount == 0) closePlayer() else poll() }
   }
+  /** Queue swipe: remove now, Desfazer puts the same item back at the same place. */
+  fun removeQueueUndo(index: Int) {
+    val p = controller ?: return
+    if (index !in 0 until p.mediaItemCount || index == p.currentMediaItemIndex) return
+    val item = p.getMediaItemAt(index); p.removeMediaItem(index); poll()
+    withUndo("Removida da fila", {}, { withPlayer { c -> c.addMediaItem(index.coerceAtMost(c.mediaItemCount), item); poll() } }, {})
+  }
+  /** Queue swipe: move to right after the current track; Desfazer moves it back. */
+  fun playNextFromQueue(index: Int) {
+    val p = controller ?: return
+    val cur = p.currentMediaItemIndex
+    if (index !in 0 until p.mediaItemCount || index == cur) return
+    val to = if (index > cur) cur + 1 else cur
+    if (to != index) p.moveMediaItem(index, to); poll()
+    withUndo("Vai tocar em seguida", {}, { withPlayer { c -> if (to < c.mediaItemCount && index < c.mediaItemCount) c.moveMediaItem(to, index); poll() } }, {})
+  }
+  /** One tap: the whole queue (local tracks; streams are kept by their link) becomes a new playlist. */
+  fun saveQueueAsPlaylist() {
+    val local = state.history.map { it.uri }.toSet()
+    val all = state.playbackQueue.map { it.uri }.distinct()
+    val uris = all.filter { it in local }; val skipped = all.size - uris.size
+    if (uris.isEmpty()) { state = state.copy(status = "Só faixas da biblioteca entram em playlists: guarde as online primeiro"); return }
+    val base = "Fila de " + java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale("pt", "BR")).format(java.util.Date())
+    val name = generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base ($it)" }.first { it !in state.playlists }
+    runCatching { Library.createPlaylist(ctx, name); uris.forEach { Library.addToPlaylist(ctx, name, it) } }
+      .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Fila salva como “$name” (${uris.size} faixas" + (if (skipped > 0) ", $skipped online ficaram de fora)" else ")")) }
+      .onFailure { state = state.copy(status = it.message.orEmpty()) }
+  }
+  fun smartQueue(on: Boolean) { flag(PlaybackService.SMART_QUEUE, on); state = state.copy(smartQueue = on) }
+  // ---- 0.22: Feito pra você ----
+  private var forYouRound = (System.currentTimeMillis() / 3_600_000).toInt()
+  fun refreshForYou(reshuffle: Boolean = false) {
+    if (state.forYouRefreshing) return
+    if (reshuffle) forYouRound++
+    state = state.copy(forYouRefreshing = reshuffle)
+    viewModelScope.launch {
+      val last = withContext(Dispatchers.IO) { runCatching { PlayStats.load(ctx) }.getOrDefault(emptyList()).groupBy { it.key }.mapValues { e -> e.value.maxOf { it.at } } }
+      val list = withContext(Dispatchers.Default) { ForYou.build(state.history.filter { it.uri !in state.hidden }, state.favorites, last, forYouRound) }
+      if (reshuffle) delay(450) // let the refresh indicator settle instead of flashing
+      state = state.copy(forYou = list, forYouRefreshing = false, stationPages = state.stationPages.filterKeys { !it.startsWith("fy:") })
+    }
+  }
+  // ---- 0.22: histórico ----
+  fun loadPlays() { viewModelScope.launch { state = state.copy(plays = withContext(Dispatchers.IO) { runCatching { PlayStats.load(ctx) }.getOrDefault(emptyList()) }
+    .sortedByDescending { it.at }.take(500)) } }
+  /** "Tocar de novo": local file from the library, or the same stream. */
+  fun playAgain(pl: Play) {
+    state.history.firstOrNull { it.uri == pl.key }?.let { h -> if (h.video) playLocalVideo(h) else play(h); return }
+    val url = pl.key.removePrefix("stream:").takeIf { pl.key.startsWith("stream:") }
+    val r = url?.let { SearchResult(it, pl.title, pl.artist, 0, Engine.videoId(it)?.let { id -> "https://i.ytimg.com/vi/$id/hqdefault.jpg" }.orEmpty(), "song") }
+    if (r == null || Streams.uriFor(r.url) == null) { state = state.copy(status = "Esta faixa não está mais disponível"); return }
+    playStreams(listOf(r), 0, false)
+  }
+  fun addQueueStream(r: SearchResult) = queueStream(r, false)
+  private fun queueStream(r: SearchResult, next: Boolean) {
+    val item = streamItem(r) ?: return.also { state = state.copy(status = "Não dá pra tocar este link") }
+    stopPreview()
+    withPlayer { p -> if (p.mediaItemCount == 0) { p.setMediaItem(item); p.prepare(); p.play() }
+      else p.addMediaItem(if (next) (p.currentMediaItemIndex + 1).coerceAtMost(p.mediaItemCount) else p.mediaItemCount, item); poll() }
+    state = state.copy(status = if (next) "Vai tocar em seguida" else "Adicionada à fila de reprodução")
+  }
+  fun queueStationItem(t: StationItem, next: Boolean) { t.searchResult?.let { queueStream(it, next) } ?: t.historyItem?.let { queueTrack(it, next) } }
+  fun queueSpotify(t: SpotifyTrack, next: Boolean) {
+    SpotifyImport.findLocalMatch(t, state.history)?.let { queueTrack(it, next); return }
+    SpotifyImport.registerTrack(t)
+    val sr = state.spotifyResolvedTracks[t.uri] ?: SpotifyImport.getCachedSearchResult(t.uri)
+    if (sr != null) { queueStream(sr.copy(title = t.title, channel = t.artist), next); return }
+    val item = MediaItem.Builder().setMediaId("spotify:" + t.uri).setUri(Uri.parse("${SpotifyImport.SCHEME}://${t.uri.removePrefix("spotify:")}"))
+      .setMediaMetadata(meta(t.title, t.artist, "")).build()
+    withPlayer { p -> if (p.mediaItemCount == 0) { p.setMediaItem(item); p.prepare(); p.play() }
+      else p.addMediaItem(if (next) (p.currentMediaItemIndex + 1).coerceAtMost(p.mediaItemCount) else p.mediaItemCount, item); poll() }
+    state = state.copy(status = if (next) "Vai tocar em seguida" else "Adicionada à fila de reprodução")
+  }
   fun playQueue(index: Int) = withPlayer { p ->
     if (index in 0 until p.mediaItemCount) { p.seekTo(index, 0); p.prepare(); p.play(); poll() }
   }
@@ -792,7 +868,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       else p.addMediaItem(if (next) p.currentMediaItemIndex + 1 else p.mediaItemCount, item)
       poll()
     }
-    state = state.copy(status = if (next) "Vai tocar a seguir" else "Adicionada à fila de reprodução")
+    state = state.copy(status = if (next) "Vai tocar em seguida" else "Adicionada à fila de reprodução")
   }
 
   private fun secs(t: String): Int? = t.trim().split(":").map { it.toIntOrNull() ?: return null }
@@ -890,7 +966,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun movePlaylist(name: String, from: Int, to: Int) { runCatching { Library.moveTrack(ctx, name, from, to) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx)) }.onFailure { state = state.copy(status = it.message.orEmpty()) } }
 
-  fun favorite(h: HistoryItem) { Library.toggleFavorite(ctx, h.uri); state = state.copy(favorites = Library.favorites(ctx)) }
+  fun favorite(h: HistoryItem) { Library.toggleFavorite(ctx, h.uri); state = state.copy(favorites = Library.favorites(ctx))
+    withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.LIKE_SYNC, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY) } }
   fun addToPlaylist(h: HistoryItem, name: String) { runCatching { Library.addToPlaylist(ctx, name.trim(), h.uri) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Adicionada a ${name.trim()}") }
     .onFailure { state = state.copy(status = it.message.orEmpty()) } }
@@ -904,7 +981,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     .onSuccess { n -> state = state.copy(history = HistoryStore.load(ctx), favorites = Library.favorites(ctx), playlists = Library.playlists(ctx),
       status = "Backup importado: $n registros. O backup não inclui músicas nem permissões de outras instalações.") }.onFailure { state = state.copy(status = "Não deu pra importar: ${it.message}") } } }
 
-  /** Temporizador: em `min` minutos baixa o volume aos poucos por 8 s e pausa. 0 cancela. */
+  /** Temporizador: em `min` minutos baixa o volume aos poucos e pausa. 0 cancela; [PlaybackService.END_OF_TRACK] = no fim da faixa. */
   fun sleep(min: Int) = withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.SLEEP, android.os.Bundle.EMPTY),
     android.os.Bundle().apply { putInt("minutes", min) }) }
 

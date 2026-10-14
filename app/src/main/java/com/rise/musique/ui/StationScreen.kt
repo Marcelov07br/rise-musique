@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,6 +34,7 @@ import com.rise.musique.StationItem
 import com.rise.musique.Stations
 
 /** Station detail screen: collapses header, ambient tinted background, lists mixed radio & local tracks. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable fun StationScreen(
   s: UiState,
   a: Actions,
@@ -46,7 +48,7 @@ import com.rise.musique.Stations
   val page = s.stationPages[r.id]
   val loading = r.id in s.stationLoadingSet
   val st = remember(r.id, s.history, s.stats, s.trackInfo) {
-    page?.station ?: Stations.build(s.history.filter { it.uri !in s.hidden }, s.stats, s.trackInfo).firstOrNull { it.id == r.id }
+    page?.station ?: s.forYou.firstOrNull { it.id == r.id } ?: Stations.build(s.history.filter { it.uri !in s.hidden }, s.stats, s.trackInfo).firstOrNull { it.id == r.id }
       ?: Station(r.id, r.name, r.subtitle, r.kind, emptyList(), r.hue)
   }
   LaunchedEffect(r.id) {
@@ -125,8 +127,14 @@ import com.rise.musique.Stations
       itemsIndexed(tracks, key = { _, t -> t.key }) { i, t ->
         val playing = s.now?.key == t.key
         val src = remember { MutableInteractionSource() }
+        var menu by remember { mutableStateOf(false) }
+        var pick by remember { mutableStateOf(false) }
+        if (menu) t.historyItem?.let { h -> TrackActionSheet(h, s, a, { menu = false }) { pick = true } }
+          ?: StreamActionSheet(t.title, t.subtitle, t.thumb, { menu = false }, { a.queueStationItem(t, true) }, { a.queueStationItem(t, false) },
+            t.searchResult?.let { r -> { a.radio(r) } }, t.searchResult?.let { r -> { a.downloadItem(r) } })
+        if (pick) t.historyItem?.let { h -> PlaylistPicker(s.playlists.keys.sorted(), { pick = false }) { name -> a.addToPlaylist(h, name); pick = false } }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).weightedPress(src, 14.dp).clip(RoundedCornerShape(14.dp))
-            .clickable(src, null) { haptics.tick(); a.playStationTracks(tracks, i, false) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            .combinedClickable(src, null, onLongClick = { haptics.press(); menu = true }) { haptics.tick(); a.playStationTracks(tracks, i, false) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
           if (playing) Icon(Icons.Rounded.GraphicEq, null, Modifier.width(36.dp), tint = accentColor())
           else Text("${i + 1}", Modifier.width(36.dp), color = c.onSurfaceVariant, fontSize = 15.sp, textAlign = TextAlign.Center)
 

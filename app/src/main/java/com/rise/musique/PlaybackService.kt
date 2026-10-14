@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import android.os.Bundle
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.rise.musique.ui.SearchResult
 
 /** Dono do player: mantém a música tocando com a tela desligada e mostra controles na notificação e na tela de bloqueio. */
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
@@ -43,35 +44,98 @@ class PlaybackService : MediaLibraryService() {
     val text = prefs.getString("snapshot", null) ?: return
     runCatching {
       val saved = PlaybackSnapshot.parse(text)
-      val tracks = saved.tracks.map { h ->
-        val uri = if (h.uri.startsWith("content://")) android.net.Uri.parse(h.uri) else android.net.Uri.fromFile(java.io.File(h.uri))
+      // Streams come back by their link; Spotify items need the in-memory lookup of the import, so they are left out.
+      val kept = saved.tracks.withIndex().filter { (_, h) -> !h.uri.startsWith("spotify:") }
+      if (kept.isEmpty()) return
+      val index = kept.indexOfFirst { it.index >= saved.index }.let { if (it < 0) kept.lastIndex else it }
+      val position = if (kept[index].index == saved.index) saved.position else 0L
+      val tracks = kept.map { (_, h) ->
+        val uri = when { h.uri.startsWith("content://") -> android.net.Uri.parse(h.uri)
+          h.uri.startsWith("stream:") -> Streams.uriFor(h.uri.removePrefix("stream:")) ?: return@map null
+          else -> android.net.Uri.fromFile(java.io.File(h.uri)) }
         androidx.media3.common.MediaItem.Builder().setMediaId(h.uri).setUri(uri).setMediaMetadata(
           androidx.media3.common.MediaMetadata.Builder().setTitle(h.title).setArtist(h.artist).setAlbumTitle(h.album.ifBlank { null })
             .apply { if (h.art.isNotBlank()) setArtworkUri(android.net.Uri.parse(h.art)) }.build()).build()
       }
-      player.setMediaItems(tracks, saved.index, saved.position)
+      if (tracks.any { it == null }) error("faixa sem endereço")
+      player.setMediaItems(tracks.filterNotNull(), index, position)
       player.repeatMode = saved.repeat; player.shuffleModeEnabled = saved.shuffle
       player.playWhenReady = false; player.prepare()
     }.onFailure { prefs.edit().remove("snapshot").apply() }
   }
-  companion object { const val SLEEP = "rise.sleep"; const val SLEEP_AT = "sleepAt"; const val QUALITY = "quality" }
-  private fun setSleep(at: Long) {
-    sleepJob?.cancel()
-    val player = session?.player ?: return
-    player.volume = 1f
+  companion object { const val SLEEP = "rise.sleep"; const val SLEEP_AT = "sleepAt"; const val QUALITY = "quality"
+    /** sleepAt value meaning "pause when the current track ends"; minutes arg for it is -1. */
+    const val END_OF_TRACK = -1L
+    const val LIKE = "rise.like"; const val LIKE_SYNC = "rise.likeSync"; const val FAV_STAMP = "favStamp"
+    const val SMART_QUEUE = "smartQueue"
+    /** Gradual fade before the timer stops (timed and end-of-track). */
+    const val SLEEP_FADE_MS = 30_000L; const val END_FADE_MS = 12_000L
+    /** Perceptual fade: volume follows a squared curve so the end feels smooth, not a cliff. */
+    fun fadeVolume(leftMs: Long, fadeMs: Long) = (leftMs.toFloat() / fadeMs).coerceIn(0f, 1f).let { it * it }
+  }
+  private fun sleepAt() = getSharedPreferences("playback", 0).getLong(SLEEP_AT, 0)
+  private fun publishSleep(at: Long) {
     getSharedPreferences("playback", 0).edit().putLong(SLEEP_AT, at).apply()
     extras.putLong(SLEEP_AT, at); session?.setSessionExtras(Bundle(extras))
+  }
+  /** [at] > 0: stop at that time; [END_OF_TRACK]: pause when the current track ends; 0: cancel. */
+  private fun setSleep(at: Long) {
+    sleepJob?.cancel()
+    val player = mainPlayer ?: return
+    player.volume = 1f; player.pauseAtEndOfMediaItems = at == END_OF_TRACK
+    publishSleep(if (at > 0 && at < System.currentTimeMillis()) 0 else at)
     if (at <= 0) return
     sleepJob = scope.launch {
-      delay((at - System.currentTimeMillis() - 8_000).coerceAtLeast(0))
-      val initialVolume = player.volume
+      delay((at - System.currentTimeMillis() - SLEEP_FADE_MS).coerceAtLeast(0))
       while (System.currentTimeMillis() < at) {
-        player.volume = initialVolume * ((at - System.currentTimeMillis()) / 8000f).coerceIn(0f, 1f)
-        delay(200)
+        player.volume = fadeVolume(at - System.currentTimeMillis(), SLEEP_FADE_MS); delay(100)
       }
-      player.pause(); player.volume = initialVolume
-      getSharedPreferences("playback", 0).edit().putLong(SLEEP_AT, 0).apply()
-      extras.putLong(SLEEP_AT, 0); session?.setSessionExtras(Bundle(extras))
+      player.pause(); player.volume = 1f; publishSleep(0)
+    }
+  }
+  /** End-of-track timer: fade out over the last seconds; the player itself pauses at the item's end. */
+  private fun endOfTrackTick(p: ExoPlayer) {
+    if (sleepAt() != END_OF_TRACK) return
+    val d = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return
+    p.volume = fadeVolume(d - p.currentPosition, END_FADE_MS)
+  }
+  private fun finishEndOfTrack(p: ExoPlayer) {
+    p.pauseAtEndOfMediaItems = false; p.volume = 1f; publishSleep(0)
+    if (p.hasNextMediaItem()) p.seekToNextMediaItem() // next play starts on the next track, not on the last second
+  }
+  private var mainPlayer: ExoPlayer? = null
+
+  // ---- favorite button (notification + lock screen) ----
+  private fun currentLiked() = session?.player?.currentMediaItem?.mediaId?.let { it in Library.favorites(this) } == true
+  private fun likeButton(): CommandButton { val liked = currentLiked()
+    return CommandButton.Builder().setDisplayName(if (liked) "Remover dos favoritos" else "Favoritar")
+      .setIconResId(if (liked) R.drawable.ic_w_heart else R.drawable.ic_w_heart_outline)
+      .setSessionCommand(SessionCommand(LIKE, Bundle.EMPTY)).build() }
+  private fun refreshLike() { session?.setCustomLayout(com.google.common.collect.ImmutableList.of(likeButton())) }
+  private fun toggleLike() {
+    val id = session?.player?.currentMediaItem?.mediaId?.takeIf { !it.startsWith("preview:") } ?: return
+    Library.toggleFavorite(this, id)
+    extras.putLong(FAV_STAMP, System.currentTimeMillis()); session?.setSessionExtras(Bundle(extras))
+    refreshLike()
+  }
+
+  // ---- smart queue: when the queue is about to end, continue with similar tracks ----
+  private var smartFor: String? = null
+  private fun maybeExtend(p: ExoPlayer) {
+    val item = p.currentMediaItem ?: return
+    if (!getSharedPreferences("rise", 0).getBoolean(SMART_QUEUE, true) || p.hasNextMediaItem() || item.mediaId.startsWith("preview:")) return
+    if (smartFor == item.mediaId) return
+    smartFor = item.mediaId
+    val m = item.mediaMetadata
+    scope.launch {
+      val more = runCatching { SmartQueue.similar(item.mediaId, m.title?.toString().orEmpty(), m.artist?.toString().orEmpty()) }.getOrDefault(emptyList())
+      if (p.currentMediaItem?.mediaId != item.mediaId || p.hasNextMediaItem()) return@launch
+      val known = (0 until p.mediaItemCount).map { p.getMediaItemAt(it).mediaId }.toSet()
+      val items = SmartQueue.pick(more, known).mapNotNull { r -> Streams.uriFor(r.url)?.let { u ->
+        androidx.media3.common.MediaItem.Builder().setMediaId("stream:" + r.url).setUri(u).setMediaMetadata(androidx.media3.common.MediaMetadata.Builder()
+          .setTitle(r.title).setArtist(r.channel).setAlbumTitle(r.album.ifBlank { null })
+          .apply { if (r.thumb.isNotBlank()) setArtworkUri(android.net.Uri.parse(r.thumb)) }.build()).build() } }
+      if (items.isNotEmpty()) p.addMediaItems(items)
     }
   }
   /** normalize → EQ → limiter for the main player (the crossfade player has its own). */
@@ -105,15 +169,20 @@ class PlaybackService : MediaLibraryService() {
       override fun onConnect(s: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
         val base = MediaSession.ConnectionResult.AcceptedResultBuilder(s)
         val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
-        if (controller.packageName == packageName) commands.add(SessionCommand(SLEEP, Bundle.EMPTY))
-        return base.setAvailableSessionCommands(commands.build()).build()
+        if (controller.packageName == packageName) { commands.add(SessionCommand(SLEEP, Bundle.EMPTY)); commands.add(SessionCommand(LIKE_SYNC, Bundle.EMPTY)) }
+        commands.add(SessionCommand(LIKE, Bundle.EMPTY)) // notification, lock screen, watch, car
+        return base.setAvailableSessionCommands(commands.build()).setCustomLayout(com.google.common.collect.ImmutableList.of(likeButton())).build()
       }
       override fun onCustomCommand(s: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand,
                                    args: Bundle): ListenableFuture<SessionResult> {
-        if (command.customAction != SLEEP || controller.packageName != packageName)
-          return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
-        val minutes = args.getInt("minutes").coerceIn(0, 1440)
-        setSleep(if (minutes == 0) 0 else System.currentTimeMillis() + minutes * 60_000L)
+        when {
+          command.customAction == LIKE -> toggleLike()
+          command.customAction == LIKE_SYNC && controller.packageName == packageName -> refreshLike()
+          command.customAction == SLEEP && controller.packageName == packageName -> {
+            val minutes = args.getInt("minutes").coerceIn(-1, 1440)
+            setSleep(when (minutes) { 0 -> 0; -1 -> END_OF_TRACK; else -> System.currentTimeMillis() + minutes * 60_000L }) }
+          else -> return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
+        }
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
       }
       override fun onGetLibraryRoot(s: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?) =
@@ -154,13 +223,16 @@ class PlaybackService : MediaLibraryService() {
         return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(resolve(items), startIndex, startPositionMs))
       }
     }).setSessionActivity(open).build()
+    mainPlayer = player
     restorePlayback(player)
-    setSleep(getSharedPreferences("playback", 0).getLong(SLEEP_AT, 0))
+    setSleep(sleepAt())
+    refreshLike()
     scope.launch { while (true) { delay(5_000); savePlayback() } }
-    val fader = Crossfader(this, player, scope) { getSharedPreferences("playback", 0).getLong(SLEEP_AT, 0).let { it > 0 && it - System.currentTimeMillis() < 30_000 } }
+    // No crossfade while the sleep timer is fading out (or about to).
+    val fader = Crossfader(this, player, scope) { sleepAt().let { it == END_OF_TRACK || (it > 0 && it - System.currentTimeMillis() < SLEEP_FADE_MS + 15_000) } }
     crossfader = fader
     scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { LastFm.flush(this@PlaybackService) } }
-    scope.launch { while (true) { delay(200); fader.tick(); trackPlay(player); lyricTick(player) } }
+    scope.launch { while (true) { delay(200); fader.tick(); trackPlay(player); lyricTick(player); endOfTrackTick(player) } }
     EqStore.applyCurrent(this)
     getSystemService(android.media.AudioManager::class.java).registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
       override fun onAudioDevicesAdded(d: Array<out android.media.AudioDeviceInfo>?) { EqStore.applyCurrent(this@PlaybackService) }
@@ -177,7 +249,12 @@ class PlaybackService : MediaLibraryService() {
         applyGain(player, mainFx, player.currentMediaItem, f)
       }
       override fun onMediaItemTransition(item: androidx.media3.common.MediaItem?, reason: Int) { fader.onTransition(reason); finishPlay()
-        applyGain(player, mainFx, item, null); loadLyrics(player); prefetchNext(player) }
+        applyGain(player, mainFx, item, null); loadLyrics(player); prefetchNext(player); refreshLike(); maybeExtend(player) }
+      override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+        if (reason == androidx.media3.common.Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) { smartFor = null; maybeExtend(player) } }
+      override fun onPlayWhenReadyChanged(ready: Boolean, reason: Int) {
+        if (!ready && reason == androidx.media3.common.Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAt() == END_OF_TRACK) finishEndOfTrack(player) }
+      override fun onRepeatModeChanged(mode: Int) { smartFor = null; maybeExtend(player) }
       override fun onPositionDiscontinuity(o: androidx.media3.common.Player.PositionInfo, n: androidx.media3.common.Player.PositionInfo, reason: Int) {
         if (reason == androidx.media3.common.Player.DISCONTINUITY_REASON_SEEK && o.mediaItemIndex == n.mediaItemIndex) fader.abort() }
       override fun onEvents(p: androidx.media3.common.Player, e: androidx.media3.common.Player.Events) {
@@ -299,4 +376,20 @@ internal fun streamDataSource(ctx: Context): androidx.media3.datasource.DataSour
     if (h.isNullOrEmpty()) spec else spec.withAdditionalHeaders(h.filterKeys { !it.equals("Accept-Encoding", true) })
   }
   return androidx.media3.datasource.DefaultDataSource.Factory(ctx, resolving)
+}
+
+/** Picks the continuation for the smart queue (pure parts are testable). */
+object SmartQueue {
+  /** Radio of the last track: a stream uses its own mix, a local file is found on YouTube Music first. */
+  suspend fun similar(mediaId: String, title: String, artist: String): List<SearchResult> {
+    val url = mediaId.removePrefix("stream:").takeIf { mediaId.startsWith("stream:") }
+      ?: MusicSearch.search(SearchQuery(listOf(artist, title).filter(String::isNotBlank).joinToString(" "), SearchKind.Songs)).items.firstOrNull()?.url
+      ?: return emptyList()
+    return Engine.radio(url, 25)
+  }
+  /** Drops what is already in the queue (by video id) and non-playable entries; at most [max]. */
+  fun pick(radio: List<SearchResult>, queued: Set<String>, max: Int = 15): List<SearchResult> {
+    val ids = queued.mapNotNull { Engine.videoId(it.removePrefix("stream:")) }.toSet()
+    return radio.filter { it.playable && Engine.videoId(it.url)?.let { id -> id !in ids } == true }.distinctBy { Engine.videoId(it.url) }.take(max)
+  }
 }

@@ -12,6 +12,7 @@ sealed interface Route { val key: String
   data class Artist(val name: String, val src: String = "") : Route { override val key get() = "ar:$name" }
   data class Smart(val kind: String, val value: String) : Route { override val key get() = "sm:$kind:$value" }
   data object Downloads : Route { override val key get() = "dl" }
+  data object History : Route { override val key get() = "hist" }
   data class Station(val id: String, val name: String, val subtitle: String, val kind: String, val hue: Float, val src: String = "") : Route { override val key get() = "st:$id" }
   data class Spotify(val id: String, val type: String = "playlist", val title: String = "", val art: String = "", val subtitle: String = "", val src: String = "") : Route { override val key get() = "sp:$type:$id" }
 }

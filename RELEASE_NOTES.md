@@ -1,10 +1,13 @@
-# Rise Musique 0.21.0
+# Rise Musique 0.22.0
 
-Novidades desta versão vieram de um colega que contribuiu com o código — obrigado!
-
-- **Importar do Spotify**: novo botão do Spotify na Biblioteca (e no menu de importar). Cole o link de uma playlist ou álbum público — ou abra/compartilhe um link `open.spotify.com` com o Rise — e as faixas aparecem numa página própria para tocar, embaralhar ou baixar (cada faixa é encontrada no YouTube Music). Não precisa de conta nem login no Spotify.
-- **Playlists do Spotify salvas na Biblioteca**: as playlists e álbuns importados ficam guardados na Biblioteca e no Início, com capa, título e faixas.
-- **Estações viram listas**: tocar numa estação agora abre a página dela com as faixas, com Tocar, Aleatório e Adicionar à fila.
-- **Qualidade do streaming**: em Ajustes, escolha Econômica, Normal ou Alta para a reprodução online, além da qualidade e do formato padrão dos downloads.
-- **Início mais rápido**: buffer ajustado e pré-carregamento da próxima faixa para que as músicas online comecem a tocar mais rápido.
-- Criar playlist vazia na Biblioteca.
+- **Fila nova**: mostra a capa de cada próxima faixa, entra e se reorganiza com animação suave. Sem setas: segure uma faixa por cerca de 1 segundo para levantá-la (ela cresce de leve, ganha sombra e o celular vibra) e arraste para qualquer lugar; as outras abrem espaço sozinhas.
+- **Deslize na fila**: para a direita, a faixa toca em seguida; para a esquerda, sai da fila. As duas têm Desfazer.
+- **Salvar a fila como playlist** com um toque, no topo da fila.
+- **Fila inteligente**: quando a fila acaba, o Rise continua com músicas parecidas com a última. Liga e desliga em Ajustes → Reprodução.
+- **Feito pra você** no Início: mixes das suas curtidas e da biblioteca (artistas e álbuns parecidos, Curtidas recentes, Redescobrir). Puxe a tela para baixo para renovar.
+- **Tocar em seguida** e **Adicionar à fila** ao segurar uma faixa em todas as telas: biblioteca, busca, artista, álbum online, estações e Spotify.
+- **Temporizador**: nova opção "No fim desta faixa", mais tempos (15 a 90 min) e o volume agora desce aos poucos nos últimos 30 segundos.
+- **Histórico**: nova página no Início com o que você ouviu, por dia, e o botão Tocar de novo.
+- **Continua de onde parou**: ao abrir o app, a mesma fila e a mesma posição voltam, inclusive músicas online.
+- **Favoritar pela notificação** e pela tela de bloqueio: botão de coração ao lado dos controles.
+- **Ajustes reorganizados** em seções (Reprodução, Áudio, Downloads, Aparência, Integrações, Sobre), cada uma com sua página, e uma busca no topo. Todas as opções continuam lá.

@@ -2,6 +2,7 @@ package com.rise.musique.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
 /** Streamed album (YouTube Music): same header/motion as local albums; tracklist streams, "Baixar tudo" goes to Downloads. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable fun RemoteAlbumScreen(s: UiState, a: Actions, r: Route.RemoteAlbum, list: LazyListState, modifier: Modifier = Modifier, onBack: () -> Unit = {},
                                   dismiss: androidx.compose.animation.core.Animatable<Float, androidx.compose.animation.core.AnimationVector1D> = remember { androidx.compose.animation.core.Animatable(0f) }) {
   val c = MaterialTheme.colorScheme
@@ -73,8 +75,10 @@ import coil.compose.AsyncImage
       itemsIndexed(tracks, key = { _, t -> "t:" + t.url }) { i, t ->
         val playing = s.now?.key == "stream:" + t.url
         val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+        var menu by remember { mutableStateOf(false) }
+        if (menu) StreamActionSheet(t.copy(thumb = t.thumb.ifBlank { r.art }), a) { menu = false }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).weightedPress(src, 14.dp).clip(RoundedCornerShape(14.dp))
-            .clickable(src, null) { haptics.tick(); a.playStreams(tracks, i, false) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            .combinedClickable(src, null, onLongClick = { haptics.press(); menu = true }) { haptics.tick(); a.playStreams(tracks, i, false) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
           if (playing) Icon(Icons.Rounded.GraphicEq, null, Modifier.width(36.dp), tint = accentColor())
           else Text("${i + 1}", Modifier.width(36.dp), color = c.onSurfaceVariant, fontSize = 15.sp, textAlign = TextAlign.Center)
           Column(Modifier.weight(1f)) {

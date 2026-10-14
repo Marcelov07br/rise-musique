@@ -10,6 +10,8 @@ import kotlin.math.*
 data class Station(val id: String, val name: String, val subtitle: String, val kind: String, val seeds: List<HistoryItem>, val hue: Float) {
   /** Local tracks mixed into the stream queue (the station's own artist / mood); none for Descobertas. */
   val mixLocal get() = kind != "discover"
+  /** "Feito pra você" lists made only of your own tracks (no radio lookup). */
+  val localOnly get() = kind == "rediscover" || kind == "likes"
 }
 
 data class StationItem(
@@ -86,6 +88,38 @@ object Stations {
     val sp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(200, 255, 255, 255); textSize = s * .045f; typeface = Typeface.DEFAULT_BOLD; letterSpacing = .12f }
     c.drawText("RISE", s * .08f, s * .12f, sp)
     return bmp
+  }
+}
+
+/**
+ * "Feito pra você": mixes rebuilt on every pull-to-refresh from what you liked plus the library.
+ * [round] reshuffles the picks (same round = same result); [lastPlayed] maps track uri → last play time.
+ */
+object ForYou {
+  fun build(history: List<HistoryItem>, favorites: Set<String>, lastPlayed: Map<String, Long>, round: Int,
+            now: Long = System.currentTimeMillis()): List<Station> {
+    val local = history.filter { !it.video }
+    if (local.isEmpty()) return emptyList()
+    val rnd = java.util.Random(round * 7919L + local.size)
+    val liked = local.filter { it.uri in favorites }
+    val out = mutableListOf<Station>()
+    // Similar artists: radio seeded by a liked (or most played) artist's tracks.
+    val artists = (liked.ifEmpty { local }).map { it.artist }.filter(String::isNotBlank).groupingBy { it }.eachCount()
+      .entries.sortedByDescending { it.value }.map { it.key }.take(6).shuffled(rnd).take(2)
+    artists.forEach { a -> val seeds = local.filter { it.artist == a }.shuffled(rnd).take(5)
+      out += Station("fy:ar:$round:$a", "Parecidos com $a", "Artistas e faixas na mesma linha", "artist", seeds, Stations.hueOf(a)) }
+    // Similar album: one album you like, as the seed of a radio.
+    liked.filter { it.album.isNotBlank() }.map { it.album }.distinct().shuffled(rnd).firstOrNull()?.let { al ->
+      val seeds = local.filter { it.album == al }.shuffled(rnd).take(4)
+      out += Station("fy:al:$round:$al", "Na linha de $al", "Porque você curtiu este álbum", "artist", seeds, Stations.hueOf(al)) }
+    // Recent likes: favorites in library order (newest first).
+    if (liked.size >= 2) out += Station("fy:likes:$round", "Curtidas recentes", "${minOf(liked.size, 30)} faixas que você curtiu", "likes", liked.take(30), 340f)
+    // Rediscover: tracks you haven't played in 30+ days (or never), favorites first.
+    val month = 30L * 24 * 3600 * 1000
+    val old = local.filter { (lastPlayed[it.uri] ?: 0L) < now - month }
+      .sortedByDescending { if (it.uri in favorites) 1 else 0 }.let { l -> l.take(12).shuffled(rnd) + l.drop(12).shuffled(rnd) }.take(25)
+    if (old.size >= 3) out += Station("fy:old:$round", "Redescobrir", "Faixas que você não ouve há tempos", "rediscover", old, 200f)
+    return out
   }
 }
 

@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
       }
     }
     HorizontalDivider(Modifier.padding(vertical = 8.dp), color = c.outlineVariant)
-    Action(Icons.Rounded.QueuePlayNext, "Tocar a seguir", go { a.playNext(h) })
+    Action(Icons.Rounded.QueuePlayNext, "Tocar em seguida", go { a.playNext(h) })
     Action(Icons.Rounded.AddToQueue, "Adicionar à fila", go { a.addQueue(h) })
     Action(Icons.Rounded.PlaylistAdd, "Adicionar à playlist", go(pickPlaylist))
     if (inList != null) Action(Icons.Rounded.PlaylistRemove, "Tirar de $inList", go { a.removeFromList(h, inList) })
@@ -51,7 +51,7 @@ import androidx.compose.ui.unit.sp
   }
 }
 
-@Composable private fun Action(icon: ImageVector, label: String, onClick: () -> Unit, danger: Boolean = false) {
+@Composable internal fun Action(icon: ImageVector, label: String, onClick: () -> Unit, danger: Boolean = false) {
   val color = if (danger) DangerRed else MaterialTheme.colorScheme.onSurface
   Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onClick).padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
     Icon(icon, null, tint = color); Spacer(Modifier.width(20.dp)); Text(label, color = color, fontSize = 16.sp)
@@ -60,3 +60,35 @@ import androidx.compose.ui.unit.sp
 
 /** The only accent in the neutral theme: destructive actions. */
 val DangerRed = androidx.compose.ui.graphics.Color(0xFFE5484D)
+
+/** Long-press menu for online tracks (search, artist, album, station, Spotify): same look and queue actions as local ones. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable fun StreamActionSheet(title: String, subtitle: String, art: String, close: () -> Unit, playNext: () -> Unit, addQueue: () -> Unit,
+                                  radio: (() -> Unit)? = null, download: (() -> Unit)? = null) {
+  ModalBottomSheet(close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    StreamActionContent(title, subtitle, art, close, playNext, addQueue, radio, download)
+  }
+}
+
+@Composable fun StreamActionContent(title: String, subtitle: String, art: String, close: () -> Unit, playNext: () -> Unit, addQueue: () -> Unit,
+                                    radio: (() -> Unit)? = null, download: (() -> Unit)? = null) {
+  val haptics = rememberHaptics()
+  fun go(f: () -> Unit) = { haptics.tick(); close(); f() }
+  Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
+    Row(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+      Cover(HistoryItem(title, "", art = art), Modifier.size(56.dp), 8.dp); Spacer(Modifier.width(16.dp))
+      Column(Modifier.weight(1f)) {
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (subtitle.isNotBlank()) Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      }
+    }
+    HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+    Action(Icons.Rounded.QueuePlayNext, "Tocar em seguida", go(playNext))
+    Action(Icons.Rounded.AddToQueue, "Adicionar à fila", go(addQueue))
+    radio?.let { Action(Icons.Rounded.Radio, "Rádio desta música", go(it)) }
+    download?.let { Action(Icons.Rounded.Download, "Baixar…", go(it)) }
+  }
+}
+
+@Composable fun StreamActionSheet(r: SearchResult, a: Actions, close: () -> Unit) =
+  StreamActionSheet(r.title, r.channel, r.thumb, close, { a.playNextStream(r) }, { a.addQueueStream(r) }, { a.radio(r) }, { a.downloadItem(r) })

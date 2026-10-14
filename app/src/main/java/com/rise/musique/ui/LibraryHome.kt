@@ -1,4 +1,5 @@
 package com.rise.musique.ui
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.ui.layout.layout
 
 import androidx.compose.foundation.*
@@ -35,6 +36,8 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   var sortMenu by remember { mutableStateOf(false) }
   var rename by remember { mutableStateOf<String?>(null) }
   var deletePlaylist by remember { mutableStateOf<String?>(null) }
+  var cardMenu by remember { mutableStateOf<HistoryItem?>(null) }
+  var cardPick by remember { mutableStateOf<HistoryItem?>(null) }
   val albumRow = rows?.first ?: androidx.compose.foundation.lazy.rememberLazyListState()
   val smartRow = androidx.compose.foundation.lazy.rememberLazyListState()
   val playlistRow = rows?.second ?: androidx.compose.foundation.lazy.rememberLazyListState()
@@ -42,8 +45,10 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   val heroRow = androidx.compose.foundation.lazy.rememberLazyListState()
   val recentRow = androidx.compose.foundation.lazy.rememberLazyListState()
   val stationRow = androidx.compose.foundation.lazy.rememberLazyListState()
+  val forYouRow = androidx.compose.foundation.lazy.rememberLazyListState()
   val stations = remember(s.history, s.stats, s.trackInfo, s.hidden) { com.rise.musique.Stations.build(s.history.filter { it.uri !in s.hidden }, s.stats, s.trackInfo) }
-  LazyColumn(modifier.padding(horizontal = 24.dp), state = list, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = bottomSpace(s))) {
+  RefreshWrap(homeTab, s.forYouRefreshing, a.refreshForYou, modifier) { m ->
+  LazyColumn(m.padding(horizontal = 24.dp), state = list, verticalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(top = 16.dp, bottom = bottomSpace(s))) {
     item { Row(verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f)) {
         LargeTitle(if (homeTab) "Ouvir agora" else if (s.historyView == "Favoritos") "Favoritos" else "Biblioteca", titleCollapse)
@@ -133,9 +138,17 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     val recent = if (home) emptyList() else shown
     if (home && shown.isNotEmpty()) {
       item(key = "hero") { HeroRow(heroItems(s, shown, stations, a), heroRow, s, a) }
+      if (s.forYou.isNotEmpty()) {
+        item(key = "fy-title") { Column { SectionTitle("Feito pra você")
+          Text("Das suas curtidas e da sua biblioteca · puxe para renovar", color = c.onSurfaceVariant, fontSize = 13.sp) } }
+        item(key = "fy") { Carousel(forYouRow) { items(s.forYou, key = { it.id }) { st ->
+          Box(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(320), placementSpec = androidx.compose.animation.core.spring(0.82f, 380f, androidx.compose.ui.unit.IntOffset.VisibilityThreshold),
+              fadeOutSpec = androidx.compose.animation.core.tween(180))) {
+            StationCard(st, s.stationLoadingSet.contains(st.id)) { a.openStation(st) } } } } }
+      }
       item(key = "recent-title") { SectionTitle("Reproduções recentes") }
       item(key = "recent") { Carousel(recentRow) { items(shown.take(12), key = { "r:" + it.uri }) { h ->
-        CoverCard(h, h.title, h.artist.ifBlank { h.meta }, "cover-tr-${h.uri}") { if (h.video) a.playLocalVideo(h) else a.play(h) } } } }
+        CoverCard(h, h.title, h.artist.ifBlank { h.meta }, "cover-tr-${h.uri}", onLongClick = { cardMenu = h }) { if (h.video) a.playLocalVideo(h) else a.play(h) } } } }
       if (stations.isNotEmpty()) {
         item(key = "stations-title") { SectionTitle("Estações feitas pra você") }
         item(key = "stations") { Carousel(stationRow) { items(stations, key = { it.id }) { st -> StationCard(st, s.stationLoadingSet.contains(st.id)) { a.openStation(st) } } } }
@@ -150,6 +163,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       EntryCard("Sua retrospectiva", "O mês e o ano em música", Icons.Rounded.AutoAwesome, Modifier.weight(1f)) { a.recap(true) }
       EntryCard("Estatísticas", "O que você mais ouve", Icons.Rounded.BarChart, Modifier.weight(1f)) { a.stats(true) }
     } }
+    if (home && shown.isNotEmpty()) item(key = "history") { EntryCard("Histórico", "Tocar de novo o que você ouviu", Icons.Rounded.History, Modifier.fillMaxWidth()) { a.openHistory() } }
     val albums = if (home) shown.filter { !it.video && it.album.isNotBlank() }.groupBy { it.album to it.artist }.entries.take(20) else emptyList()
     if (albums.isNotEmpty()) {
       item(key = "albums-title") { SectionTitle("Álbuns e singles") }
@@ -183,7 +197,9 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       }
       if (shown.size > 6) item(key = "all") { PillButton("Ver a biblioteca inteira", { a.page("Biblioteca") }, Modifier.fillMaxWidth(), filled = false) }
     }
-  }
+  } }
+  cardMenu?.let { h -> TrackActionSheet(h, s, a, { cardMenu = null }) { cardPick = h } }
+  cardPick?.let { h -> PlaylistPicker(s.playlists.keys.sorted(), { cardPick = null }) { name -> a.addToPlaylist(h, name); cardPick = null } }
   rename?.let { old -> var name by remember(old) { mutableStateOf(old) }
     AlertDialog({ rename = null }, title = { Text("Renomear playlist") }, text = { OutlinedTextField(name, { name = it.take(80) }, singleLine = true) },
       confirmButton = { TextButton({ a.renamePlaylist(old, name); rename = null }, enabled = name.isNotBlank()) { Text("Salvar") } },
@@ -247,7 +263,8 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
 }
 
 /** Flat cover card with weighted press; its cover is the shared element that becomes the collection header. */
-@Composable internal fun CoverCard(h: HistoryItem, title: String, subtitle: String, sharedKey: String, circle: Boolean = false, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+@Composable internal fun CoverCard(h: HistoryItem, title: String, subtitle: String, sharedKey: String, circle: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   val haptics = rememberHaptics()
@@ -255,7 +272,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
   // Soft per-cover tint (or neutral) as the tile behind the text; artists stay plain circles.
   val tile = if (circle) androidx.compose.ui.graphics.Color.Transparent else tileColor(h.art, sharedKey)
   val ink = if (circle) c.onSurface else contentFor(tile)
-  Column(Modifier.width(156.dp).weightedPress(src, 16.dp).clip(RoundedCornerShape(16.dp)).background(tile).clickable(src, null) { haptics.tick(); onClick() }
+  Column(Modifier.width(156.dp).weightedPress(src, 16.dp).clip(RoundedCornerShape(16.dp)).background(tile).combinedClickable(src, null, onLongClick = onLongClick?.let { f -> { haptics.press(); f() } }) { haptics.tick(); onClick() }
       .padding(bottom = if (circle) 0.dp else 10.dp)) {
     Cover(h, Modifier.size(156.dp).sharedCover(sharedKey), if (circle) 78.dp else r?.value ?: 14.dp); Spacer(Modifier.height(8.dp))
     Column(Modifier.padding(horizontal = if (circle) 0.dp else 10.dp)) {
@@ -302,4 +319,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.AlbumAndArtistRows(sh
     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     Text(sub, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
   }
+}
+
+/** Início: pull-to-refresh renews "Feito pra você"; neutral indicator (no dynamic color). Biblioteca: plain content. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun RefreshWrap(enabled: Boolean, refreshing: Boolean, onRefresh: () -> Unit, modifier: Modifier, content: @Composable (Modifier) -> Unit) {
+  if (!enabled) { content(modifier); return }
+  val st = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
+  androidx.compose.material3.pulltorefresh.PullToRefreshBox(refreshing, onRefresh, modifier, st, indicator = {
+    androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator(st, refreshing, Modifier.align(Alignment.TopCenter),
+      containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, color = MaterialTheme.colorScheme.onSurface) }) { content(Modifier.fillMaxSize()) }
 }

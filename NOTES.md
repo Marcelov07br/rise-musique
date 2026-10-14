@@ -1,6 +1,6 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.21.0 (13/10/2026) — linha principal `main`
+## Estado atual: 0.22.0 (14/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
@@ -72,6 +72,15 @@
 - `StationScreen.kt` (0.21) — tocar numa estação abre a lista (`Route.Station`, `loadStation`/`StationPage`). `SpotifyScreen.kt` (`Route.Spotify`) + `SpotifyImportDialog.kt` (AlertDialog padrão e verde do Spotify — destoa do vidro; candidato a refazer no estilo da casa).
 - `SearchParts.kt` — filtros (chip "Filtros" → folha), voz, esqueleto, resultados de coleção.
 - `SettingsSheet.kt` (+ Sobre em `About.kt`), `EqSheet.kt`, `StatsSheet.kt`, `RecapSheet.kt`, `VideoPlayer.kt`, `TrackActions.kt`, `UpdateDialog.kt`, `Visuals.kt` (GlassBox, paleta, arte viva).
+- `ui/PlaybackQueueSheet.kt` (reescrito em 0.22) — "Tocando agora" + "A seguir" com capas; sem setas. Segurar ~1 s (`QueueMotion.LiftMs`, detector próprio com `withTimeoutOrNull`) levanta a linha (mola ζ0.6 em escala/sombra só no graphicsLayer, háptico) e arrasta; a ordem fica local (`dragList`) e o player recebe um único `moveQueue` ao soltar; as outras linhas abrem espaço com `animateItem` (placement spring ζ0.82). `SwipeToDismissBox`: → `playNextFromQueue`, ← `removeQueueUndo` (Desfazer via `withUndo`; a folha é outra janela, por isso tem o próprio `UndoBar(bottom=)`). Chaves `uri#n` (`queueEntries`). "Salvar como playlist" (`saveQueueAsPlaylist`: só faixas da biblioteca).
+- `ForYou` (em `Stations.kt`, 0.22) — "Feito pra você" no Início: Parecidos com <artista curtido>, Na linha de <álbum curtido> (rádio, reaproveita `loadStation`/`StationScreen`), Curtidas recentes e Redescobrir (`localOnly`: só faixas locais, sem rede; Redescobrir = sem tocar há 30+ dias via `PlayStats`). `refreshForYou(true)` no pull-to-refresh (`PullToRefreshBox` neutro em `LibraryHome.RefreshWrap`) troca a rodada → ids novos `fy:*:<rodada>` e limpa `stationPages` desses ids.
+- `SmartQueue` (em `PlaybackService.kt`, 0.22) — quando não há próxima (`!hasNextMediaItem`), busca o rádio da última faixa (stream: o próprio; local: busca no YTM) e acrescenta até 15 streams não repetidos. Pref `rise/smartQueue` (padrão ligado), Ajustes → Reprodução.
+- Temporizador (0.22): `sleepAt = -1` (`END_OF_TRACK`) usa `pauseAtEndOfMediaItems` + fade de 12 s; temporizado faz fade de 30 s (curva quadrática `fadeVolume`). Crossfade desliga perto do fim do temporizador.
+- Favoritar na notificação/tela de bloqueio (0.22): `CommandButton` custom layout (`rise.like`, ícones `ic_w_heart*`); app ↔ serviço sincronizam por `rise.likeSync` e `favStamp` nas session extras.
+- Retomar (0.22): `restorePlayback` agora restaura streams (`stream:` → `Streams.uriFor`); itens do Spotify ficam de fora (precisam do registro em memória da importação).
+- `ui/HistoryScreen.kt` (`Route.History`, 0.22) — reproduções do `PlayStats` por dia (Hoje/Ontem/data), repetições seguidas viram uma linha, "Tocar de novo" (`playAgain`: local ou stream; capa de stream pela miniatura do YouTube). Entrada: cartão "Histórico" no Início.
+- Ajustes (0.22): `SettingsContent` com busca + seções (Reprodução, Áudio, Downloads, Aparência, Integrações, Sobre) em subpáginas (AnimatedContent com mola). Cada opção é um `SettingEntry` (seção, título, palavras-chave). Biblioteca/Backup ficaram em Integrações; Estatísticas/Atualizações/Sobre em Sobre.
+- Menus (0.22): "Tocar em seguida"/"Adicionar à fila" em todas as listas — locais pelo `TrackActionSheet`, online pelo `StreamActionSheet` (busca, Top músicas do artista, álbum remoto, estação, Spotify via `queueSpotify`); cartões de Reproduções recentes com toque longo.
 ### Recursos
 - Ícone: `res/drawable/ic_launcher_foreground.xml` (wordmark "rise" em Roboto Bold, tracking −1sp, 50dp de largura na zona segura), `ic_launcher_monochrome.xml` (ícone temático), fundo `#111113`. Splash (`Theme.Rise.Splash`) usa o mesmo foreground.
 - Regerar o wordmark: fontTools com `/usr/share/fonts/truetype/sand-box/google/Roboto/Roboto-VariableFont_wdth,wght.ttf` instanciada em wght 700 (script na conversa de 0.19; ~20 linhas com SVGPathPen).
@@ -95,6 +104,7 @@
 - `app/lint.xml` ignora `UnsafeOptInUsageError` só no código copiado do Media3.
 
 ## Lacunas conhecidas / não testado no aparelho
+- 0.22: sensação do arraste/levantar e dos deslizes na fila (Paparazzi só mostra estático; sem rolagem automática ao arrastar até a borda), pull-to-refresh, fila inteligente com rede real, botão de coração na notificação e na tela de bloqueio do Samsung (Android 17 pode mostrar ou não custom actions), temporizador "fim da faixa" com crossfade/automix ligados, retomar com streams (URL re-resolvida ao tocar).
 - 0.21 (código do colega, sem testes novos nem snapshots): importação do Spotify com links reais, página de estação, qualidade Econômica/Normal, seletor de qualidade de download em Ajustes (opções 128k/192k/320k podem não bater com as qualidades por modo). Revisão: removido o fallback dele que assinava release com chave debug se o keystore faltasse.
 - 0.20.1: desfoque real só aparece no aparelho (Paparazzi não renderiza RenderEffect direito); custo de GPU do Haze em rolagem; sem lente AGSL (ficou só borda/realce).
 - 0.20: tocar DSF/DFF/AIFF de verdade no aparelho (decoder nativo nunca rodou aqui); som do DSD (nível/ruído), busca (seek) em DSD, AIFF 24-bit; conversão APE/WavPack→FLAC pelo binário do yt-dlp (caminho das libs); selo diz "PCM 16" porque o sink atual é 16-bit (float desligado pelo nosso processador de efeitos).
@@ -119,5 +129,4 @@
 - Perfil do artista: "Ver tudo" das seções (browse com params), playlists do artista, shows ao vivo.
 - Capas animadas reais se aparecer fonte pública legítima.
 - Letras: tradução, karaokê por palavra; editar sincronização.
-- Fila: arrastar para reordenar com prévia; "tocar a seguir".
 - Downloads: playlists inteiras com seleção na página Downloads; pasta por artista/álbum.

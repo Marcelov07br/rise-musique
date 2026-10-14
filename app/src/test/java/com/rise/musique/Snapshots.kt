@@ -239,3 +239,20 @@ class Round201 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6
   @Test fun glassBarOverCovers() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(busy, Actions(), initialRootItem = 2) } }
   @Test fun glassBarLight() = p.snapshot { SyncImages(); RiseTheme(false) { RiseApp(busy, Actions(), initialRootItem = 2) } }
 }
+
+// ---- 0.22: fila, Feito pra você, ajustes em seções, histórico ----
+class Round22 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val covered = homeLib.mapIndexed { i, h -> h.copy(art = res(if (i % 2 == 0) "cover.jpg" else "hero.jpg")) }
+  private val q = UiState(now = np.copy(index = 0), playbackQueue = covered.take(7), smartQueue = true)
+  @Test fun queue() = p.snapshot { SyncImages(); RiseTheme(true) { androidx.compose.material3.Surface { QueueContent(q, Actions()) } } }
+  @Test fun queueUndo() = p.snapshot { SyncImages(); RiseTheme(true) { androidx.compose.material3.Surface { Box { QueueContent(q.copy(undo = UndoInfo(1, "Removida da fila")), Actions())
+    UndoBar(q.copy(undo = UndoInfo(1, "Removida da fila")), Actions(), Modifier.align(androidx.compose.ui.Alignment.BottomCenter), bottom = 12.dp) } } } }
+  @Test fun forYou() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(homeState.copy(history = covered,
+    forYou = ForYou.build(covered, covered.take(4).map { it.uri }.toSet(), emptyMap(), 1)), Actions()) } }
+  @Test fun settingsRoot() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SettingsContent(UiState(), Actions()) } } }
+  @Test fun settingsPlayback() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SettingsContent(UiState(crossfade = 6, smartQueue = true), Actions(), initialSection = "Reprodução") } } }
+  @Test fun settingsSearch() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SettingsContent(UiState(), Actions(), initialQuery = "qualidade") } } }
+  @Test fun history() = p.snapshot { SyncImages(); RiseTheme(true) { val now = System.currentTimeMillis()
+    RiseApp(homeState.copy(history = covered, plays = covered.take(6).mapIndexed { i, h -> Play(h.uri, h.title, h.artist, 120_000, now - i * 9 * 3_600_000L) }), Actions(), initialRoute = Route.History) } }
+  @Test fun streamMenu() = p.snapshot { SyncImages(); RiseTheme(true) { androidx.compose.material3.Surface { StreamActionContent("Da Funk", "Daft Punk", res("cover.jpg"), {}, {}, {}, {}, {}) } } }
+}

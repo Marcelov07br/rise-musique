@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,6 +38,7 @@ import kotlinx.coroutines.withContext
 
 private val SpotifyGreen = Color(0xFF1DB954)
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable fun SpotifyScreen(
   s: UiState,
   a: Actions,
@@ -210,13 +212,16 @@ private val SpotifyGreen = Color(0xFF1DB954)
         val isNowPlaying = (local != null && s.now?.key == local.uri) || (resolved != null && s.now?.key == "stream:" + resolved.url)
         val isResolving = t.uri in s.spotifyResolving
         val src = remember { MutableInteractionSource() }
+        var menu by remember { mutableStateOf(false) }
+        if (menu) StreamActionSheet(t.title, t.artist, local?.art ?: resolved?.thumb.orEmpty(), { menu = false },
+          { a.queueSpotify(t, true) }, { a.queueSpotify(t, false) })
 
         Row(
           Modifier.fillMaxWidth()
             .padding(horizontal = 16.dp)
             .weightedPress(src, 14.dp)
             .clip(RoundedCornerShape(14.dp))
-            .clickable(src, null) {
+            .combinedClickable(src, null, onLongClick = { haptics.press(); menu = true }) {
               haptics.tick()
               a.playSpotifyTracks(tracks, i, false)
             }

@@ -356,19 +356,23 @@ private fun fmtMs(ms: Long) = (ms / 1000).let { "%d:%02d".format(it / 60, it % 6
   }
 }
 
-/** Temporizador pra dormir: 15, 30 ou 60 min, com o tempo restante no botão. */
+/** Temporizador pra dormir: minutos ou fim da faixa, com o tempo restante no botão; o volume desce aos poucos antes de parar. */
 @Composable private fun SleepButton(now: NowPlaying, a: Actions) {
   var open by remember { mutableStateOf(false) }
   Box {
-    val left = LocalSleep.current.let { at -> if (at > 0) ((at - System.currentTimeMillis()) / 60_000 + 1).coerceAtLeast(1) else 0 }
-    Row(Modifier.clip(CircleShape).background(if (left > 0) Color.White.copy(.9f) else Color.Transparent).clickable { open = true }
+    val at = LocalSleep.current
+    val endOfTrack = at == com.rise.musique.PlaybackService.END_OF_TRACK
+    val left = if (at > 0) ((at - System.currentTimeMillis()) / 60_000 + 1).coerceAtLeast(1) else 0
+    val active = endOfTrack || left > 0
+    Row(Modifier.clip(CircleShape).background(if (active) Color.White.copy(.9f) else Color.Transparent).clickable { open = true }
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-      Icon(Icons.Rounded.Bedtime, "Temporizador", tint = if (left > 0) Color.Black else Color.White, modifier = Modifier.size(20.dp))
-      if (left > 0) { Spacer(Modifier.width(6.dp)); Text("$left min", color = Color.Black, fontSize = 12.sp) }
+      Icon(Icons.Rounded.Bedtime, "Temporizador", tint = if (active) Color.Black else Color.White, modifier = Modifier.size(20.dp))
+      if (active) { Spacer(Modifier.width(6.dp)); Text(if (endOfTrack) "Fim da faixa" else "$left min", color = Color.Black, fontSize = 12.sp) }
     }
     DropdownMenu(open, { open = false }, shape = RoundedCornerShape(18.dp)) {
-      listOf(15, 30, 60).forEach { m -> DropdownMenuItem({ Text("Parar em $m min") }, { open = false; a.sleep(m) }) }
-      if (left > 0) DropdownMenuItem({ Text("Cancelar temporizador") }, { open = false; a.sleep(0) })
+      DropdownMenuItem({ Text("No fim desta faixa") }, { open = false; a.sleep(-1) }, leadingIcon = { Icon(Icons.Rounded.MusicNote, null) })
+      listOf(15, 30, 45, 60, 90).forEach { m -> DropdownMenuItem({ Text("Parar em $m min") }, { open = false; a.sleep(m) }) }
+      if (active) DropdownMenuItem({ Text("Cancelar temporizador") }, { open = false; a.sleep(0) }, leadingIcon = { Icon(Icons.Rounded.Close, null) })
     }
   }
 }

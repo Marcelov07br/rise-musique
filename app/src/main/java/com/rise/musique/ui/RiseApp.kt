@@ -73,7 +73,8 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val spotifyResolving: Set<String> = emptySet(), val spotifyResolvedTracks: Map<String, SearchResult> = emptyMap(),
   val spotifyRequest: com.rise.musique.SpotifyPlaylist? = null,
   val savedSpotifyPlaylists: List<com.rise.musique.SpotifyPlaylist> = emptyList(),
-  val streamQuality: String = "Alta")
+  val streamQuality: String = "Alta", val smartQueue: Boolean = true,
+  val forYou: List<com.rise.musique.Station> = emptyList(), val forYouRefreshing: Boolean = false, val plays: List<com.rise.musique.Play> = emptyList())
 
 /** Snackbar with Desfazer; the real action runs only after the timeout. */
 data class UndoInfo(val id: Long, val message: String)
@@ -122,7 +123,12 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val downloadSpotifyTracks: (com.rise.musique.SpotifyPlaylist, List<com.rise.musique.SpotifyTrack>) -> Unit = { _, _ -> },
   val saveSpotifyPlaylist: (com.rise.musique.SpotifyPlaylist) -> Unit = {}, val deleteSpotifyPlaylist: (String) -> Unit = {},
   val importSpotifyUrl: (String, ((com.rise.musique.SpotifyPlaylist) -> Unit)?) -> Unit = { _, _ -> },
-  val clearSpotifyRequest: () -> Unit = {}, val streamQuality: (String) -> Unit = {})
+  val clearSpotifyRequest: () -> Unit = {}, val streamQuality: (String) -> Unit = {},
+  val playNextStream: (SearchResult) -> Unit = {}, val addQueueStream: (SearchResult) -> Unit = {},
+  val queueStationItem: (com.rise.musique.StationItem, Boolean) -> Unit = { _, _ -> }, val queueSpotify: (com.rise.musique.SpotifyTrack, Boolean) -> Unit = { _, _ -> },
+  val removeQueueUndo: (Int) -> Unit = {}, val playNextFromQueue: (Int) -> Unit = {}, val saveQueue: () -> Unit = {},
+  val smartQueue: (Boolean) -> Unit = {}, val refreshForYou: () -> Unit = {}, val openHistory: () -> Unit = {}, val loadPlays: () -> Unit = {},
+  val playAgain: (com.rise.musique.Play) -> Unit = {})
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -199,6 +205,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
     openArtistFrom = { n, src -> nav.push(tab, Route.Artist(n, src)) }, openPlaylist = { nav.push(tab, Route.Playlist(it)) }, openArtist = { nav.push(tab, Route.Artist(it)) },
     openDownloads = { if (nav.stack(tab).lastOrNull() != Route.Downloads) nav.push(tab, Route.Downloads) },
     openSmart = { k, v -> nav.push(tab, Route.Smart(k, v)) },
+    openHistory = { if (nav.stack(tab).lastOrNull() != Route.History) nav.push(tab, Route.History) },
     openStation = { st -> nav.push(tab, Route.Station(st.id, st.name, st.subtitle, st.kind, st.hue)); actions.loadStation(st) },
     openStationFrom = { st, src -> nav.push(tab, Route.Station(st.id, st.name, st.subtitle, st.kind, st.hue, src)); actions.loadStation(st) },
     openSpotify = { sp -> nav.push(tab, Route.Spotify(sp.id, sp.type, sp.title, sp.art, sp.subtitle)) },
@@ -257,6 +264,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
                 is Route.Station -> StationScreen(clean, navActions, r, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
                 is Route.Spotify -> SpotifyScreen(clean, navActions, r, nav.list(r.key, initialCollectionItem), Modifier.fillMaxSize(), pop, dismiss)
                 Route.Downloads -> DownloadPage(state, navActions, nav.list(r.key), pop, Modifier.fillMaxSize().background(c.background))
+                Route.History -> HistoryScreen(state, navActions, nav.list(r.key), pop, Modifier.fillMaxSize().background(c.background))
                 null -> Column(Modifier.fillMaxSize()) {
                   val rootList = nav.list("root:${sc.tab}", initialRootItem)
                   val collapse = rememberTitleCollapse(rootList)
@@ -408,7 +416,7 @@ private val Route?.isDetail get() = this is Route.Album || this is Route.Playlis
         else { val video = r.kind == "video" || state.searchKind == com.rise.musique.SearchKind.Videos
           ResultCard(r, state.previewing == r.url, state.previewing == r.url && state.previewLoading, video,
             play = { keyboard?.hide(); if (video) a.playVideo(r) else a.preview(r) }, radio = { a.radio(r) }, download = { a.downloadItem(r) },
-            watch = { a.playVideo(r) }) } }
+            watch = { a.playVideo(r) }, playNext = { a.playNextStream(r) }, addQueue = { a.addQueueStream(r) }) } }
       }
       if (state.moreResults) item(key = "more") { Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
         if (state.loadingMore) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = c.onSurface)
@@ -451,7 +459,7 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
 /** Search result: tap plays at once (stream or video player); trailing download button opens the Download page; long press = more. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable private fun ResultCard(r: SearchResult, playing: Boolean, loading: Boolean, video: Boolean,
-                                   play: () -> Unit, radio: () -> Unit, download: () -> Unit, watch: () -> Unit) {
+                                   play: () -> Unit, radio: () -> Unit, download: () -> Unit, watch: () -> Unit, playNext: () -> Unit = {}, addQueue: () -> Unit = {}) {
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
   val haptics = rememberHaptics()
@@ -478,6 +486,8 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
   }
   DropdownMenu(menu, { menu = false }) {
     DropdownMenuItem({ Text(if (video) "Assistir" else "Tocar") }, { menu = false; play() }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) })
+    if (!video) DropdownMenuItem({ Text("Tocar em seguida") }, { menu = false; playNext() }, leadingIcon = { Icon(Icons.Rounded.QueuePlayNext, null) })
+    if (!video) DropdownMenuItem({ Text("Adicionar à fila") }, { menu = false; addQueue() }, leadingIcon = { Icon(Icons.Rounded.AddToQueue, null) })
     if (!video) DropdownMenuItem({ Text("Assistir vídeo") }, { menu = false; watch() }, leadingIcon = { Icon(Icons.Rounded.SmartDisplay, null) })
     DropdownMenuItem({ Text("Rádio desta música") }, { menu = false; radio() }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
     DropdownMenuItem({ Text("Baixar…") }, { menu = false; download() }, leadingIcon = { Icon(Icons.Rounded.Download, null) })
@@ -575,10 +585,10 @@ fun localMatches(s: UiState, q: String): LocalMatches {
 }
 
 /** Snackbar "Desfazer": glass pill above the mini player / dock; the real deletion waits ~5 s. */
-@Composable fun UndoBar(state: UiState, a: Actions, modifier: Modifier) {
+@Composable fun UndoBar(state: UiState, a: Actions, modifier: Modifier, bottom: androidx.compose.ui.unit.Dp? = null) {
   val c = MaterialTheme.colorScheme
   val u = state.undo
-  androidx.compose.animation.AnimatedVisibility(u != null, modifier.navigationBarsPadding().padding(bottom = if (state.now != null) 168.dp else 92.dp, start = 16.dp, end = 16.dp),
+  androidx.compose.animation.AnimatedVisibility(u != null, modifier.navigationBarsPadding().padding(bottom = bottom ?: if (state.now != null) 168.dp else 92.dp, start = 16.dp, end = 16.dp),
     enter = fadeIn(Motion.enter()) + slideInVertically(Motion.enter()) { it / 2 }, exit = fadeOut(Motion.exit())) {
     val last = remember { mutableStateOf(u) }; if (u != null) last.value = u
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(c.inverseSurface).padding(start = 20.dp, end = 8.dp).heightIn(min = 56.dp),

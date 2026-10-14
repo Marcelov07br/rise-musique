@@ -2,6 +2,7 @@ package com.rise.musique.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -147,7 +148,9 @@ internal fun SearchResult.asItem() = HistoryItem(title, subtitle, url, thumb, ch
           Text("Buscando o artista no YouTube Music…", color = c.onSurfaceVariant, fontSize = 14.sp) } }
         popular.isEmpty() -> item(key = "top-empty") { EmptyState(Icons.Rounded.CloudOff, "Nada do YouTube agora", "Confira a conexão e abra o artista de novo.") }
         else -> itemsIndexed(popular.take(10), key = { _, r -> "p:" + r.url }) { i, r ->
-          PopularRow(i + 1, r, s.now?.key == "stream:" + r.url, false, { haptics.tick(); a.playStreams(popular, i, false) }, { a.downloadItem(r) }) }
+          var menu by remember { mutableStateOf(false) }
+          PopularRow(i + 1, r, s.now?.key == "stream:" + r.url, false, { haptics.tick(); a.playStreams(popular, i, false) }, { a.downloadItem(r) }) { haptics.press(); menu = true }
+          if (menu) StreamActionSheet(r, a) { menu = false } }
       }
       if (page != null && page.albums.isNotEmpty()) {
         item(key = "albums-title") { Section("Álbuns") }
@@ -220,10 +223,11 @@ internal fun Modifier.bleedTop(top: androidx.compose.ui.unit.Dp) = layout { m, c
 @Composable private fun Section(t: String) =
   Text(t, Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp), style = MaterialTheme.typography.titleLarge)
 
-@Composable private fun PopularRow(n: Int, r: SearchResult, playing: Boolean, loading: Boolean, preview: () -> Unit, download: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable private fun PopularRow(n: Int, r: SearchResult, playing: Boolean, loading: Boolean, preview: () -> Unit, download: () -> Unit, more: () -> Unit) {
   val c = MaterialTheme.colorScheme
   val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-  Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).weightedPress(src, 16.dp).clip(RoundedCornerShape(16.dp)).clickable(src, null, onClick = preview)
+  Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).weightedPress(src, 16.dp).clip(RoundedCornerShape(16.dp)).combinedClickable(src, null, onLongClick = more, onClick = preview)
       .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
     Text("$n", Modifier.width(36.dp), color = c.onSurfaceVariant, fontSize = 15.sp, textAlign = TextAlign.Center)
     AsyncImage(r.thumb, null, Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(c.surfaceVariant), contentScale = ContentScale.Crop)
