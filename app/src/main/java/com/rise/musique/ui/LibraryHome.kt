@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -31,6 +32,8 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
                             homeTab: Boolean = false, artistRow: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState()) {
   val c = MaterialTheme.colorScheme
   val shown = visibleHistory(s)
+  val musics = homeTab || s.libraryTab == "Coleção"
+  var newPlaylist by remember { mutableStateOf(false) }
   var importMenu by remember { mutableStateOf(false) }
   var showSpotify by remember { mutableStateOf(false) }
   var sortMenu by remember { mutableStateOf(false) }
@@ -52,7 +55,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     item { Row(verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f)) {
         LargeTitle(if (homeTab) "Ouvir agora" else if (s.historyView == "Favoritos") "Favoritos" else "Biblioteca", titleCollapse)
-        Text("${s.history.size} arquivos · sua coleção", color = c.onSurfaceVariant, fontSize = 13.sp)
+        Text(if (homeTab) "${s.history.size} arquivos · sua coleção" else "${s.history.size} arquivos · ${s.library.likes.size} curtidas · ${s.library.playlists.size} playlists", color = c.onSurfaceVariant, fontSize = 13.sp)
       }
       Box {
         if (s.importing) CircularProgressIndicator(Modifier.size(44.dp).padding(10.dp), strokeWidth = 2.dp)
@@ -61,50 +64,24 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
           DropdownMenuItem({ Text("Escolher arquivos") }, { importMenu = false; a.importFiles() }, leadingIcon = { Icon(Icons.Rounded.AudioFile, null) })
           DropdownMenuItem({ Text("Escolher uma pasta") }, { importMenu = false; a.importFolder() }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) })
           DropdownMenuItem({ Text("Importar do Spotify") }, { importMenu = false; showSpotify = true }, leadingIcon = { Icon(Icons.Rounded.QueueMusic, null, tint = androidx.compose.ui.graphics.Color(0xFF1DB954)) })
+          DropdownMenuItem({ Text("Nova playlist") }, { importMenu = false; newPlaylist = true }, leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, null) })
+          HorizontalDivider()
+          DropdownMenuItem({ Text("Exportar biblioteca") }, { importMenu = false; a.exportLibrary() }, leadingIcon = { Icon(Icons.Rounded.FileUpload, null) })
+          DropdownMenuItem({ Text("Importar biblioteca") }, { importMenu = false; a.importLibrary() }, leadingIcon = { Icon(Icons.Rounded.FileDownload, null) })
         }
       }
     } }
-    if (!homeTab) item { OutlinedTextField(s.historyFilter, a.historyFilter, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(20.dp),
+    if (!homeTab) item(key = "lib-tabs") { PillSelector(LibraryTabs, s.libraryTab, { it }, a.libraryTab, Modifier.fillMaxWidth(), compact = true) }
+    if (!homeTab && musics) item { OutlinedTextField(s.historyFilter, a.historyFilter, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(20.dp),
       placeholder = { Text("Buscar na sua coleção") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
       trailingIcon = { if (s.historyFilter.isNotBlank()) IconButton({ a.historyFilter("") }) { Icon(Icons.Rounded.Close, "Limpar busca") } }) }
-    if (!homeTab) item { LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-      item(key = "sp-import-chip") {
-        AssistChip(
-          onClick = { showSpotify = true },
-          label = { Text("Importar do Spotify", fontSize = 13.sp) },
-          leadingIcon = { Icon(Icons.Rounded.QueueMusic, null, Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color(0xFF1DB954)) },
-          shape = CircleShape
-        )
-      }
-      items(s.savedSpotifyPlaylists, key = { "sp-chip:" + it.id }) { pl ->
-        var menu by remember { mutableStateOf(false) }
-        Box {
-          FilterChip(
-            selected = false,
-            onClick = { a.openSpotify(pl) },
-            label = { Text(pl.title, maxLines = 1) },
-            leadingIcon = { Icon(Icons.Rounded.QueueMusic, null, Modifier.size(16.dp), tint = androidx.compose.ui.graphics.Color(0xFF1DB954)) },
-            trailingIcon = { Icon(Icons.Rounded.MoreHoriz, "Opções", Modifier.size(20.dp).clickable { menu = true }) }
-          )
-          DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text("Abrir playlist") }, { menu = false; a.openSpotify(pl) })
-            DropdownMenuItem({ Text("Remover da biblioteca") }, { menu = false; a.deleteSpotifyPlaylist(pl.id) })
-          }
-        }
-      }
-      items(listOf("Tudo", "Favoritos") + s.playlists.keys.sorted()) { name ->
-        var menu by remember { mutableStateOf(false) }
-        Box {
-          FilterChip(s.historyView == name, { if (name in s.playlists) a.openPlaylist(name) else a.historyView(name) }, label = { Text(name) },
-            trailingIcon = { if (name in s.playlists) Icon(Icons.Rounded.MoreHoriz, "Opções da playlist", Modifier.size(20.dp).clickable { menu = true }) })
-          DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text("Renomear") }, { menu = false; rename = name })
-            DropdownMenuItem({ Text("Apagar playlist") }, { menu = false; deletePlaylist = name })
-          }
-        }
-      }
-    } }
-    if (!homeTab) item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    if (!homeTab) when (s.libraryTab) {
+      "Curtidas" -> likedTab(s, a)
+      "Playlists" -> playlistsTab(s, a, { newPlaylist = true }, { showSpotify = true }, { rename = it }, { deletePlaylist = it })
+      "Álbuns" -> albumsTab(s, a, s.history.filter { it.uri !in s.hidden })
+      "Artistas" -> artistsTab(s, a, s.history.filter { it.uri !in s.hidden })
+    }
+    if (!homeTab && musics) item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       listOf("Tudo", "Músicas", "Vídeos").forEach { filter ->
         TextButton({ a.mediaFilter(filter) }, contentPadding = PaddingValues(horizontal = 10.dp)) {
           Text(filter, color = if (s.mediaFilter == filter) c.onSurface else c.onSurfaceVariant, fontSize = 13.sp)
@@ -118,8 +95,8 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
         }
       }
     } }
-    if (s.albumFilter.isNotBlank()) item { InputChip(true, { a.albumFilter("") }, label = { Text(s.albumFilter) }, trailingIcon = { Icon(Icons.Rounded.Close, "Limpar álbum") }) }
-    if (shown.isEmpty()) item {
+    if (musics && s.albumFilter.isNotBlank()) item { InputChip(true, { a.albumFilter("") }, label = { Text(s.albumFilter) }, trailingIcon = { Icon(Icons.Rounded.Close, "Limpar álbum") }) }
+    if (musics && shown.isEmpty()) item {
       Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Icon(Icons.Rounded.LibraryMusic, null, Modifier.size(48.dp), tint = c.onSurfaceVariant)
         val filtered = s.historyFilter.isNotBlank() || s.albumFilter.isNotBlank() || s.mediaFilter != "Tudo"
@@ -135,7 +112,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
     }
     val home = homeTab
     val browse = home || (s.historyView == "Tudo" && s.historyFilter.isBlank() && s.mediaFilter == "Tudo")
-    val recent = if (home) emptyList() else shown
+    val recent = if (home || !musics) emptyList() else shown
     if (home && shown.isNotEmpty()) {
       item(key = "hero") { HeroRow(heroItems(s, shown, stations, a), heroRow, s, a) }
       if (s.forYou.isNotEmpty()) {
@@ -154,8 +131,8 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
         item(key = "stations") { Carousel(stationRow) { items(stations, key = { it.id }) { st -> StationCard(st, s.stationLoadingSet.contains(st.id)) { a.openStation(st) } } } }
       }
     }
-    if (shown.isNotEmpty() && !home && !browse) item { Text("${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
-    if (!home) { // Biblioteca: álbuns e artistas no topo, depois todas as faixas
+    if (musics && shown.isNotEmpty() && !home && !browse) item { Text("${shown.size} arquivos", style = MaterialTheme.typography.titleLarge) }
+    if (!home && musics) { // Biblioteca: álbuns e artistas no topo, depois todas as faixas
       AlbumAndArtistRows(shown.takeIf { browse }.orEmpty(), a, albumRow, artistRow, if (browse) smartFolders(s) else emptyList(), smartRow, s.artistPhotos)
     }
     items(recent, key = { it.uri }) { h -> TrackRow(h, s, a) }
@@ -172,20 +149,11 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
           CoverCard(h, h.album, h.artist.ifBlank { "${entry.value.size} faixas" }, "cover-al-${h.album}") { a.openAlbum(h.album) } }
       } }
     }
-    val lists = if (home) s.playlists.entries.sortedBy { it.key }.map { (name, uris) -> Triple(name, uris.size, uris.firstNotNullOfOrNull { u -> s.history.firstOrNull { it.uri == u && it.art.isNotBlank() } }) } else emptyList()
-    if (lists.isNotEmpty() || (home && s.savedSpotifyPlaylists.isNotEmpty())) {
+    val lists = if (home) s.library.playlists else emptyList()
+    if (lists.isNotEmpty()) {
       item(key = "lists-title") { SectionTitle("Suas playlists") }
       item(key = "lists") { Carousel(playlistRow) {
-        items(s.savedSpotifyPlaylists, key = { "sp:" + it.id }) { pl ->
-          CoverCard(
-            HistoryItem(pl.title, "", "sp:${pl.id}", pl.art, "Spotify"),
-            pl.title,
-            "${pl.tracks.size} faixas · Spotify",
-            "cover-sp-${pl.id}"
-          ) { a.openSpotify(pl) }
-        }
-        items(lists, key = { it.first }) { (name, n, cover) ->
-          CoverCard(cover ?: HistoryItem(name, "", "pl:$name"), name, "$n ${if (n == 1) "faixa" else "faixas"}", "cover-pl-$name") { a.openPlaylist(name) } }
+        items(lists, key = { it.id }) { p -> PlaylistCard(s, p) { a.openPlaylist(p.name) } }
       } }
     }
     if (home) {
@@ -205,6 +173,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       confirmButton = { TextButton({ a.renamePlaylist(old, name); rename = null }, enabled = name.isNotBlank()) { Text("Salvar") } },
       dismissButton = { TextButton({ rename = null }) { Text("Cancelar") } })
   }
+  if (newPlaylist) NewPlaylistDialog(s.playlists.keys, { newPlaylist = false }) { name -> a.createPlaylist(name, emptyList()); newPlaylist = false; a.openPlaylist(name) }
   deletePlaylist?.let { name -> AlertDialog({ deletePlaylist = null }, title = { Text("Apagar $name?") }, text = { Text("Os arquivos de música serão preservados.") },
     confirmButton = { TextButton({ a.deletePlaylist(name); deletePlaylist = null }) { Text("Apagar playlist") } }, dismissButton = { TextButton({ deletePlaylist = null }) { Text("Cancelar") } }) }
   if (showSpotify) {
@@ -220,13 +189,19 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
 }
 
 @OptIn(ExperimentalFoundationApi::class)
-@Composable internal fun TrackRow(h: HistoryItem, s: UiState, a: Actions, number: Int? = null) {
+@Composable internal fun TrackRow(h: HistoryItem, s: UiState, a: Actions, number: Int? = null, queue: List<HistoryItem>? = null,
+                                  gesture: Modifier? = null, lift: Float = 0f) {
   val c = MaterialTheme.colorScheme
   var menu by remember(h.uri) { mutableStateOf(false) }
   var pick by remember(h.uri) { mutableStateOf(false) }
   Box {
     val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    Row(Modifier.fillMaxWidth().weightedPress(press, 16.dp).clip(RoundedCornerShape(16.dp)).combinedClickable(press, null, onClick = { if (h.video) a.playLocalVideo(h) else a.play(h) }, onLongClick = { menu = true }).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    val bg = MaterialTheme.colorScheme.background
+    Row(Modifier.fillMaxWidth().then(if (gesture != null) Modifier.graphicsLayer { scaleX = 1f + .035f * lift; scaleY = scaleX
+          shadowElevation = 18.dp.toPx() * lift.coerceIn(0f, 1f); shape = RoundedCornerShape(16.dp); clip = lift > 0.01f }.background(bg).then(gesture)
+        else Modifier.weightedPress(press, 16.dp).clip(RoundedCornerShape(16.dp)).combinedClickable(press, null,
+          onClick = { if (h.video) a.playLocalVideo(h) else if (queue != null) a.playList(queue, h) else a.play(h) }, onLongClick = { menu = true }))
+        .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
       if (number != null) Text("$number", Modifier.width(36.dp), color = c.onSurfaceVariant, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
       else Cover(h, Modifier.size(60.dp))
       Spacer(Modifier.width(14.dp))
@@ -238,13 +213,7 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
         if (detail.isNotBlank()) Text(detail, color = c.onSurfaceVariant, fontSize = 11.sp)
       }
       if (h.uri in s.favorites) Icon(Icons.Rounded.Favorite, null, Modifier.size(14.dp), tint = c.onSurfaceVariant)
-      if (s.historyView in s.playlists) {
-        val order = s.playlists[s.historyView].orEmpty(); val index = order.indexOf(h.uri)
-        Column {
-          IconButton({ a.movePlaylist(s.historyView, index, index - 1) }, Modifier.size(48.dp), enabled = index > 0) { Icon(Icons.Rounded.KeyboardArrowUp, "Subir na playlist") }
-          IconButton({ a.movePlaylist(s.historyView, index, index + 1) }, Modifier.size(48.dp), enabled = index in 0 until order.lastIndex) { Icon(Icons.Rounded.KeyboardArrowDown, "Descer na playlist") }
-        }
-      }
+      if (gesture != null) Icon(Icons.Rounded.DragHandle, "Segure para arrastar", Modifier.padding(start = 4.dp), tint = c.onSurfaceVariant.copy(alpha = .6f))
       IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "Opções de ${h.title}", tint = c.onSurfaceVariant) }
     }
   }
@@ -279,6 +248,18 @@ fun durationLabel(ms: Long): String = if (ms <= 0) "" else (ms / 1000).let { "%d
       Text(title, Modifier.fillMaxWidth(), textAlign = if (circle) androidx.compose.ui.text.style.TextAlign.Center else null, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium, color = ink)
       Text(subtitle, Modifier.fillMaxWidth(), textAlign = if (circle) androidx.compose.ui.text.style.TextAlign.Center else null, color = ink.copy(alpha = .68f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
     }
+  }
+}
+
+/** Playlist card for carousels: same tile as [CoverCard], mosaic or custom cover. */
+@Composable internal fun PlaylistCard(s: UiState, p: com.rise.musique.LibPlaylist, onClick: () -> Unit) {
+  val haptics = rememberHaptics()
+  val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+  Column(Modifier.width(156.dp).weightedPress(src, 16.dp).clip(RoundedCornerShape(16.dp)).clickable(src, null) { haptics.tick(); onClick() }) {
+    PlaylistArt(s, p, Modifier.size(156.dp).sharedCover("cover-pl-${p.name}"), morphCorner(8.dp, 14.dp)?.value ?: 14.dp); Spacer(Modifier.height(8.dp))
+    Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+    Text("${p.tracks.size} ${if (p.tracks.size == 1) "faixa" else "faixas"}" + if (p.source == com.rise.musique.LibSource.SPOTIFY) " · Spotify" else "",
+      color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, fontSize = 13.sp)
   }
 }
 

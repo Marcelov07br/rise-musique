@@ -74,7 +74,8 @@ data class UiState(val query: String = "", val mode: Mode = Mode.Musica, val qua
   val spotifyRequest: com.rise.musique.SpotifyPlaylist? = null,
   val savedSpotifyPlaylists: List<com.rise.musique.SpotifyPlaylist> = emptyList(),
   val streamQuality: String = "Alta", val smartQueue: Boolean = true,
-  val forYou: List<com.rise.musique.Station> = emptyList(), val forYouRefreshing: Boolean = false, val plays: List<com.rise.musique.Play> = emptyList())
+  val forYou: List<com.rise.musique.Station> = emptyList(), val forYouRefreshing: Boolean = false, val plays: List<com.rise.musique.Play> = emptyList(),
+  val library: com.rise.musique.LibraryData = com.rise.musique.LibraryData(), val libraryTab: String = "Coleção")
 
 /** Snackbar with Desfazer; the real action runs only after the timeout. */
 data class UndoInfo(val id: Long, val message: String)
@@ -128,7 +129,13 @@ data class Actions(val query: (String) -> Unit = {}, val mode: (Mode) -> Unit = 
   val queueStationItem: (com.rise.musique.StationItem, Boolean) -> Unit = { _, _ -> }, val queueSpotify: (com.rise.musique.SpotifyTrack, Boolean) -> Unit = { _, _ -> },
   val removeQueueUndo: (Int) -> Unit = {}, val playNextFromQueue: (Int) -> Unit = {}, val saveQueue: () -> Unit = {},
   val smartQueue: (Boolean) -> Unit = {}, val refreshForYou: () -> Unit = {}, val openHistory: () -> Unit = {}, val loadPlays: () -> Unit = {},
-  val playAgain: (com.rise.musique.Play) -> Unit = {})
+  val playAgain: (com.rise.musique.Play) -> Unit = {},
+  // 0.23 library
+  val playList: (List<HistoryItem>, HistoryItem) -> Unit = { _, _ -> }, val createPlaylist: (String, List<HistoryItem>) -> Unit = { _, _ -> },
+  val addAllToPlaylist: (String, List<HistoryItem>) -> Unit = { _, _ -> }, val pickCover: (String) -> Unit = {}, val resetCover: (String) -> Unit = {},
+  val reorderPlaylists: (Int, Int) -> Unit = { _, _ -> }, val toggleAlbum: (com.rise.musique.LibAlbum) -> Unit = {},
+  val exportLibrary: () -> Unit = {}, val importLibrary: () -> Unit = {}, val libraryTab: (String) -> Unit = {},
+  val likeStream: (SearchResult) -> Unit = {}, val addStreamToPlaylist: (SearchResult, String) -> Unit = { _, _ -> })
 val audioFormats = listOf("MP3", "M4A", "Opus", "FLAC")
 
 val sampleHistory = listOf(HistoryItem("Faixa de exemplo", "MP3 · 320k · 8,4 MB"),
@@ -528,10 +535,20 @@ private fun fmt(s: Int) = if (s <= 0) "" else "%d:%02d".format(s / 60, s % 60)
   }
 }
 
+/** Library keys → rows: the downloaded file when there is one, otherwise the stream/Spotify track from the library model. */
+fun libraryItems(state: UiState, keys: List<String>): List<HistoryItem> {
+  val files = state.history.associateBy { it.uri }
+  return keys.mapNotNull { k -> files[k]?.takeIf { k !in state.hidden } ?: state.library.track(k)?.let { t ->
+    files.values.firstOrNull { t.videoId.isNotBlank() && state.library.track(it.uri)?.videoId == t.videoId }
+      ?: HistoryItem(t.title.ifBlank { "Faixa sem título" }, if (t.source == com.rise.musique.LibSource.SPOTIFY) "Spotify" else "Online", k,
+        t.art.ifBlank { if (t.videoId.isNotBlank()) "https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg" else "" }, t.artist, t.durationMs, t.album) } }
+    .distinctBy { it.uri }
+}
+
 fun visibleHistory(state: UiState): List<HistoryItem> {
   val all = if (state.hidden.isEmpty()) state.history else state.history.filter { it.uri !in state.hidden }
-  val base = when (state.historyView) { "Tudo" -> all; "Favoritos" -> all.filter { it.uri in state.favorites }
-    else -> state.playlists[state.historyView].orEmpty().mapNotNull { u -> all.firstOrNull { it.uri == u } } }
+  val base = when (state.historyView) { "Tudo" -> all; "Favoritos" -> libraryItems(state, state.library.likes.map { it.key }.ifEmpty { state.favorites.toList() })
+    else -> libraryItems(state, state.playlists[state.historyView].orEmpty()) }
   val q = state.historyFilter.trim()
   val filtered = base.filter { h ->
     (state.mediaFilter == "Tudo" || (state.mediaFilter == "Vídeos") == h.video) &&

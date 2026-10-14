@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 
 internal val HeaderHeight = 470.dp
 internal val TopBarHeight = 64.dp
@@ -62,6 +63,13 @@ internal val TopBarHeight = 64.dp
   val tracks = smart?.tracks ?: visibleHistory(s)
   val isAlbum = smart == null && s.albumFilter.isNotBlank()
   val title = smart?.value ?: if (isAlbum) s.albumFilter else s.historyView
+  val playlist = if (smart == null && !isAlbum) s.library.playlist(title) else null
+  val reorder = remember(title) { PlaylistReorder(title) }
+  var adding by remember { mutableStateOf(false) }
+  var editMenu by remember { mutableStateOf(false) }
+  var renaming by remember { mutableStateOf(false) }
+  var confirmDelete by remember { mutableStateOf(false) }
+  val rowPx = with(LocalDensity.current) { 69.dp.toPx() }
   val hero = tracks.firstOrNull { it.art.isNotBlank() }
   val artist = if (isAlbum) tracks.map { it.artist }.filter(String::isNotBlank).distinct().singleOrNull().orEmpty() else ""
   val totalMs = tracks.sumOf { it.duration }
@@ -78,7 +86,8 @@ internal val TopBarHeight = 64.dp
           val corner = morphCorner(14.dp, 8.dp)?.value ?: 8.dp
           Box(Modifier.size(208.dp).graphicsLayer { val sc = 1f - .15f * collapseState.value.coerceIn(0f, 1f); scaleX = sc; scaleY = sc }
             .sharedCover(smart?.key ?: if (isAlbum) "cover-al-${if (src.isNotBlank()) "$src-" else ""}$title" else "cover-pl-$title")) {
-            if (hero != null) Cover(hero, Modifier.fillMaxSize().kenBurns(hero.art.isNotBlank()), corner)
+            if (playlist != null && (playlist.cover.isNotBlank() || playlistArts(s, playlist).size >= 4)) PlaylistArt(s, playlist, Modifier.fillMaxSize(), corner)
+            else if (hero != null) Cover(hero, Modifier.fillMaxSize().kenBurns(hero.art.isNotBlank()), corner)
             else Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(.12f)), contentAlignment = Alignment.Center) {
               Icon(if (isAlbum) Icons.Rounded.Album else if (smart != null) Icons.Rounded.AutoAwesome else Icons.Rounded.QueueMusic, null, tint = Color.White.copy(.75f), modifier = Modifier.size(64.dp)) }
           }
@@ -100,6 +109,24 @@ internal val TopBarHeight = 64.dp
             }
             GlassIcon(Icons.Rounded.PlaylistAdd, "Adicionar tudo à fila", { haptics.tick(); a.queueAll(tracks) }, enabled = tracks.isNotEmpty())
           }
+          if (playlist != null) { Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+              GlassIcon(Icons.Rounded.Add, "Adicionar músicas", { haptics.tick(); adding = true })
+              Box { GlassIcon(Icons.Rounded.Edit, "Editar playlist", { haptics.tick(); editMenu = true })
+                DropdownMenu(editMenu, { editMenu = false }) {
+                  DropdownMenuItem({ Text("Renomear") }, { editMenu = false; renaming = true }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
+                  DropdownMenuItem({ Text("Escolher capa") }, { editMenu = false; a.pickCover(title) }, leadingIcon = { Icon(Icons.Rounded.Image, null) })
+                  if (playlist.cover.isNotBlank()) DropdownMenuItem({ Text("Capa automática") }, { editMenu = false; a.resetCover(title) }, leadingIcon = { Icon(Icons.Rounded.GridView, null) })
+                  DropdownMenuItem({ Text("Apagar playlist", color = DangerRed) }, { editMenu = false; confirmDelete = true }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = DangerRed) })
+                } }
+            }
+            if (tracks.size > 1) Text("Segure 1 s para arrastar · deslize ← para remover", Modifier.padding(top = 10.dp), color = Color.White.copy(.6f), fontSize = 12.sp)
+          }
+          if (isAlbum) { val id = "local:$title"; val saved = s.library.albums.any { it.id == id }; Spacer(Modifier.height(12.dp))
+            GlassBox(Modifier.height(40.dp), CircleShape) { Row(Modifier.clickable { haptics.tick()
+                a.toggleAlbum(com.rise.musique.LibAlbum(id, title, artist, hero?.art.orEmpty())) }.padding(horizontal = 18.dp).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+              Icon(if (saved) Icons.Rounded.Check else Icons.Rounded.Add, null, tint = Color.White, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+              Text(if (saved) "Salvo" else "Salvar álbum", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium) } } }
           }
         }
       }
@@ -109,12 +136,43 @@ internal val TopBarHeight = 64.dp
           Text("Toque e segure uma faixa e escolha “Adicionar à playlist”.", color = c.onSurfaceVariant, fontSize = 13.sp, textAlign = TextAlign.Center)
         }
       }
-      itemsIndexed(tracks, key = { _, h -> h.uri }) { i, h ->
-        Box(Modifier.padding(horizontal = 16.dp).enterRise()) { TrackRow(h, s, a, number = i + 1) }
+      if (playlist == null) itemsIndexed(tracks, key = { _, h -> h.uri }) { i, h ->
+        Box(Modifier.padding(horizontal = 16.dp).enterRise()) { TrackRow(h, s, a, number = i + 1, queue = tracks) }
         if (i < tracks.lastIndex) HorizontalDivider(Modifier.padding(start = 64.dp, end = 16.dp), color = c.outlineVariant)
       }
+      else itemsIndexed(reorder.shown(tracks), key = { _, h -> h.uri }) { i, h -> PlaylistTrack(s, a, reorder, title, tracks, h, i, rowPx) }
     }
-    DetailTopBar(title, collapse, back) { haptics.press(); tracks.firstOrNull()?.let(a.play) }
+    DetailTopBar(title, collapse, back) { haptics.press(); tracks.firstOrNull()?.let { a.playList(tracks, it) } }
+  }
+  if (adding) AddTracksSheet(s, title, { adding = false }) { a.addAllToPlaylist(title, it) }
+  if (renaming) { var name by remember { mutableStateOf(title) }
+    AlertDialog({ renaming = false }, shape = RoundedCornerShape(28.dp), title = { Text("Renomear playlist") }, text = { OutlinedTextField(name, { name = it.take(80) }, singleLine = true, shape = CircleShape) },
+      confirmButton = { TextButton({ a.renamePlaylist(title, name); renaming = false; if (name.trim() != title) onBack() }, enabled = name.isNotBlank()) { Text("Salvar") } },
+      dismissButton = { TextButton({ renaming = false }) { Text("Cancelar") } }) }
+  if (confirmDelete) AlertDialog({ confirmDelete = false }, shape = RoundedCornerShape(28.dp), title = { Text("Apagar $title?") }, text = { Text("As músicas continuam na biblioteca.") },
+    confirmButton = { TextButton({ confirmDelete = false; onBack(); a.deletePlaylist(title) }) { Text("Apagar playlist", color = DangerRed) } },
+    dismissButton = { TextButton({ confirmDelete = false }) { Text("Cancelar") } })
+}
+
+/** A playlist row: tap plays, hold 1 s and drag to reorder, swipe ← removes (with Desfazer). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun androidx.compose.foundation.lazy.LazyItemScope.PlaylistTrack(s: UiState, a: Actions, r: PlaylistReorder, name: String, tracks: List<HistoryItem>,
+                                                                                     h: HistoryItem, i: Int, rowPx: Float) {
+  val haptics = rememberHaptics()
+  val elevated = r.elevated(h.uri)
+  val lift by androidx.compose.animation.core.animateFloatAsState(if (h.uri == r.dragKey) 1f else 0f, QueueMotion.lift(), label = "lift")
+  val dismiss = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+    if (v == SwipeToDismissBoxValue.EndToStart) { haptics.press(); a.removeFromList(h, name); true } else false })
+  val latest by rememberUpdatedState(tracks)
+  Box(Modifier.zIndex(if (elevated) 1f else 0f).animateItem(placementSpec = if (elevated) null else QueueMotion.place)
+      .graphicsLayer { translationY = r.offset(h.uri, i, rowPx) }.padding(horizontal = 16.dp)) {
+    SwipeToDismissBox(dismiss, backgroundContent = {
+        if (dismiss.dismissDirection == SwipeToDismissBoxValue.EndToStart) Row(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(DangerRed).padding(horizontal = 24.dp),
+          horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.DeleteOutline, null, tint = Color.White); Spacer(Modifier.width(8.dp)); Text("Remover", color = Color.White, fontWeight = FontWeight.SemiBold) } },
+      enableDismissFromStartToEnd = false, enableDismissFromEndToStart = r.dragKey == null) {
+      TrackRow(h, s, a, number = i + 1, queue = tracks, lift = lift, gesture = Modifier.reorderable(r, h, { r.shown(latest) }, rowPx,
+        tap = { if (h.video) a.playLocalVideo(h) else a.playList(latest, h) }, drop = { from, to -> a.movePlaylist(name, from, to) }))
+    }
   }
 }
 

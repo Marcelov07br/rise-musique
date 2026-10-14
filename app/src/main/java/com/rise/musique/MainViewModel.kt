@@ -38,14 +38,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     recentSearches = recentSearches(), format = prefs.getString("format", "MP3")!!, favorites = Library.favorites(app), playlists = Library.playlists(app),
     normalize = prefs.getBoolean("normalize", true), normalizeAlbum = prefs.getBoolean("normalizeAlbum", false), lockLyrics = prefs.getBoolean("lockLyrics", false),
     wifiOnly = prefs.getBoolean("wifiOnly", false), followed = FollowStore.all(app), artistPhotos = loadPhotos(app.getSharedPreferences("rise", 0)),
-    savedSpotifyPlaylists = SpotifyStore.load(app),
+    savedSpotifyPlaylists = SpotifyStore.load(app), library = Library.data(app),
     streamQuality = prefs.getString("stream_quality", "Alta") ?: "Alta", smartQueue = prefs.getBoolean(PlaybackService.SMART_QUEUE, true)).let { st ->
       val m = runCatching { Mode.valueOf(prefs.getString("mode", "Musica")!!) }.getOrDefault(Mode.Musica)
       Streams.streamQuality = st.streamQuality
       st.copy(mode = m, quality = prefs.getString("quality_${m.name}", m.qualities.last())!!) })
     private set
 
+  /** Every library write (from here, the player service or an import) lands in the state on the main thread. */
+  private val libListener: (LibraryData) -> Unit = { d -> viewModelScope.launch(Dispatchers.Main.immediate) { if (!cleared) state = state.withLibrary(d) } }
+  private fun UiState.withLibrary(d: LibraryData) = copy(library = d, favorites = d.likedKeys, playlists = d.playlists.associate { it.name to it.tracks },
+    followed = d.artists.map { it.name }.toSet(), savedSpotifyPlaylists = Library.spotifyPlaylists(ctx))
+
   init {
+    Library.listener = libListener
     viewModelScope.launch { state = state.copy(stats = withContext(Dispatchers.IO) { runCatching { PlayStats.summarize(PlayStats.load(app)) }.getOrNull() }) }
     refreshForYou(); refreshTrackInfo(); LibraryScanWorker.schedule(app); if (FollowStore.all(app).isNotEmpty()) FollowWorker.schedule(app)
     viewModelScope.launch { Engine.update(app) }
@@ -228,7 +234,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private fun pools(): List<List<SearchResult>> = listOf(state.results) + state.popular.values +
     state.artistPages.values.flatMap { listOf(it.top, it.videos) } + state.albumPages.values.map { it.tracks }
 
-  fun follow(name: String) { FollowStore.toggle(ctx, name); state = state.copy(followed = FollowStore.all(ctx)) }
+  fun follow(name: String) { FollowStore.toggle(ctx, name, state.artistPhotos[name].orEmpty()); state = state.copy(followed = FollowStore.all(ctx)) }
   fun refreshTrackInfo() { viewModelScope.launch { val m = withContext(Dispatchers.IO) { TrackInfoStore.all(ctx) }; state = state.copy(trackInfo = m) } }
 
   fun removeSearch(q: String) { val list = recentSearches() - q; prefs.edit().putString("searches", org.json.JSONArray(list).toString()).apply(); state = state.copy(recentSearches = list) }
@@ -705,15 +711,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     state = state.copy(previewing = null, previewLoading = false) }
 
   /** Toca o histórico como fila, começando pelo item tocado. */
-  fun play(h: HistoryItem) {
-    val list = visibleHistory(state).ifEmpty { state.history }.mapNotNull { item -> uriOf(item)?.let { u -> item to u } }
+  fun play(h: HistoryItem) = playList(visibleHistory(state).ifEmpty { state.history }, h)
+  /** Plays [h] within [from] (a playlist or Curtidas: files, streams and Spotify items mixed). */
+  fun playList(from: List<HistoryItem>, h: HistoryItem) {
+    val list = from.mapNotNull { item -> uriOf(item)?.let { u -> item to u } }
     val start = list.indexOfFirst { it.first.uri == h.uri }.takeIf { it >= 0 } ?: return.also {
       state = state.copy(status = "Arquivo indisponível. Um backup de outra instalação não transfere os arquivos de música.") }
     stopPreview()
-    val items = list.map { (item, u) -> MediaItem.Builder().setMediaId(item.uri).setUri(u)
+    val items = list.map { (item, u) -> MediaItem.Builder().setMediaId(mediaIdOf(item)).setUri(u)
       .setMediaMetadata(meta(item.title, item.artist.ifBlank { item.meta }, item.art, item.album)).build() }
     withPlayer { p -> p.setMediaItems(items, start, 0); p.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF); p.prepare(); p.play() }
-    state = state.copy(now = NowPlaying(h.uri, h.title, h.artist.ifBlank { h.meta }, h.art, loading = true))
+    state = state.copy(now = NowPlaying(mediaIdOf(h), h.title, h.artist.ifBlank { h.meta }, h.art, loading = true))
   }
 
   private var lastFavStamp = 0L
@@ -797,16 +805,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     if (to != index) p.moveMediaItem(index, to); poll()
     withUndo("Vai tocar em seguida", {}, { withPlayer { c -> if (to < c.mediaItemCount && index < c.mediaItemCount) c.moveMediaItem(to, index); poll() } }, {})
   }
-  /** One tap: the whole queue (local tracks; streams are kept by their link) becomes a new playlist. */
+  /** One tap: the whole queue (downloaded files and streams) becomes a new playlist. */
   fun saveQueueAsPlaylist() {
-    val local = state.history.map { it.uri }.toSet()
-    val all = state.playbackQueue.map { it.uri }.distinct()
-    val uris = all.filter { it in local }; val skipped = all.size - uris.size
-    if (uris.isEmpty()) { state = state.copy(status = "Só faixas da biblioteca entram em playlists: guarde as online primeiro"); return }
+    val items = state.playbackQueue.distinctBy { it.uri }.map { h -> h.copy(uri = Library.keyFor(h.uri)) }
+      .filter { it.uri in state.history.map(HistoryItem::uri) || LibraryMigrations.streamId(it.uri) != null }
+    val skipped = state.playbackQueue.distinctBy { it.uri }.size - items.size
+    if (items.isEmpty()) { state = state.copy(status = "Nada na fila pode entrar numa playlist"); return }
     val base = "Fila de " + java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale("pt", "BR")).format(java.util.Date())
     val name = generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base ($it)" }.first { it !in state.playlists }
-    runCatching { Library.createPlaylist(ctx, name); uris.forEach { Library.addToPlaylist(ctx, name, it) } }
-      .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Fila salva como “$name” (${uris.size} faixas" + (if (skipped > 0) ", $skipped online ficaram de fora)" else ")")) }
+    runCatching { Library.createPlaylist(ctx, name); items.forEach { Library.addToPlaylist(ctx, name, it.uri, Library.trackFor(it)) } }
+      .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Fila salva como “$name” (${items.size} faixas" + (if (skipped > 0) ", $skipped ficaram de fora)" else ")")) }
       .onFailure { state = state.copy(status = it.message.orEmpty()) }
   }
   fun smartQueue(on: Boolean) { flag(PlaybackService.SMART_QUEUE, on); state = state.copy(smartQueue = on) }
@@ -862,7 +870,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private fun queueTrack(h: HistoryItem, next: Boolean) {
     val uri = uriOf(h) ?: return.also { state = state.copy(status = "Arquivo indisponível") }
     stopPreview()
-    val item = MediaItem.Builder().setMediaId(h.uri).setUri(uri).setMediaMetadata(meta(h.title, h.artist.ifBlank { h.meta }, h.art, h.album)).build()
+    val item = MediaItem.Builder().setMediaId(mediaIdOf(h)).setUri(uri).setMediaMetadata(meta(h.title, h.artist.ifBlank { h.meta }, h.art, h.album)).build()
     withPlayer { p ->
       if (p.mediaItemCount == 0) { p.setMediaItem(item); p.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF); p.prepare(); p.play() }
       else p.addMediaItem(if (next) p.currentMediaItemIndex + 1 else p.mediaItemCount, item)
@@ -966,13 +974,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun movePlaylist(name: String, from: Int, to: Int) { runCatching { Library.moveTrack(ctx, name, from, to) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx)) }.onFailure { state = state.copy(status = it.message.orEmpty()) } }
 
-  fun favorite(h: HistoryItem) { Library.toggleFavorite(ctx, h.uri); state = state.copy(favorites = Library.favorites(ctx))
+  fun favorite(h: HistoryItem) { Library.toggleFavorite(ctx, h.uri, Library.trackFor(h)); state = state.copy(favorites = Library.favorites(ctx))
     withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.LIKE_SYNC, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY) } }
-  fun addToPlaylist(h: HistoryItem, name: String) { runCatching { Library.addToPlaylist(ctx, name.trim(), h.uri) }
+  fun addToPlaylist(h: HistoryItem, name: String) { runCatching { Library.addToPlaylist(ctx, name.trim(), h.uri, Library.trackFor(h)) }
     .onSuccess { state = state.copy(playlists = Library.playlists(ctx), status = "Adicionada a ${name.trim()}") }
     .onFailure { state = state.copy(status = it.message.orEmpty()) } }
   fun removeFromPlaylist(h: HistoryItem) { Library.removeFromPlaylist(ctx, state.historyView, h.uri); state = state.copy(playlists = Library.playlists(ctx)) }
   fun deletePlaylist(n: String) { Library.deletePlaylist(ctx, n); state = state.copy(playlists = Library.playlists(ctx), historyView = "Tudo") }
+  // ---- 0.23 library ----
+  private fun lib(ok: String? = null, f: () -> Unit) { runCatching(f).onSuccess { if (ok != null) state = state.copy(status = ok) }
+    .onFailure { state = state.copy(status = it.message.orEmpty()) } }
+  fun libraryTab(t: String) { state = state.copy(libraryTab = t) }
+  fun createPlaylist(name: String, tracks: List<HistoryItem>) = lib("Playlist “${name.trim()}” criada") {
+    require(name.trim() !in state.playlists) { "Já existe uma playlist com esse nome" }
+    Library.createPlaylist(ctx, name.trim()); tracks.forEach { Library.addToPlaylist(ctx, name.trim(), it.uri, Library.trackFor(it)) } }
+  fun addAllToPlaylist(name: String, tracks: List<HistoryItem>) = lib(if (tracks.size == 1) "Adicionada a $name" else "${tracks.size} faixas adicionadas a $name") {
+    tracks.forEach { Library.addToPlaylist(ctx, name, it.uri, Library.trackFor(it)) } }
+  fun setCover(name: String, uri: Uri?) { uri ?: return
+    runCatching { ctx.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    lib("Capa atualizada") { Library.setCover(ctx, name, uri.toString()) } }
+  fun resetCover(name: String) = lib("Capa automática") { Library.setCover(ctx, name, "") }
+  fun reorderPlaylists(from: Int, to: Int) = lib { Library.movePlaylist(ctx, from, to) }
+  fun toggleAlbum(a: LibAlbum) = lib { val on = Library.toggleAlbum(ctx, a); state = state.copy(status = if (on) "Álbum salvo na biblioteca" else "Álbum removido da biblioteca") }
+  fun likeStream(r: SearchResult) { val t = Library.streamTrack(r) ?: return
+    Library.toggleFavorite(ctx, t.key, t); state = state.copy(status = if (t.key in Library.favorites(ctx)) "Curtida" else "Removida das curtidas")
+    withPlayer { it.sendCustomCommand(SessionCommand(PlaybackService.LIKE_SYNC, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY) } }
+  fun addStreamToPlaylist(r: SearchResult, name: String) { val t = Library.streamTrack(r) ?: return
+    lib("Adicionada a ${name.trim()}") { Library.addToPlaylist(ctx, name.trim(), t.key, t) } }
+  fun exportLibrary(to: Uri?) { to ?: return; viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { Library.exportLibrary(ctx, to) } }
+    .onSuccess { state = state.copy(status = "Biblioteca exportada") }.onFailure { state = state.copy(status = "Falha ao exportar: ${it.message}") } } }
+  fun importLibrary(from: Uri?) { from ?: return; viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { Library.importLibrary(ctx, from) } }
+    .onSuccess { r -> state = state.copy(status = if (r.total == 0) "Nada novo: a biblioteca já tinha tudo" else
+      "Importado: ${r.tracks} faixas, ${r.likes} curtidas, ${r.playlists} playlists, ${r.artists} artistas, ${r.albums} álbuns") }
+    .onFailure { state = state.copy(status = "Não deu pra importar: ${it.message}") } } }
   fun historyFilter(q: String) { state = state.copy(historyFilter = q) }
   fun historyView(v: String) { state = state.copy(historyView = v, albumFilter = "") }
   fun exportBackup(to: Uri?) { to ?: return; viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { Library.export(ctx, to) } }
@@ -990,9 +1024,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   fun dismiss(q: QueueItem) { Jobs.forget(ctx, q.id); state = state.copy(queue = state.queue - q) }
 
   private fun uriOf(h: HistoryItem): Uri? = runCatching { when {
-    h.uri.startsWith("content://") -> Uri.parse(h.uri)
+    h.uri.startsWith("content://") || h.uri.startsWith(Streams.SCHEME + "://") -> Uri.parse(h.uri)
+    h.uri.startsWith(SpotifyImport.SCHEME + "://") -> spotifyOf(h)?.let { SpotifyImport.registerTrack(it); Uri.parse("${SpotifyImport.SCHEME}://${it.uri.removePrefix("spotify:")}") }
     h.uri.isNotBlank() && File(h.uri).exists() -> FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", File(h.uri))
     else -> null } }.getOrNull()
+  private fun spotifyOf(h: HistoryItem) = state.library.track(h.uri)?.let { t -> t.externalIds["spotify"]?.let { SpotifyTrack(it, t.title, t.artist, t.durationMs) } }
+  /** Player media id: streams keep the `stream:<url>` form used by stats/history; Spotify items `spotify:<uri>`. */
+  private fun mediaIdOf(h: HistoryItem): String = LibraryMigrations.streamId(h.uri)?.let { "stream:https://music.youtube.com/watch?v=$it" }
+    ?: spotifyOf(h)?.takeIf { h.uri.startsWith(SpotifyImport.SCHEME) }?.let { "spotify:" + it.uri } ?: h.uri
   private fun ext(h: HistoryItem) = h.meta.substringBefore(" ·").lowercase()
 
   /** Devolve a Intent pra Activity abrir (abrir no player ou compartilhar). */
@@ -1013,6 +1052,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  override fun onCleared() { video.close(); voice.stop(false); runBlocking { undoJob?.cancel(); undoCommit?.invoke() }; cleared = true; pending.clear(); controllerFuture?.let(MediaController::releaseFuture); super.onCleared() }
+  override fun onCleared() { video.close(); voice.stop(false); runBlocking { undoJob?.cancel(); undoCommit?.invoke() }; cleared = true; if (Library.listener === libListener) Library.listener = null; pending.clear(); controllerFuture?.let(MediaController::releaseFuture); super.onCleared() }
 }
 

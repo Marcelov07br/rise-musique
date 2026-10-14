@@ -1,6 +1,6 @@
 # Rise Musique — notas do projeto (leia isto primeiro)
 
-## Estado atual: 0.22.0 (14/10/2026) — linha principal `main`
+## Estado atual: 0.23.0 (14/10/2026) — linha principal `main`
 - Repositório do código: `Marcelov07br/rise-musique` (privado). Releases públicas: `Marcelov07br/rise-musique-releases`.
 - Nome visível "Rise Musique". **Application ID `com.rise.musique.gpt` — NÃO mudar** (outro ID = outro app, sem atualizar por cima).
 - A branch `gpt` é histórico antigo (0.7–0.9.1), não usar.
@@ -43,7 +43,18 @@
 - `TrackInfo.kt` — loudness EBU R128, gênero/ano/BPM, `LibraryScanWorker`, `Moods`.
 - `Beats.kt`, `Crossfade.kt` — grade de batidas e regras de transição.
 - `Lyrics.kt` (LRCLIB), `LyricPlayer.kt`, `LastFm.kt`, `Stats.kt` (PlayStats, retrospectiva), `RecapImage.kt`.
-- `Library.kt`, `BackupMerge.kt`, `PlaylistEdits.kt`, `AutoLibrary.kt` (Android Auto), `LocalMedia.kt` (importar arquivos/pasta).
+- **Biblioteca unificada (0.23)** — fonte única para curtidas, playlists, artistas seguidos e álbuns salvos:
+  - `LibraryModel.kt` (puro, testado na JVM): `LibraryData` { tracks (chave → `LibTrack`), likes, playlists (`LibPlaylist`: id, nome, ordem, `cover` vazio = mosaico automático), artists, albums }. Toda faixa tem `videoId` + `source` (local/youtube/spotify) + `externalIds` (youtube, spotify, ytmAlbum…) + `addedAt/updatedAt` (para import do Google/Spotify em 0.24 e backup no Drive em 0.25).
+  - Chaves de faixa: caminho/`content://` para arquivos, `rise-stream://<videoId>` para streams, `rise-spotify://track/<id>` para Spotify não resolvido. Ids antigos `stream:<url>` são normalizados (`LibraryMigrations.normalizeKey`, `Library.keyFor`).
+  - Armazenado em `filesDir/library.json` com `schema` (1 = antigo `{fav, pl}` sem campo; 2 = atual). `LibraryMigrations.from1` junta `library.json` + `history.json` (metadados) + prefs `follow/artists` + `spotify_playlists.json`; o original fica em `library.v1.json`. Arquivos antigos ficam no lugar mas não são mais lidos. Schema maior que o do app é recusado.
+  - Histórico de reprodução continua em `stats.json` (`PlayStats`); não foi duplicado na biblioteca. O arquivo exportado inclui o histórico.
+  - `Library.kt` = repositório (cache em memória, um processo só; `listener` → `MainViewModel.withLibrary` espelha no `UiState.library` + `favorites/playlists/followed/savedSpotifyPlaylists`). `FollowStore.all/toggle` e `SpotifyStore.load/save/remove` delegam para ela. Downloads gravam o `videoId` (`DownloadWorker` → `Library.rememberFile`).
+  - Mesclagem (`LibraryMerge`): faixas deduplicadas por videoId (depois chave); a de fora é remapeada para a chave existente (arquivo + stream do mesmo vídeo = uma faixa); playlists de mesmo nome (ou mesmo id do Spotify) unem faixas; metadados: brancos preenchidos, `updatedAt` maior ganha.
+  - Arquivo exportado (`LibraryFile`): `{format: "rise-musique-library", version: 1, exportedAt, library: <schema 2>, history: [plays]}`; SAF (`CreateDocument`/`OpenDocument`). O backup antigo (`Library.export/import`, v3) segue existindo e agora leva a biblioteca no schema 2; também aceita v1/v2.
+  - UI: `ui/LibraryScreens.kt` — abas (`LibraryTabs`, `PillSelector(compact)`), `libraryItems` (chave → linha: arquivo se houver, senão a faixa online/Spotify), `PlaylistArt` (mosaico 2×2 / capa própria), `AddTracksSheet`, `NewPlaylistDialog`, `PlaylistReorder` + `Modifier.reorderable` (mesmo gesto da fila: segurar 1 s, mola ζ0.6 só em graphicsLayer, um `moveTrack` ao soltar). `CollectionScreen` de playlist: +, Editar (renomear/capa/apagar), arrastar, deslizar ← remove com Desfazer. Salvar álbum em `RemoteAlbum` e no álbum local (`local:<nome>`). `StreamActionSheet(r, a, s)` tem Curtir e Adicionar à playlist.
+  - `playList(lista, faixa)` toca listas mistas (arquivo/stream/Spotify; `uriOf` aceita `rise-stream://` e `rise-spotify://`).
+  - A classe de snapshot `Library` virou `LibrarySnapshots` (mesmo FQN do objeto `Library` escondia o objeto nos testes).
+- `BackupMerge.kt`, `PlaylistEdits.kt`, `AutoLibrary.kt` (Android Auto), `LocalMedia.kt` (importar arquivos/pasta).
 - `Stations.kt` — estações automáticas (artistas mais ouvidos, climas, Descobertas), capa gerada em Canvas (cache em `cacheDir/stations`), `StationQueue` (intercala rádios + faixas locais).
 - `Snippet.kt` — cartão 9:16 e MP4 de 15 s (Media3 Transformer, overlay por linha de letra). Streams: só imagem (decisão: não recortar áudio do YouTube).
 - `Shortcuts.kt` — atalhos dinâmicos do ícone + `PlayTile` (bloco de Configurações rápidas) + `TileState`.
@@ -104,6 +115,7 @@
 - `app/lint.xml` ignora `UnsafeOptInUsageError` só no código copiado do Media3.
 
 ## Lacunas conhecidas / não testado no aparelho
+- 0.23: migração com dados reais do aparelho (testada só com arquivos sintéticos em Robolectric), arrastar/deslizar na playlist (sem rolagem automática na borda), capa própria via SAF (permissão persistente), tocar playlists mistas com faixas do Spotify não resolvidas, import/export pelo seletor de arquivos real. Linhas pequenas aparecem sem capa no Paparazzi (limitação já existente). Reordenar playlists na aba é por menu (Mover para cima/baixo), não por arraste.
 - 0.22: sensação do arraste/levantar e dos deslizes na fila (Paparazzi só mostra estático; sem rolagem automática ao arrastar até a borda), pull-to-refresh, fila inteligente com rede real, botão de coração na notificação e na tela de bloqueio do Samsung (Android 17 pode mostrar ou não custom actions), temporizador "fim da faixa" com crossfade/automix ligados, retomar com streams (URL re-resolvida ao tocar).
 - 0.21 (código do colega, sem testes novos nem snapshots): importação do Spotify com links reais, página de estação, qualidade Econômica/Normal, seletor de qualidade de download em Ajustes (opções 128k/192k/320k podem não bater com as qualidades por modo). Revisão: removido o fallback dele que assinava release com chave debug se o keystore faltasse.
 - 0.20.1: desfoque real só aparece no aparelho (Paparazzi não renderiza RenderEffect direito); custo de GPU do Haze em rolagem; sem lente AGSL (ficou só borda/realce).

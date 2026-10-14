@@ -47,7 +47,7 @@ object StaticPreview { @JvmField var on = false }
 }
 
 @Composable fun <T> PillSelector(options: List<T>, selected: T, label: (T) -> String,
-  onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+  onSelect: (T) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
   val c = MaterialTheme.colorScheme
   val haptics = rememberHaptics()
   val idx = options.indexOf(selected).coerceAtLeast(0).toFloat()
@@ -74,7 +74,7 @@ object StaticPreview { @JvmField var on = false }
         val fg by animateColorAsState(if (on) c.onPrimary else c.onSurfaceVariant, label = "fg")
         Box(Modifier.weight(1f).springPress(src).clip(CircleShape)
             .clickable(src, null) { if (o != selected) haptics.tick(); onSelect(o) }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-          Text(label(o), color = fg, style = MaterialTheme.typography.labelLarge)
+          Text(label(o), color = fg, style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge, maxLines = 1)
         }
       }
     }

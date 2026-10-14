@@ -36,7 +36,10 @@ class DownloadWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
         if (now - last > 500 || stage != lastStage) { last = now; lastStage = stage
           setProgressAsync(workDataOf("p" to p, "line" to line, "running" to true, "stage" to stage)); nm.notify(id.hashCode(), notif("$title · $stage", p)) }
       }
-      HistoryStore.add(applicationContext, item.copy(art = item.art.ifBlank { d.getString("art").orEmpty() }, artist = item.artist.ifBlank { d.getString("artist").orEmpty() }))
+      val saved = item.copy(art = item.art.ifBlank { d.getString("art").orEmpty() }, artist = item.artist.ifBlank { d.getString("artist").orEmpty() })
+      HistoryStore.add(applicationContext, saved)
+      // The library keeps the YouTube id of every download so it can still play (or re-download) from anywhere.
+      Engine.videoId(d.getString("url").orEmpty())?.let { runCatching { Library.rememberFile(applicationContext, saved, it) } }
     }.fold({ java.io.File(applicationContext.filesDir, "dl/$id").deleteRecursively(); Result.success(workDataOf("stage" to "Concluído")) },
       { if (it is CancellationException) { YoutubeDL.getInstance().destroyProcessById(id.toString()); throw it }
         // Rede/servidor: tenta de novo com espera crescente (WorkManager), mantendo o arquivo parcial.

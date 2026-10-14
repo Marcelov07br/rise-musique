@@ -6,13 +6,14 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Persists Spotify playlists saved by the user in the Library.
+ * Spotify playlists saved by the user. Since 0.23 they live in the unified [Library]; the old
+ * `spotify_playlists.json` is only read once by the migration ([loadLegacy]).
  */
 object SpotifyStore {
   private fun file(c: Context) = File(c.filesDir, "spotify_playlists.json")
 
   @Synchronized
-  fun load(c: Context): List<SpotifyPlaylist> = runCatching {
+  fun loadLegacy(c: Context): List<SpotifyPlaylist> = runCatching {
     val f = file(c)
     if (!f.exists()) return emptyList()
     val text = f.readText()
@@ -47,55 +48,8 @@ object SpotifyStore {
     list
   }.getOrDefault(emptyList())
 
-  @Synchronized
-  private fun save(c: Context, list: List<SpotifyPlaylist>) {
-    runCatching {
-      val root = JSONArray()
-      for (pl in list) {
-        val o = JSONObject()
-        o.put("id", pl.id)
-        o.put("type", pl.type)
-        o.put("title", pl.title)
-        o.put("subtitle", pl.subtitle)
-        o.put("art", pl.art)
-        val tracksArray = JSONArray()
-        for (t in pl.tracks) {
-          val to = JSONObject()
-          to.put("uri", t.uri)
-          to.put("title", t.title)
-          to.put("artist", t.artist)
-          to.put("durationMs", t.durationMs)
-          if (!t.previewUrl.isNullOrBlank()) to.put("previewUrl", t.previewUrl)
-          to.put("isExplicit", t.isExplicit)
-          tracksArray.put(to)
-        }
-        o.put("tracks", tracksArray)
-        root.put(o)
-      }
-      val f = file(c)
-      val tmp = File(c.filesDir, "spotify_playlists.json.tmp")
-      tmp.writeText(root.toString())
-      if (tmp.renameTo(f)) {
-        // successfully saved
-      } else {
-        f.writeText(root.toString())
-        tmp.delete()
-      }
-    }
-  }
-
-  @Synchronized
-  fun savePlaylist(c: Context, pl: SpotifyPlaylist) {
-    val current = load(c).filter { it.id != pl.id }.toMutableList()
-    current.add(0, pl) // Add to top of saved playlists
-    save(c, current)
-  }
-
-  @Synchronized
-  fun removePlaylist(c: Context, id: String) {
-    val current = load(c).filter { it.id != id }
-    save(c, current)
-  }
-
+  fun load(c: Context): List<SpotifyPlaylist> = Library.spotifyPlaylists(c)
+  fun savePlaylist(c: Context, pl: SpotifyPlaylist) = Library.saveSpotify(c, pl)
+  fun removePlaylist(c: Context, id: String) = Library.removeSpotify(c, id)
   fun isSaved(c: Context, id: String): Boolean = load(c).any { it.id == id }
 }

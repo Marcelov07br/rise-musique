@@ -18,9 +18,9 @@ import java.util.concurrent.TimeUnit
 /** Followed artists and the uploads already seen for each (so only new ones notify). */
 object FollowStore {
   private fun prefs(c: Context) = c.getSharedPreferences("follow", 0)
-  fun all(c: Context): Set<String> = prefs(c).getStringSet("artists", emptySet())!!.toSet()
-  fun toggle(c: Context, name: String): Boolean { val now = all(c); val on = name !in now
-    prefs(c).edit().putStringSet("artists", if (on) now + name else now - name).apply(); if (on) FollowWorker.schedule(c); return on }
+  /** Followed artists live in the unified [Library] since 0.23; only the "seen" uploads stay here. */
+  fun all(c: Context): Set<String> = Library.followed(c)
+  fun toggle(c: Context, name: String, art: String = ""): Boolean { val on = Library.toggleArtist(c, name, art); if (on) FollowWorker.schedule(c); return on }
   fun seen(c: Context, name: String): Set<String> = prefs(c).getString("seen:$name", null)?.let { s -> JSONArray(s).let { a -> (0 until a.length()).map(a::getString).toSet() } } ?: emptySet()
   fun markSeen(c: Context, name: String, urls: Collection<String>) = prefs(c).edit().putString("seen:$name", JSONArray((seen(c, name) + urls).toList().takeLast(200)).toString()).apply()
   /** New = not seen before; the first check only records (no flood of notifications). Visible for tests. */

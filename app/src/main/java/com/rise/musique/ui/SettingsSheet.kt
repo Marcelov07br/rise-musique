@@ -79,6 +79,12 @@ val SettingsSections = listOf(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           PillButton("Exportar", a.exportBackup, Modifier.weight(1f), filled = false)
           PillButton("Importar", a.importBackup, Modifier.weight(1f), filled = false) } } },
+    SettingEntry("Integrações", "Exportar e importar a biblioteca", "json curtidas playlists álbuns artistas mesclar") {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Biblioteca (arquivo JSON)", style = MaterialTheme.typography.titleMedium)
+        Text("Curtidas, playlists, álbuns salvos, artistas seguidos e histórico. Importar mescla com o que já existe, sem duplicar faixas.", color = sub, fontSize = 13.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          PillButton("Exportar", a.exportLibrary, Modifier.weight(1f), filled = false)
+          PillButton("Importar", a.importLibrary, Modifier.weight(1f), filled = false) } } },
     SettingEntry("Sobre", "Estatísticas", "mais ouvidas retrospectiva") { PillButton("Ver o que você mais ouviu", { a.stats(true) }, Modifier.fillMaxWidth(), filled = false) },
     SettingEntry("Sobre", "Verificar atualizações", "update versão nova") { PillButton("Verificar atualizações", a.updates, Modifier.fillMaxWidth()) },
     SettingEntry("Sobre", "Sobre o Rise", "novidades versão notas") {

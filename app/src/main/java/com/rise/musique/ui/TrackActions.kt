@@ -7,7 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,14 +64,16 @@ val DangerRed = androidx.compose.ui.graphics.Color(0xFFE5484D)
 /** Long-press menu for online tracks (search, artist, album, station, Spotify): same look and queue actions as local ones. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun StreamActionSheet(title: String, subtitle: String, art: String, close: () -> Unit, playNext: () -> Unit, addQueue: () -> Unit,
-                                  radio: (() -> Unit)? = null, download: (() -> Unit)? = null) {
+                                  radio: (() -> Unit)? = null, download: (() -> Unit)? = null, like: (() -> Unit)? = null, liked: Boolean = false,
+                                  addTo: (() -> Unit)? = null) {
   ModalBottomSheet(close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-    StreamActionContent(title, subtitle, art, close, playNext, addQueue, radio, download)
+    StreamActionContent(title, subtitle, art, close, playNext, addQueue, radio, download, like, liked, addTo)
   }
 }
 
 @Composable fun StreamActionContent(title: String, subtitle: String, art: String, close: () -> Unit, playNext: () -> Unit, addQueue: () -> Unit,
-                                    radio: (() -> Unit)? = null, download: (() -> Unit)? = null) {
+                                    radio: (() -> Unit)? = null, download: (() -> Unit)? = null, like: (() -> Unit)? = null, liked: Boolean = false,
+                                    addTo: (() -> Unit)? = null) {
   val haptics = rememberHaptics()
   fun go(f: () -> Unit) = { haptics.tick(); close(); f() }
   Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
@@ -85,10 +87,19 @@ val DangerRed = androidx.compose.ui.graphics.Color(0xFFE5484D)
     HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
     Action(Icons.Rounded.QueuePlayNext, "Tocar em seguida", go(playNext))
     Action(Icons.Rounded.AddToQueue, "Adicionar à fila", go(addQueue))
+    like?.let { Action(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (liked) "Remover das curtidas" else "Curtir", go(it)) }
+    addTo?.let { Action(Icons.Rounded.PlaylistAdd, "Adicionar à playlist…", go(it)) }
     radio?.let { Action(Icons.Rounded.Radio, "Rádio desta música", go(it)) }
     download?.let { Action(Icons.Rounded.Download, "Baixar…", go(it)) }
   }
 }
 
-@Composable fun StreamActionSheet(r: SearchResult, a: Actions, close: () -> Unit) =
-  StreamActionSheet(r.title, r.channel, r.thumb, close, { a.playNextStream(r) }, { a.addQueueStream(r) }, { a.radio(r) }, { a.downloadItem(r) })
+/** Online track menu; with [s] it also offers Curtir and Adicionar à playlist (streams live in the library by video id). */
+@Composable fun StreamActionSheet(r: SearchResult, a: Actions, s: UiState? = null, close: () -> Unit) {
+  var pick by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+  val key = com.rise.musique.Engine.videoId(r.url)?.let { "rise-stream://$it" }
+  StreamActionSheet(r.title, r.channel, r.thumb, close, { a.playNextStream(r) }, { a.addQueueStream(r) }, { a.radio(r) }, { a.downloadItem(r) },
+    like = if (s != null && key != null) ({ a.likeStream(r) }) else null, liked = key != null && s?.favorites?.contains(key) == true,
+    addTo = if (s != null && key != null) ({ pick = true }) else null)
+  if (pick && s != null) PlaylistPicker(s.playlists.keys.toList(), { pick = false }) { name -> a.addStreamToPlaylist(r, name); pick = false }
+}

@@ -39,6 +39,10 @@ class MainActivity : ComponentActivity() {
       val mediaFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree(), vm::importFolder)
       val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), vm::exportBackup)
       val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), vm::importBackup)
+      val libExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), vm::exportLibrary)
+      val libImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), vm::importLibrary)
+      var coverFor by remember { mutableStateOf<String?>(null) }
+      val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> coverFor?.let { vm.setCover(it, u) }; coverFor = null }
       var crash by remember { mutableStateOf(java.io.File(filesDir, "crash.txt").takeIf { it.exists() }?.readText()) }
       SideEffect { updatePip() }
       RiseTheme(dark) {
@@ -73,6 +77,10 @@ class MainActivity : ComponentActivity() {
         playNextStream = vm::playNextStream, addQueueStream = vm::addQueueStream, queueStationItem = vm::queueStationItem, queueSpotify = vm::queueSpotify,
         removeQueueUndo = vm::removeQueueUndo, playNextFromQueue = vm::playNextFromQueue, saveQueue = vm::saveQueueAsPlaylist, smartQueue = vm::smartQueue,
         refreshForYou = { vm.refreshForYou(true) }, loadPlays = vm::loadPlays, playAgain = vm::playAgain,
+        playList = vm::playList, createPlaylist = vm::createPlaylist, addAllToPlaylist = vm::addAllToPlaylist,
+        pickCover = { coverFor = it; coverPicker.launch(arrayOf("image/*")) }, resetCover = vm::resetCover, reorderPlaylists = vm::reorderPlaylists,
+        toggleAlbum = vm::toggleAlbum, libraryTab = vm::libraryTab, likeStream = vm::likeStream, addStreamToPlaylist = vm::addStreamToPlaylist,
+        exportLibrary = { libExporter.launch("rise-musique-biblioteca-${java.time.LocalDate.now()}.json") }, importLibrary = { libImporter.launch(arrayOf("application/json", "*/*")) },
         shareSnippet = { v, ms -> vm.shareSnippet(v, ms) { startActivity(it) } }, downloadItem = vm::downloadItem, dlRemove = vm::dlRemove, dlQuery = vm::dlQuery, dlLink = vm::dlLink, playLocalVideo = vm::playLocalVideo, voiceStart = { voice() }, voiceStop = { vm.voice.stop() },
         video = com.rise.musique.ui.VideoActions(close = { vm.video.close(); exitFullscreen() }, playPause = vm.video::playPause, seek = vm.video::seek, seekBy = vm.video::seekBy,
           quality = vm.video::quality, subtitle = vm.video::subtitle, fullscreen = { on -> vm.video.fullscreen(on); if (on) enterFullscreen() else exitFullscreen() },

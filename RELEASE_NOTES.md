@@ -1,13 +1,11 @@
-# Rise Musique 0.22.0
+# Rise Musique 0.23.0
 
-- **Fila nova**: mostra a capa de cada próxima faixa, entra e se reorganiza com animação suave. Sem setas: segure uma faixa por cerca de 1 segundo para levantá-la (ela cresce de leve, ganha sombra e o celular vibra) e arraste para qualquer lugar; as outras abrem espaço sozinhas.
-- **Deslize na fila**: para a direita, a faixa toca em seguida; para a esquerda, sai da fila. As duas têm Desfazer.
-- **Salvar a fila como playlist** com um toque, no topo da fila.
-- **Fila inteligente**: quando a fila acaba, o Rise continua com músicas parecidas com a última. Liga e desliga em Ajustes → Reprodução.
-- **Feito pra você** no Início: mixes das suas curtidas e da biblioteca (artistas e álbuns parecidos, Curtidas recentes, Redescobrir). Puxe a tela para baixo para renovar.
-- **Tocar em seguida** e **Adicionar à fila** ao segurar uma faixa em todas as telas: biblioteca, busca, artista, álbum online, estações e Spotify.
-- **Temporizador**: nova opção "No fim desta faixa", mais tempos (15 a 90 min) e o volume agora desce aos poucos nos últimos 30 segundos.
-- **Histórico**: nova página no Início com o que você ouviu, por dia, e o botão Tocar de novo.
-- **Continua de onde parou**: ao abrir o app, a mesma fila e a mesma posição voltam, inclusive músicas online.
-- **Favoritar pela notificação** e pela tela de bloqueio: botão de coração ao lado dos controles.
-- **Ajustes reorganizados** em seções (Reprodução, Áudio, Downloads, Aparência, Integrações, Sobre), cada uma com sua página, e uma busca no topo. Todas as opções continuam lá.
+- **Biblioteca nova, com abas**: Coleção (seus arquivos, como antes), Curtidas, Playlists, Álbuns e Artistas.
+- **Curtidas para tudo**: dá para curtir músicas online também (segure a faixa → Curtir, ou o coração no player). Tocar e Aleatório no topo da aba.
+- **Playlists completas**: criar, renomear, apagar, escolher uma capa sua ou deixar a automática (mosaico das capas). Adicione músicas pela própria playlist (botão +, com busca) ou de qualquer lista, inclusive faixas online.
+- **Reordenar a playlist** como na fila: segure uma faixa por cerca de 1 segundo e arraste. Deslize para a esquerda para tirar da playlist, com Desfazer.
+- **Salvar álbuns**: o botão Salvar no álbum (online ou dos seus arquivos) guarda o álbum na aba Álbuns.
+- **Artistas seguidos** aparecem na aba Artistas, com Deixar de seguir.
+- **Spotify**: playlists e álbuns importados por link agora entram na mesma biblioteca e viram playlists normais (dá para editar).
+- **Exportar e importar a biblioteca** num arquivo JSON (Biblioteca → + ou Ajustes → Integrações). Importar junta com o que já existe, sem duplicar músicas.
+- Tudo o que você já tinha (favoritos, playlists, artistas seguidos, playlists do Spotify) é migrado automaticamente; uma cópia do arquivo antigo fica guardada.

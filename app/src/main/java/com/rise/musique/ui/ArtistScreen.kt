@@ -150,7 +150,7 @@ internal fun SearchResult.asItem() = HistoryItem(title, subtitle, url, thumb, ch
         else -> itemsIndexed(popular.take(10), key = { _, r -> "p:" + r.url }) { i, r ->
           var menu by remember { mutableStateOf(false) }
           PopularRow(i + 1, r, s.now?.key == "stream:" + r.url, false, { haptics.tick(); a.playStreams(popular, i, false) }, { a.downloadItem(r) }) { haptics.press(); menu = true }
-          if (menu) StreamActionSheet(r, a) { menu = false } }
+          if (menu) StreamActionSheet(r, a, s) { menu = false } }
       }
       if (page != null && page.albums.isNotEmpty()) {
         item(key = "albums-title") { Section("Álbuns") }

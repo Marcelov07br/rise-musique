@@ -65,6 +65,9 @@ import coil.compose.AsyncImage
                   Icon(Icons.Rounded.PlayArrow, null, tint = Color.White); Spacer(Modifier.width(8.dp))
                   Text("Tocar", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp) } }
               GlassIcon(Icons.Rounded.Download, "Baixar tudo", { haptics.press(); a.downloadAll(tracks) }, enabled = tracks.isNotEmpty())
+              val saved = s.library.albums.any { it.id == r.id }
+              GlassIcon(if (saved) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd, if (saved) "Remover dos álbuns salvos" else "Salvar álbum", { haptics.tick()
+                a.toggleAlbum(com.rise.musique.LibAlbum(r.id, page?.title?.ifBlank { null } ?: r.title, artist, art, page?.year.orEmpty(), com.rise.musique.LibSource.YOUTUBE, mapOf("ytmAlbum" to r.id))) })
             }
           }
         }
@@ -76,7 +79,7 @@ import coil.compose.AsyncImage
         val playing = s.now?.key == "stream:" + t.url
         val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
         var menu by remember { mutableStateOf(false) }
-        if (menu) StreamActionSheet(t.copy(thumb = t.thumb.ifBlank { r.art }), a) { menu = false }
+        if (menu) StreamActionSheet(t.copy(thumb = t.thumb.ifBlank { r.art }), a, s) { menu = false }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).weightedPress(src, 14.dp).clip(RoundedCornerShape(14.dp))
             .combinedClickable(src, null, onLongClick = { haptics.press(); menu = true }) { haptics.tick(); a.playStreams(tracks, i, false) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
           if (playing) Icon(Icons.Rounded.GraphicEq, null, Modifier.width(36.dp), tint = accentColor())

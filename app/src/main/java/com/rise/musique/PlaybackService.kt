@@ -106,7 +106,7 @@ class PlaybackService : MediaLibraryService() {
   private var mainPlayer: ExoPlayer? = null
 
   // ---- favorite button (notification + lock screen) ----
-  private fun currentLiked() = session?.player?.currentMediaItem?.mediaId?.let { it in Library.favorites(this) } == true
+  private fun currentLiked() = session?.player?.currentMediaItem?.mediaId?.let { Library.isLiked(this, it) } == true
   private fun likeButton(): CommandButton { val liked = currentLiked()
     return CommandButton.Builder().setDisplayName(if (liked) "Remover dos favoritos" else "Favoritar")
       .setIconResId(if (liked) R.drawable.ic_w_heart else R.drawable.ic_w_heart_outline)
@@ -114,7 +114,10 @@ class PlaybackService : MediaLibraryService() {
   private fun refreshLike() { session?.setCustomLayout(com.google.common.collect.ImmutableList.of(likeButton())) }
   private fun toggleLike() {
     val id = session?.player?.currentMediaItem?.mediaId?.takeIf { !it.startsWith("preview:") } ?: return
-    Library.toggleFavorite(this, id)
+    val m = session?.player?.currentMediaItem?.mediaMetadata
+    val key = Library.keyFor(id)
+    Library.toggleFavorite(this, id, LibraryMigrations.streamId(key)?.let { vid -> LibTrack(key, m?.title?.toString().orEmpty(), m?.artist?.toString().orEmpty(),
+      m?.albumTitle?.toString().orEmpty(), 0, m?.artworkUri?.toString().orEmpty(), vid, LibSource.YOUTUBE, mapOf("youtube" to vid)) })
     extras.putLong(FAV_STAMP, System.currentTimeMillis()); session?.setSessionExtras(Bundle(extras))
     refreshLike()
   }

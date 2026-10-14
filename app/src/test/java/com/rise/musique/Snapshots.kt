@@ -24,7 +24,7 @@ class Player { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.c
   @Test fun mini() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np), Actions()) } }
   @Test fun lyrics() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np), Actions(), initialExpanded = true, initialLyrics = true) } }
   @Test fun full() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np), Actions(), initialExpanded = true) } } }
-class Library { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+class LibrarySnapshots { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
   @Test fun panel() = p.snapshot { StaticPreview.on = true; RiseTheme(true) { RiseApp(UiState(history = sampleHistory.mapIndexed { i, h -> h.copy(uri = "u$i") },
     favorites = setOf("u0"), playlists = mapOf("Treino" to listOf("u0", "u2"), "Referências" to listOf("u1")), historyFilter = ""), Actions(), initialHistoryOpen = true) } }
   @Test fun sleep() = p.snapshot { RiseTheme(true) { RiseApp(found.copy(now = np, sleepAt = System.currentTimeMillis() + 29 * 60_000L), Actions(), initialExpanded = true) } } }
@@ -255,4 +255,26 @@ class Round22 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.
   @Test fun history() = p.snapshot { SyncImages(); RiseTheme(true) { val now = System.currentTimeMillis()
     RiseApp(homeState.copy(history = covered, plays = covered.take(6).mapIndexed { i, h -> Play(h.uri, h.title, h.artist, 120_000, now - i * 9 * 3_600_000L) }), Actions(), initialRoute = Route.History) } }
   @Test fun streamMenu() = p.snapshot { SyncImages(); RiseTheme(true) { androidx.compose.material3.Surface { StreamActionContent("Da Funk", "Daft Punk", res("cover.jpg"), {}, {}, {}, {}, {}) } } }
+}
+
+class Round23 { @get:Rule val p = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT))
+  private val covered = homeLib.mapIndexed { i, h -> h.copy(art = res(if (i % 2 == 0) "cover.jpg" else "hero.jpg")) }
+  private val lib = LibraryData(
+    tracks = (covered.map { LibTrack(it.uri, it.title, it.artist, it.album, it.duration, it.art) } +
+      LibTrack("rise-stream://dQw4w9WgXcQ", "Faixa online", "Artista online", art = res("cover.jpg"), videoId = "dQw4w9WgXcQ", source = LibSource.YOUTUBE)).associateBy { it.key },
+    likes = (listOf("rise-stream://dQw4w9WgXcQ") + covered.take(3).map { it.uri }).map { LibLike(it, 0) },
+    playlists = listOf(LibPlaylist("a", "Treino", covered.take(5).map { it.uri } + "rise-stream://dQw4w9WgXcQ"),
+      LibPlaylist("b", "Domingo", covered.drop(2).take(1).map { it.uri }), LibPlaylist("c", "Do Spotify", emptyList(), source = LibSource.SPOTIFY)),
+    artists = listOf(LibArtist("Marisa Monte")), albums = listOf(LibAlbum("MPREb_0", "Portas", "Marisa Monte", res("cover.jpg"), source = LibSource.YOUTUBE)))
+  private fun st(tab: String) = homeState.copy(history = covered, library = lib, favorites = lib.likedKeys, playlists = lib.playlists.associate { it.name to it.tracks },
+    page = "Biblioteca", libraryTab = tab, followed = setOf("Marisa Monte"))
+  @Test fun tabColecao() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(st("Coleção"), Actions()) } }
+  @Test fun tabCurtidas() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(st("Curtidas"), Actions()) } }
+  @Test fun tabPlaylists() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(st("Playlists"), Actions()) } }
+  @Test fun tabAlbuns() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(st("Álbuns"), Actions()) } }
+  @Test fun tabArtistas() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(st("Artistas"), Actions()) } }
+  @Test fun playlistEditor() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(st("Playlists"), Actions(), initialRoute = Route.Playlist("Treino")) } }
+  @Test fun playlistEditorScrolled() = p.snapshot { SyncImages(); RiseTheme(true) { RiseApp(st("Playlists"), Actions(), initialRoute = Route.Playlist("Treino"), initialCollectionItem = 1) } }
+  @Test fun streamMenuLike() = p.snapshot { SyncImages(); RiseTheme(true) { androidx.compose.material3.Surface { StreamActionContent("Da Funk", "Daft Punk", res("cover.jpg"), {}, {}, {}, {}, {}, {}, true, {}) } } }
+  @Test fun settingsIntegrations() = p.snapshot { RiseTheme(true) { androidx.compose.material3.Surface { SettingsContent(UiState(), Actions(), initialSection = "Integrações") } } }
 }

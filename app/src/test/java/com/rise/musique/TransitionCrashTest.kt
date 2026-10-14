@@ -22,7 +22,7 @@ class TransitionCrashTest {
   private val album = (1..3).map { HistoryItem("Faixa $it", "M4A", "u:$it", artist = "Fulano", album = "Disco") }
 
   @Test fun navigateEverywhere() {
-    var state by mutableStateOf(UiState(history = album, playlists = mapOf("Treino" to listOf("u:1"))))
+    var state by mutableStateOf(UiState(history = album, playlists = mapOf("Treino" to listOf("u:1")), library = LibraryData(playlists = listOf(LibPlaylist("p", "Treino", listOf("u:1"))))))
     var dark by mutableStateOf(true)
     var alive by mutableStateOf(true)
     rule.setContent { if (alive) RiseTheme(dark) { RiseApp(state, Actions(page = { state = state.copy(page = it) },
@@ -69,7 +69,7 @@ class TransitionCrashTest {
 
   /** 0.16: video player over the tabs, PiP-like config flip, recreation while a video is open. */
   @Test fun videoAndPip() {
-    var state by mutableStateOf(UiState(history = album, playlists = mapOf("Treino" to listOf("u:1"))))
+    var state by mutableStateOf(UiState(history = album, playlists = mapOf("Treino" to listOf("u:1")), library = LibraryData(playlists = listOf(LibPlaylist("p", "Treino", listOf("u:1"))))))
     var alive by mutableStateOf(true)
     rule.setContent { if (alive) RiseTheme(true) { RiseApp(state, Actions(page = { state = state.copy(page = it) },
       video = VideoActions(close = { state = state.copy(video = null) }, fullscreen = { state = state.copy(video = state.video?.copy(fullscreen = it)) }))) } }
